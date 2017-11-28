@@ -1,0 +1,5 @@
+*log
+*logs
+baby_log*
+*.pyc
+snapshots
