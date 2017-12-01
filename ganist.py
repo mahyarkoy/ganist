@@ -17,6 +17,19 @@ def lrelu(x, leak=0.2, name="lrelu"):
 		f2 = 0.5 * (1 - leak)
 		return f1 * x + f2 * abs(x)
 
+def conv2d(input_, output_dim,
+           k_h=5, k_w=5, d_h=1, d_w=1, stddev=0.02,
+           scope="conv2d"):
+    with tf.variable_scope(scope):
+        w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
+                            initializer=tf.contrib.layers.xavier_initializer())
+        conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding='SAME')
+        biases = tf.get_variable('biases', [output_dim], initializer=tf.constant_initializer(0.0))
+        # conv = tf.reshape(tf.nn.bias_add(conv, biases), conv.get_shape())
+        conv = tf.nn.bias_add(conv, biases)
+
+        return conv
+
 def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=False):
 	shape = input_.get_shape().as_list()
 	with tf.variable_scope(scope or "Linear"):
@@ -45,8 +58,11 @@ def dense(x, h_size, scope, reuse=False):
 
 ### GAN Class definition
 class Ganist:
-	def __init__(self, data_dim):
-		# s_data must have zero pads at the end to represent gen class, columns are features
+	def __init__(self, data_dim, log_dir='logs'):
+		### run parameters
+		self.log_dir = log_dir
+
+		### optimization parameters
 		self.g_lr = 1e-4
 		self.g_beta1 = 0.5
 		self.g_beta2 = 0.5
@@ -76,8 +92,8 @@ class Ganist:
 
 	def build_graph(self):
 		### define placeholders for image and label inputs
-		self.im_input = tf.placeholder(tf_dtype, [None, self.data_dim], name='im_input')
-		self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
+		self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
+		self.z_input = tf.placeholder(tf_dtype, [None]+self.z_dim, name='z_input')
 		self.e_input = tf.placeholder(tf_dtype, [None, 1], name='e_input')
 		self.train_phase = tf.placeholder(tf.bool, name='phase')
 
@@ -121,42 +137,6 @@ class Ganist:
 		self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
 		self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net")
 
-		### logs
-		r_logits_mean = tf.reduce_mean(self.r_logits, axis=None)
-		g_logits_mean = tf.reduce_mean(self.g_logits, axis=None)
-		d_r_logits_diff = tf.sqrt(tf.reduce_mean(tf.square(tf.gradients(self.d_r_loss, self.r_logits)), axis=None))
-		d_g_logits_diff = tf.sqrt(tf.reduce_mean(tf.square(tf.gradients(self.d_g_loss, self.g_logits)), axis=None))
-		g_logits_diff = tf.sqrt(tf.reduce_mean(tf.square(tf.gradients(self.g_loss, self.g_logits)), axis=None))
-		g_out_diff = tf.sqrt(tf.reduce_mean(tf.square(tf.gradients(self.g_loss, self.g_layer)), axis=None))
-		
-		diff = tf.zeros((1,), tf_dtype)
-		for v in self.d_vars:
-			if 'bn_' in v.name:
-				continue
-			diff = diff + tf.sqrt(tf.reduce_mean(tf.square(tf.gradients(self.d_r_loss, v)), axis=None))
-		d_r_param_diff = 1.0 * diff / len(self.d_vars)
-
-		diff = tf.zeros((1,), tf_dtype)
-		for v in self.d_vars:
-			if 'bn_' in v.name:
-				continue
-			diff = diff + tf.sqrt(tf.reduce_mean(tf.square(tf.gradients(self.d_g_loss, v)), axis=None))
-		d_g_param_diff = 1.0 * diff / len(self.d_vars)
-
-		diff = tf.zeros((1,), tf_dtype)
-		for v in self.d_vars:
-			if 'bn_' in v.name:
-				continue
-			diff = diff + tf.sqrt(tf.reduce_mean(tf.square(tf.gradients(self.d_loss, v)), axis=None))
-		d_param_diff = 1.0 * diff / len(self.d_vars)
-
-		diff = tf.zeros((1,), tf_dtype)
-		for v in self.g_vars:
-			if 'bn_' in v.name:
-				continue
-			diff = diff + tf.sqrt(tf.reduce_mean(tf.square(tf.gradients(self.g_loss, v)), axis=None))
-		g_param_diff = 1.0 * diff / len(self.g_vars)
-
 		### build optimizers
 		update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 		with tf.control_dependencies(update_ops):
@@ -164,61 +144,49 @@ class Ganist:
 			self.d_opt = tf.train.AdamOptimizer(self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(self.d_loss, var_list=self.d_vars)
 
 		### summaries
-		self.d_r_logs = [self.d_loss, d_param_diff, self.d_r_loss, r_logits_mean, d_r_logits_diff, d_r_param_diff]
-		self.d_g_logs = [self.d_g_loss, g_logits_mean, d_g_logits_diff, d_g_param_diff]
-		self.g_logs = [self.g_loss, g_logits_diff, g_out_diff, g_param_diff]
-		
+		g_loss_sum = tf.summary.scalar("d_loss", self.d_loss)
+		d_loss_sum = tf.summary.scalar("g_loss", self.d_loss)
+		self.summary = tf.summary.merge([g_loss_sum, d_loss_sum])
 
 	def build_gen(self, z, act, train_phase):
-		h1_size = 128
-		h2_size = 128
-		h3_size = 128
-		h4_size = 128
 		with tf.variable_scope('g_net'):
-			#h1 = linear(z, h1_size, scope='fc1')
-			h1 = dense(z, h1_size, scope='fc1')
-			h1 = act(h1)
+			### fully connected from hidden z to image shape
+			z_fc = act(dense(z, 4*4*256, scope='fcz'))
+			h1 = tf.reshape(z_fc, [-1, 4, 4, 256])
 
-			h2 = dense(h1, h2_size, scope='fc2')
-			h2 = act(h2)
+			### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
+			h1_us = tf.image.resize_nearest_neighbor(h1, [8, 8], name='us1')
+			h2 = act(conv2d(h1_us, 128, scope='conv2'))
 
-			#h3 = dense(h2, h3_size, scope='fc3')
-			#h3 = act(h3)
+			h2_us = tf.image.resize_nearest_neighbor(h2, [16, 16], name='us2')
+			h3 = act(conv2d(h2_us, 64, scope='conv3'))
 
-			#h4 = dense(h3, h4_size, scope='fc4')
-			#h4 = act(h4)
+			h3_us = tf.image.resize_nearest_neighbor(h3, [32, 32], name='us3')
+			h4 = conv2d(h3_us, 3, scope='conv4')
+			
+			### output activation to bring data values in (-1,1)
+			o = tf.nn.tanh(h4)
 
-			o = dense(h2, self.data_dim, scope='fco')
 			return o
 
 	def build_dis(self, data_layer, act, train_phase, reuse=False):
-		h1_size = 128
-		h2_size = 128
-		h3_size = 128
-		h4_size = 128
 		with tf.variable_scope('d_net'):
-			h1 = dense(data_layer, h1_size, scope='fc1', reuse=reuse)
-			h1 = act(h1)
+			### encoding the 32*32*3 image with conv into 4*4*256
+			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
+			h2 = act(conv2d(h1, 128, d_h=2, d_w=2, scope='conv2', reuse=reuse))
+			h3 = act(conv2d(h2, 256, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 
-			#h2 = dense_batch(h1, h2_size, scope='fc2', reuse=reuse, phase=train_phase)
-			h2 = dense(h1, h2_size, scope='fc2', reuse=reuse)
-			h2 = act(h2)
-			
-			#h3 = dense(h2, h3_size, scope='fc3', reuse=reuse)
-			#h3 = act(h3)
-
-			#h4 = dense(h3, h4_size, scope='fc4', reuse=reuse)
-			#h4 = act(h4)
-
+			### fully connected discriminator
 			o = dense(h2, 1, scope='fco', reuse=reuse)
 			return o
 
 	def start_session(self):
 		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
 		config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-		self.saver = tf.train.Saver(tf.global_variables(), keep_checkpoint_every_n_hours=1)
+		self.saver = tf.train.Saver(tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=10)
 		self.sess = tf.Session(config=config)
 		self.sess.run(tf.global_variables_initializer())
+		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def end_session(self):
 		self.sess.close()
@@ -228,6 +196,9 @@ class Ganist:
 
 	def load(self, fname):
 		self.saver.restore(self.sess, fname)
+
+	def add_sum(self, sum_str, counter):
+		self.writer.add_sum(sum_str, counter)
 
 	def step(self, batch_data, batch_size, gen_update=False, dis_only=False, gen_only=False, z_data=None):
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
@@ -257,10 +228,11 @@ class Ganist:
 		### run one training step on discriminator, otherwise on generator, and log
 		feed_dict = {self.im_input:batch_data, self.z_input: z_data, self.e_input: e_data, self.train_phase: True}
 		if not gen_update:
-			res_list = [self.g_layer, self.g_logs, self.d_r_logs, self.d_g_logs, self.d_opt]
+			res_list = [self.g_layer, self.summary, self.d_opt]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 		else:
-			res_list = [self.g_layer, self.g_logs, self.d_r_logs, self.d_g_logs, self.g_opt]
+			res_list = [self.g_layer, self.summary, self.g_opt]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 
-		return tuple(res_list[1:]), res_list[0]
+		### return g_layer and summary
+		return res_list[0], res_list[1]
