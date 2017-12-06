@@ -31,15 +31,17 @@ args = arg_parser.parse_args()
 log_path = args.log_path
 log_path_snap = log_path+'/snapshots'
 log_path_draw = log_path+'/draws'
+log_path_sum = log_path+'/sums'
 os.system('mkdir -p '+log_path_snap)
 os.system('mkdir -p '+log_path_draw)
+os.system('mkdir -p '+log_path_sum)
 
 '''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
 '''
-def read_mnist():
+def read_mnist(mnist_path):
 	### read mnist data
-	f = gzip.open('/home/mahyar/Downloads/mnist.pkl.gz', 'rb')
+	f = gzip.open(mnist_path, 'rb')
 	train_set, val_set, test_set = pk.load(f)
 	f.close()
 	return train_set, val_set, test_set
@@ -47,7 +49,7 @@ def read_mnist():
 '''
 Resizes images to im_size and scale to (-1,1)
 '''
-def im_process(im_data, im_size=28)
+def im_process(im_data, im_size=28):
 	im_data = im_data.reshape([50000, 28, 28, 1])
 	### resize
 	#im_data_re = np.zeros((im_data.shape[0], im_size, im_size, 1))
@@ -119,15 +121,14 @@ Train Ganist
 def train_ganist(ganist, im_data):
 	### dataset definition
 	train_size = im_data.shape[0]
-	train_size = 256
 
 	### baby gan training configs
-	max_itr_total = 10
+	max_itr_total = 1e5
 	g_max_itr = 2e4
-	d_updates = 1
+	d_updates = 5
 	g_updates = 1
 	batch_size = 64
-	eval_step = 2
+	eval_step = 100
 
 	### logs initi
 	g_logs = list()
@@ -140,7 +141,8 @@ def train_ganist(ganist, im_data):
 	g_itr = 0
 	itr_total = 0
 	epoch = 0
-	widgets = ["baby_gan", Percentage(), Bar(), ETA()]
+	d_update_flag = True
+	widgets = ["Ganist", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=max_itr_total, widgets=widgets)
 	pbar.start()
 
@@ -203,8 +205,9 @@ def eval_ganist(ganisy, im_data, draw_path=None):
 	g_samples = np.zeros(r_samples.shape)
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
+		batch_len = g_samples[batch_start:batch_end, ...].shape[0]
 		g_samples[batch_start:batch_end, ...] = \
-			ganist.step(None, sample_size, gen_only=True).reshape((sample_size, -1))
+			ganist.step(None, batch_len, gen_only=True).reshape((batch_len, -1))
 	
 	### calculate energy distance
 	rr_score = np.mean(np.sqrt(np.sum(np.square( \
@@ -223,15 +226,17 @@ def eval_ganist(ganisy, im_data, draw_path=None):
 
 if __name__ == '__main__':
 	### read and process data
+	data_path = '/home/mahyar/Downloads/mnist.pkl.gz'
 	train_data, val_data, test_data = read_mnist(data_path)
-	train_labs = trian_data[1]
+	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
 
 	### get a ganist instance
-	ganist = tf_ganist.Ganist()
+	ganist = tf_ganist.Ganist(log_path_sum)
 
 	### draw true images
-	im_block_draw(train_imgs, 10, draw_path+'/true_samples.png')
+	train_imgs_stack = get_stack_mnist(train_imgs)
+	im_block_draw(train_imgs_stack, 10, log_path_draw+'/true_samples.png')
 
 	### train ganist
 	train_ganist(ganist, train_imgs)

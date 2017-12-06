@@ -19,8 +19,8 @@ def lrelu(x, leak=0.2, name="lrelu"):
 
 def conv2d(input_, output_dim,
            k_h=5, k_w=5, d_h=1, d_w=1, stddev=0.02,
-           scope="conv2d"):
-    with tf.variable_scope(scope):
+           scope="conv2d", reuse=False):
+    with tf.variable_scope(scope, reuse=reuse):
         w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
                             initializer=tf.contrib.layers.xavier_initializer())
         conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding='SAME')
@@ -71,17 +71,17 @@ class Ganist:
 		self.d_beta2 = 0.5
 
 		### network parameters
-		self.z_dim = [1] #256
+		self.z_dim = [100] #256
 		self.z_range = 1.0
 		self.data_dim = [28, 28, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.d_loss_type = 'log'
 		self.g_loss_type = 'mod'
-		self.d_act = tf.tanh
-		self.g_act = tf.tanh
-		#self.d_act = tf.nn.relu
-		#self.g_act = lrelu
+		#self.d_act = tf.tanh
+		#self.g_act = tf.tanh
+		self.d_act = tf.nn.relu
+		self.g_act = lrelu
 
 		### init graph and session
 		self.build_graph()
@@ -181,7 +181,7 @@ class Ganist:
 			return o
 
 	def start_session(self):
-		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=1.0)
+		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
 		config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 		self.saver = tf.train.Saver(tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=10)
 		self.sess = tf.Session(config=config)
@@ -198,7 +198,7 @@ class Ganist:
 		self.saver.restore(self.sess, fname)
 
 	def write_sum(self, sum_str, counter):
-		self.writer.add_sum(sum_str, counter)
+		self.writer.add_summary(sum_str, counter)
 
 	def step(self, batch_data, batch_size, gen_update=False, dis_only=False, gen_only=False, z_data=None):
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
@@ -215,7 +215,7 @@ class Ganist:
 
 		### sample z from uniform (-1,1)
 		if z_data is None:
-			z_data = np.random.uniform(low=-self.z_range, high=self.z_range, size=(batch_size, self.z_dim))
+			z_data = np.random.uniform(low=-self.z_range, high=self.z_range, size=[batch_size]+self.z_dim)
 			#z_data = np.random.normal(loc=0.0, scale=1.0, size=(batch_size, self.z_dim))
 		z_data = z_data.astype(np_dtype)
 
