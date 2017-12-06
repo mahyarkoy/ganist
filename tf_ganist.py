@@ -58,7 +58,7 @@ def dense(x, h_size, scope, reuse=False):
 
 ### GAN Class definition
 class Ganist:
-	def __init__(self, data_dim, log_dir='logs'):
+	def __init__(self, log_dir='logs'):
 		### run parameters
 		self.log_dir = log_dir
 
@@ -71,9 +71,9 @@ class Ganist:
 		self.d_beta2 = 0.5
 
 		### network parameters
-		self.z_dim = 1 #256
+		self.z_dim = [1] #256
 		self.z_range = 1.0
-		self.data_dim = data_dim
+		self.data_dim = [28, 28, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.d_loss_type = 'log'
@@ -155,13 +155,13 @@ class Ganist:
 			h1 = tf.reshape(z_fc, [-1, 4, 4, 256])
 
 			### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
-			h1_us = tf.image.resize_nearest_neighbor(h1, [8, 8], name='us1')
+			h1_us = tf.image.resize_nearest_neighbor(h1, [7, 7], name='us1')
 			h2 = act(conv2d(h1_us, 128, scope='conv2'))
 
-			h2_us = tf.image.resize_nearest_neighbor(h2, [16, 16], name='us2')
+			h2_us = tf.image.resize_nearest_neighbor(h2, [14, 14], name='us2')
 			h3 = act(conv2d(h2_us, 64, scope='conv3'))
 
-			h3_us = tf.image.resize_nearest_neighbor(h3, [32, 32], name='us3')
+			h3_us = tf.image.resize_nearest_neighbor(h3, [28, 28], name='us3')
 			h4 = conv2d(h3_us, 3, scope='conv4')
 			
 			### output activation to bring data values in (-1,1)
@@ -171,7 +171,7 @@ class Ganist:
 
 	def build_dis(self, data_layer, act, train_phase, reuse=False):
 		with tf.variable_scope('d_net'):
-			### encoding the 32*32*3 image with conv into 4*4*256
+			### encoding the 28*28*3 image with conv into 3*3*256
 			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
 			h2 = act(conv2d(h1, 128, d_h=2, d_w=2, scope='conv2', reuse=reuse))
 			h3 = act(conv2d(h2, 256, d_h=2, d_w=2, scope='conv3', reuse=reuse))
@@ -181,7 +181,7 @@ class Ganist:
 			return o
 
 	def start_session(self):
-		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=1.0)
 		config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 		self.saver = tf.train.Saver(tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=10)
 		self.sess = tf.Session(config=config)
@@ -197,7 +197,7 @@ class Ganist:
 	def load(self, fname):
 		self.saver.restore(self.sess, fname)
 
-	def add_sum(self, sum_str, counter):
+	def write_sum(self, sum_str, counter):
 		self.writer.add_sum(sum_str, counter)
 
 	def step(self, batch_data, batch_size, gen_update=False, dis_only=False, gen_only=False, z_data=None):
@@ -234,5 +234,5 @@ class Ganist:
 			res_list = [self.g_layer, self.summary, self.g_opt]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 
-		### return g_layer and summary
-		return res_list[0], res_list[1]
+		### return summary and g_layer
+		return res_list[1], res_list[0]

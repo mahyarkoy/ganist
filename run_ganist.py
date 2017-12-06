@@ -12,43 +12,122 @@ Created on Tue Aug  8 11:10:34 2017
 # for i in {0..7}; do mv baby_log_a"$((i))" baby_log_"$((i+74))"; done
 
 import numpy as np
-import tf_baby_gan
+import tf_ganist
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 from progressbar import ETA, Bar, Percentage, ProgressBar
-from mpl_toolkits.mplot3d.axes3d import Axes3D, get_test_data
-from matplotlib import cm
-import matplotlib.tri as mtri
-from sklearn.neighbors.kde import KernelDensity
 import argparse
 print matplotlib.get_backend()
+import cPickle as pk
+import gzip
+from skimage.transform import resize
+
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
 args = arg_parser.parse_args()
 log_path = args.log_path
-log_path_png = log_path+'/fields'
 log_path_snap = log_path+'/snapshots'
-log_path_manifold = log_path+'/manifolds'
-os.system('mkdir -p '+log_path_png)
+log_path_draw = log_path+'/draws'
 os.system('mkdir -p '+log_path_snap)
-os.system('mkdir -p '+log_path_manifold)
+os.system('mkdir -p '+log_path_draw)
 
 '''
-Training Baby GAN
+Reads mnist data from file and return (data, labels) for train, val, test respctively.
 '''
-def train_baby_gan(baby, centers, stds, ratios=None):
+def read_mnist():
+	### read mnist data
+	f = gzip.open('/home/mahyar/Downloads/mnist.pkl.gz', 'rb')
+	train_set, val_set, test_set = pk.load(f)
+	f.close()
+	return train_set, val_set, test_set
+
+'''
+Resizes images to im_size and scale to (-1,1)
+'''
+def im_process(im_data, im_size=28)
+	im_data = im_data.reshape([50000, 28, 28, 1])
+	### resize
+	#im_data_re = np.zeros((im_data.shape[0], im_size, im_size, 1))
+	#for i in range(im_data.shape[0]):
+	#	im_data_re[i, ...] = resize(im_data[i, ...], (im_size, im_size), preserve_range=True)
+	im_data_re = im_data
+
+	### rescale
+	im_data_re = im_data_re * 2.0 - 1.0
+	return im_data_re
+
+'''
+Stacks images randomly on RGB channels, im_data shape must be (N, d, d, 1).
+'''
+def get_stack_mnist(im_data):
+	### copy channels
+	im_data_r = np.copy(im_data)
+	im_data_g = np.copy(im_data)
+	im_data_b = np.copy(im_data)
+
+	### shuffle
+	np.random.shuffle(im_data_r)
+	np.random.shuffle(im_data_g)
+	np.random.shuffle(im_data_b)
+
+	### stack shuffled channels
+	im_data_stacked = np.concatenate((im_data_r, im_data_g, im_data_b), axis=3)
+	return im_data_stacked
+
+def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear'):
+	plt.figure(fignum, figsize=(8, 6))
+	plt.clf()
+	plt.plot(vals, color=color)
+	plt.grid(True, which='both', linestyle='dotted')
+	plt.title(name)
+	plt.xlabel('Iterations')
+	plt.ylabel('Values')
+	if ytype=='log':
+		plt.yscale('log')
+	plt.savefig(save_path)
+
+def plot_time_mat(mat, mat_names, fignum, save_path, ytype=None):
+	for n in range(mat.shape[1]):
+		fig_name = mat_names[n]
+		if not ytype:
+			ytype = 'log' if 'param' in fig_name else 'linear'
+		plot_time_series(fig_name, mat[:,n], fignum, save_path+'/'+fig_name+'.png', ytype=ytype)
+
+'''
+Draws a draw_size*draw_size block image by randomly selecting from im_data.
+Assumes im_data range of (-1,1) and shape (N, d, d, 3).
+'''
+def im_block_draw(im_data, draw_size, path):
+	plt.figure(0)
+	plt.clf()
+	sample_size = im_data.shape[0]
+	im_size = im_data.shape[1]
+	im_channel = im_data.shape[3]
+	draw_ids = np.random.choice(sample_size, size=draw_size**2, replace=False)
+	im_draw = im_data[draw_ids, ...].reshape([draw_size, im_size*draw_size, im_size, im_channel])
+	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
+	im_draw = (im_draw + 1.0) / 2.0
+	plt.imshow(im_draw)
+	plt.savefig(path)
+
+'''
+Train Ganist
+'''
+def train_ganist(ganist, im_data):
 	### dataset definition
-	data_dim = len(centers[0])
-	train_size = 51200
+	train_size = im_data.shape[0]
+	train_size = 256
 
 	### baby gan training configs
-	epochs = 100
+	max_itr_total = 10
+	g_max_itr = 2e4
 	d_updates = 1
 	g_updates = 1
-	batch_size = 512
+	batch_size = 64
+	eval_step = 2
 
 	### logs initi
 	g_logs = list()
@@ -60,142 +139,99 @@ def train_baby_gan(baby, centers, stds, ratios=None):
 	d_itr = 0
 	g_itr = 0
 	itr_total = 0
-	g_max_itr = 2e4
+	epoch = 0
 	widgets = ["baby_gan", Percentage(), Bar(), ETA()]
-	pbar = ProgressBar(maxval=g_max_itr, widgets=widgets)
+	pbar = ProgressBar(maxval=max_itr_total, widgets=widgets)
 	pbar.start()
-	#train_dataset, train_gt = \
-	#	generate_normal_data(train_size, centers, stds, ratios)
 
-	while g_itr < g_max_itr:
-		#np.random.shuffle(train_dataset)
-		train_dataset, train_gt = \
-			generate_circle_data(train_size)
-		#	generate_normal_data(train_size, centers, stds, ratios)
-		
+	while itr_total < max_itr_total:
+		### get a rgb stacked mnist dataset
+		train_dataset = get_stack_mnist(im_data)
+		epoch += 1
+		print ">>> Epoch %d started..." % epoch
+		### train one epoch
 		for batch_start in range(0, train_size, batch_size):
-			if g_itr >= g_max_itr:
+			if itr_total >= max_itr_total:
 				break
-			pbar.update(g_itr)
+			pbar.update(itr_total)
 			batch_end = batch_start + batch_size
-			batch_data = train_dataset[batch_start:batch_end, 0] if data_dim == 1 else train_dataset[batch_start:batch_end, :]
-			batch_data = batch_data.reshape((batch_data.shape[0], data_dim))
-			### discriminator update
-			logs, batch_g_data = baby.step(batch_data, batch_size, gen_update=False)
-			if data_dim == 1:
-				g_data = baby.step(None, field_sample_size, gen_only=True)
-				d_data = train_dataset[0:field_sample_size, 0]
-				d_data = d_data.reshape((d_data.shape[0], data_dim))
-			else:
-				g_data = baby.step(None, field_sample_size, gen_only=True)
-				d_data = train_dataset[0:field_sample_size, :]
-				d_data = d_data.reshape((d_data.shape[0], data_dim))
-			### logging dis results
-			g_logs.append(logs[0])
-			d_r_logs.append(logs[1])
-			d_g_logs.append(logs[2])
-
-			### calculate and plot field of decision for dis update
-			field_params = None
-			if d_draw > 0 and d_itr % d_draw == 0:
-				if data_dim == 1:
-					field_params = baby_gan_field_1d(baby, -fov, fov, batch_size*10)
-					plot_field_1d(field_params, (d_data, batch_data), (g_data, batch_g_data), 0,
-						log_path_png+'/field_%06d.png' % itr_total, 'DIS_%d_%d_%d' % (d_itr%d_updates, g_itr, itr_total))    
+			### fetch batch data
+			batch_data = train_dataset[batch_start:batch_end, ...]
+			fetch_batch = False
+			while fetch_batch is False:
+				### discriminator update
+				if d_update_flag is True:
+					batch_sum, batch_g_data = ganist.step(batch_data, batch_size, gen_update=False)
+					ganist.write_sum(batch_sum, itr_total)
+					d_itr += 1
+					itr_total += 1
+					d_update_flag = False if d_itr % d_updates == 0 else True
+					fetch_batch = True
 				else:
-					field_params = baby_gan_field_2d(baby, -fov, fov, -fov, fov, batch_size*10)
-					plot_field_2d(field_params, fov, (d_data, batch_data), (g_data, batch_g_data), 0,
-						log_path_png+'/field_%06d.png' % itr_total, 'DIS_%d_%d_%d' % (d_itr%d_updates, g_itr, itr_total))
-			d_itr += 1
-			itr_total += 1
-			
-			### generator updates: g_updates times for each d_updates of discriminator
-			if d_itr % d_updates == 0:
-				for gn in range(g_updates):
-					### evaluate energy distance between real and gen distributions
-					e_dist, e_norm = eval_baby_gan(baby, centers, stds, ratios)
+				### generator updates: g_updates times for each d_updates of discriminator
+					batch_sum, batch_g_data = ganist.step(batch_data, batch_size, gen_update=True)
+					ganist.write_sum(batch_sum, itr_total)
+					g_itr += 1
+					itr_total += 1
+					d_update_flag = True if g_itr % g_updates == 0 else False
+				
+				### evaluate energy distance between real and gen distributions
+				if itr_total % eval_step == 0:
+					e_dist, e_norm = eval_ganist(ganist, train_dataset, log_path_draw+'/%d.png' % itr_total)
 					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
 
-					### generator update
-					logs, batch_g_data = baby.step(batch_data, batch_size, gen_update=True)
-					g_data = baby.step(None, field_sample_size, gen_only=True)
-					g_logs.append(logs[0])
-					d_r_logs.append(logs[1])
-					d_g_logs.append(logs[2])
-					if g_draw > 0 and g_itr % g_draw == 0:
-						if data_dim == 1:
-							if field_params is None:
-								field_params = baby_gan_field_1d(baby, -fov, fov, batch_size*10)
-							plot_field_1d(field_params, (d_data, batch_data), (g_data, batch_g_data), 0,
-								log_path_png+'/field_%06d.png' % itr_total, 'GEN_%d_%d_%d' % (gn, g_itr, itr_total))
-						else:
-							if field_params is None:
-								field_params = baby_gan_field_2d(baby, -fov, fov, -fov, fov, batch_size*10)
-							plot_field_2d(field_params, fov, (d_data, batch_data), (g_data, batch_g_data), 0,
-								log_path_png+'/field_%06d.png' % itr_total, 'GEN_%d_%d_%d' % (gn, g_itr, itr_total))
-					### draw manifold of generator data
-					if g_manifold > 0 and g_itr % g_manifold == 0:
-						plot_manifold(baby, 200, 0, log_path_manifold+'/manifold_%06d.png' % itr_total, 'GEN_%d_%d_%d' % (gn, g_itr, itr_total))
-					g_itr += 1
-					itr_total += 1
-					if g_itr >= g_max_itr:
-						break
-				#_, dis_confs, trace = baby.gen_consolidate(count=50)
-				#print '>>> CONFS: ', dis_confs
-				#print '>>> TRACE: ', trace
-				#baby.reset_network('d_')
-	baby.save(log_path_snap+'/model_%d_%d.h5' % (g_itr, itr_total))
+				if itr_total >= max_itr_total:
+					break
 
-	### plot baby gan progress logs
-	g_logs_mat = np.array(g_logs)
-	d_r_logs_mat = np.array(d_r_logs)
-	d_g_logs_mat = np.array(d_g_logs)
-	eval_logs_mat = np.array(eval_logs)
-	g_logs_names = ['g_loss', 'g_logit_diff', 'g_out_diff', 'g_param_diff']
-	d_r_logs_names = ['d_loss', 'd_param_diff', 'd_r_loss', 'r_logit_data', 'd_r_logit_diff', 'd_r_param_diff']
-	d_g_logs_names = ['d_g_loss', 'g_logit_data', 'd_g_logit_diff', 'd_g_param_diff']
-	eval_logs_names = ['energy_distance', 'energy_distance_norm']
+		### save network every epoch
+		ganist.save(log_path_snap+'/model_%d_%d.h5' % (g_itr, itr_total))
 
-	plot_time_mat(g_logs_mat, g_logs_names, 1, log_path)
-	plot_time_mat(d_r_logs_mat, d_r_logs_names, 1, log_path)
-	plot_time_mat(d_g_logs_mat, d_g_logs_names, 1, log_path)
-	plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path)
+		### plot ganist evaluation plot every epoch
+		eval_logs_mat = np.array(eval_logs)
+		eval_logs_names = ['energy_distance', 'energy_distance_norm']
+		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path)
 
-def eval_baby_gan(baby, centers, stds, ratios=None):
-	### dataset definition
-	data_dim = len(centers[0])
-	sample_size = 10000
-	r_samples, gt = \
-		generate_circle_data(sample_size)
-		#generate_normal_data(sample_size, centers, stds, ratios)
+def eval_ganist(ganisy, im_data, draw_path=None):
+	### sample and batch size
+	sample_size = 1024
+	batch_size = 64
+	draw_size = 10
+	
+	### collect real and gen samples
+	r_samples = im_data[0:sample_size, ...].reshape((sample_size, -1))
+	g_samples = np.zeros(r_samples.shape)
+	for batch_start in range(0, sample_size, batch_size):
+		batch_end = batch_start + batch_size
+		g_samples[batch_start:batch_end, ...] = \
+			ganist.step(None, sample_size, gen_only=True).reshape((sample_size, -1))
+	
+	### calculate energy distance
+	rr_score = np.mean(np.sqrt(np.sum(np.square( \
+		r_samples[0:sample_size//2, ...] - r_samples[sample_size//2:, ...]), axis=1)))
+	gg_score = np.mean(np.sqrt(np.sum(np.square( \
+		g_samples[0:sample_size//2, ...] - g_samples[sample_size//2:, ...]), axis=1)))
+	rg_score = np.mean(np.sqrt(np.sum(np.square( \
+		r_samples[0:sample_size//2, ...] - g_samples[0:sample_size//2, ...]), axis=1)))
 
-	g_samples = baby.step(None, sample_size, gen_only=True)
-	if data_dim > 1:
-		rr_score = np.mean(np.sqrt(np.sum(np.square(r_samples[0:sample_size//2, ...] - r_samples[sample_size//2:, ...]), axis=1)))
-		gg_score = np.mean(np.sqrt(np.sum(np.square(g_samples[0:sample_size//2, ...] - g_samples[sample_size//2:, ...]), axis=1)))
-		rg_score = np.mean(np.sqrt(np.sum(np.square(r_samples[0:sample_size//2, ...] - g_samples[0:sample_size//2, ...]), axis=1)))
-	else:
-		rr_score = np.mean(np.abs(r_samples[0:sample_size//2] - r_samples[sample_size//2:]))
-		gg_score = np.mean(np.abs(g_samples[0:sample_size//2] - g_samples[sample_size//2:]))
-		rg_score = np.mean(np.abs(r_samples[0:sample_size//2] - g_samples[0:sample_size//2]))
+	### draw block image of gen samples
+	if draw_path is not None:
+		g_samples = g_samples.reshape((-1,) + im_data.shape[1:])
+		im_block_draw(g_samples, draw_size, draw_path)
+
 	return 2*rg_score - rr_score - gg_score, rg_score
 
-
 if __name__ == '__main__':
-	centers = [[-1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, -1.0]]
-	stds = [[0.02, 0.02], [0.02, 0.02], [0.02, 0.02], [0.02, 0.02]]
-	#centers = [[-0.5, 0.0], [0.5, 0.0], [0.0, 0.5], [0.0, -0.5]]
-	#stds = [[0.01, 0.01], [0.01, 0.01], [0.01, 0.01], [0.01, 0.01]]
-	#ratios = [0.2, 0.2, 0.4, 0.2]
-	ratios = None
-	data_dim = len(centers[0])
-	#baby = baby_gan.BabyGAN(data_dim)
-	baby = tf_baby_gan.TFBabyGAN(data_dim)
+	### read and process data
+	train_data, val_data, test_data = read_mnist(data_path)
+	train_labs = trian_data[1]
+	train_imgs = im_process(train_data[0])
 
-	train_baby_gan(baby, centers, stds, ratios)
+	### get a ganist instance
+	ganist = tf_ganist.Ganist()
 
-	e_dist, e_norm = eval_baby_gan(baby, centers, stds)
-	with open(log_path+'/txt_logs.txt', 'w+') as fs:
-		e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
-		print >>fs, '>>> energy_distance: %f, energy_coef: %f' % (e_dist, e_dist/np.sqrt(2.0*e_norm))
+	### draw true images
+	im_block_draw(train_imgs, 10, draw_path+'/true_samples.png')
+
+	### train ganist
+	train_ganist(ganist, train_imgs)
