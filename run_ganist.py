@@ -123,12 +123,13 @@ def train_ganist(ganist, im_data):
 	train_size = im_data.shape[0]
 
 	### baby gan training configs
-	max_itr_total = 1e5
+	max_itr_total = 1e6
 	g_max_itr = 2e4
 	d_updates = 5
 	g_updates = 1
 	batch_size = 64
 	eval_step = 100
+	draw_step = 1000
 
 	### logs initi
 	g_logs = list()
@@ -179,7 +180,8 @@ def train_ganist(ganist, im_data):
 				
 				### evaluate energy distance between real and gen distributions
 				if itr_total % eval_step == 0:
-					e_dist, e_norm = eval_ganist(ganist, train_dataset, log_path_draw+'/%d.png' % itr_total)
+					draw_path = log_path_draw+'/gen_sample_%d.png' % itr_total if itr_total % draw_step == 0 else None
+					e_dist, e_norm = eval_ganist(ganist, train_dataset, draw_path)
 					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
 
@@ -190,8 +192,10 @@ def train_ganist(ganist, im_data):
 		ganist.save(log_path_snap+'/model_%d_%d.h5' % (g_itr, itr_total))
 
 		### plot ganist evaluation plot every epoch
+		if len(eval_logs) < 2:
+			continue
 		eval_logs_mat = np.array(eval_logs)
-		eval_logs_names = ['energy_distance', 'energy_distance_norm']
+		eval_logs_names = ['energy_distance_%d' % eval_step, 'energy_distance_norm_%d' % eval_step]
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path)
 
 def eval_ganist(ganisy, im_data, draw_path=None):
@@ -226,7 +230,7 @@ def eval_ganist(ganisy, im_data, draw_path=None):
 
 if __name__ == '__main__':
 	### read and process data
-	data_path = '/home/mahyar/Downloads/mnist.pkl.gz'
+	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])

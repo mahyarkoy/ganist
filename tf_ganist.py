@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
+os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
 
 np.random.seed(13)
 tf.set_random_seed(13)
@@ -80,8 +80,8 @@ class Ganist:
 		self.g_loss_type = 'mod'
 		#self.d_act = tf.tanh
 		#self.g_act = tf.tanh
-		self.d_act = tf.nn.relu
-		self.g_act = lrelu
+		self.d_act = lrelu
+		self.g_act = tf.nn.relu
 
 		### init graph and session
 		self.build_graph()
@@ -94,7 +94,7 @@ class Ganist:
 		### define placeholders for image and label inputs
 		self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
 		self.z_input = tf.placeholder(tf_dtype, [None]+self.z_dim, name='z_input')
-		self.e_input = tf.placeholder(tf_dtype, [None, 1], name='e_input')
+		self.e_input = tf.placeholder(tf_dtype, [None, 1, 1, 1], name='e_input')
 		self.train_phase = tf.placeholder(tf.bool, name='phase')
 
 		### build generator
@@ -201,10 +201,11 @@ class Ganist:
 		self.writer.add_summary(sum_str, counter)
 
 	def step(self, batch_data, batch_size, gen_update=False, dis_only=False, gen_only=False, z_data=None):
+		batch_size = batch_data.shape[0] if batch_data is not None else batch_size		
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
-		
+
 		### sample e from uniform (-1,1): for gp penalty in WGAN
-		e_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1))
+		e_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1, 1, 1))
 		e_data = e_data.astype(np_dtype)
 
 		### only forward discriminator on batch_data
