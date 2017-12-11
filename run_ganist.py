@@ -13,6 +13,7 @@ Created on Tue Aug  8 11:10:34 2017
 
 import numpy as np
 import tf_ganist
+import mnist_net
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -29,12 +30,17 @@ arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
 args = arg_parser.parse_args()
 log_path = args.log_path
+c_log_path = log_path+'/classifier'
 log_path_snap = log_path+'/snapshots'
+c_log_path_snap = c_log_path+'/snapshots'
 log_path_draw = log_path+'/draws'
 log_path_sum = log_path+'/sums'
+c_log_path_sum = c_log_path+'/sums'
 os.system('mkdir -p '+log_path_snap)
+os.system('mkdir -p '+c_log_path_snap)
 os.system('mkdir -p '+log_path_draw)
 os.system('mkdir -p '+log_path_sum)
+os.system('mkdir -p '+c_log_path_sum)
 
 '''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
@@ -50,7 +56,7 @@ def read_mnist(mnist_path):
 Resizes images to im_size and scale to (-1,1)
 '''
 def im_process(im_data, im_size=28):
-	im_data = im_data.reshape([50000, 28, 28, 1])
+	im_data = im_data.reshape((im_data.shape[0], im_data.shape[1], im_data.shape[2], 1))
 	### resize
 	#im_data_re = np.zeros((im_data.shape[0], im_size, im_size, 1))
 	#for i in range(im_data.shape[0]):
@@ -79,10 +85,13 @@ def get_stack_mnist(im_data):
 	im_data_stacked = np.concatenate((im_data_r, im_data_g, im_data_b), axis=3)
 	return im_data_stacked
 
-def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear'):
+def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear', itrs=None):
 	plt.figure(fignum, figsize=(8, 6))
 	plt.clf()
-	plt.plot(vals, color=color)
+	if itrs is None:
+		plt.plot(vals, color=color)	
+	else:
+		plt.plot(itrs, vals, color=color)
 	plt.grid(True, which='both', linestyle='dotted')
 	plt.title(name)
 	plt.xlabel('Iterations')
@@ -91,29 +100,53 @@ def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear'):
 		plt.yscale('log')
 	plt.savefig(save_path)
 
-def plot_time_mat(mat, mat_names, fignum, save_path, ytype=None):
+def plot_time_mat(mat, mat_names, fignum, save_path, ytype=None, itrs=None):
 	for n in range(mat.shape[1]):
 		fig_name = mat_names[n]
 		if not ytype:
 			ytype = 'log' if 'param' in fig_name else 'linear'
-		plot_time_series(fig_name, mat[:,n], fignum, save_path+'/'+fig_name+'.png', ytype=ytype)
+		plot_time_series(fig_name, mat[:,n], fignum, save_path+'/'+fig_name+'.png', ytype=ytype, itrs=itrs)
 
 '''
 Draws a draw_size*draw_size block image by randomly selecting from im_data.
 Assumes im_data range of (-1,1) and shape (N, d, d, 3).
 '''
-def im_block_draw(im_data, draw_size, path):
-	plt.figure(0)
-	plt.clf()
+def im_block_draw(im_data, draw_size, path, separate_channels=True):
 	sample_size = im_data.shape[0]
 	im_size = im_data.shape[1]
 	im_channel = im_data.shape[3]
+	### choses images and puts them into a block shape
 	draw_ids = np.random.choice(sample_size, size=draw_size**2, replace=False)
 	im_draw = im_data[draw_ids, ...].reshape([draw_size, im_size*draw_size, im_size, im_channel])
 	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
 	im_draw = (im_draw + 1.0) / 2.0
-	plt.imshow(im_draw)
-	plt.savefig(path)
+	### plots
+	fig = plt.figure(0)
+	fig.clf()
+	if not separate_channels:
+		fig.imshow(im_draw)
+		fig.savefig(path)
+	else:
+		im_tmp = np.zeros(im_draw.shape)
+		ax = fig.add_subplot(1, 3, 1)
+		im_tmp[..., 0] = im_draw[..., 0]
+		ax.set_axis_off()
+		ax.imshow(im_tmp)
+
+		ax = fig.add_subplot(1, 3, 2)
+		im_tmp[...] = 0.0
+		im_tmp[..., 1] = im_draw[..., 1]
+		ax.set_axis_off()
+		ax.imshow(im_tmp)
+
+		ax = fig.add_subplot(1, 3, 3)
+		im_tmp[...] = 0.0
+		im_tmp[..., 2] = im_draw[..., 2]
+		ax.set_axis_off()
+		ax.imshow(im_tmp)
+
+		fig.subplots_adjust(wspace=0, hspace=0)
+		fig.savefig(path, dpi=300)
 
 '''
 Train Ganist
@@ -136,6 +169,7 @@ def train_ganist(ganist, im_data):
 	d_r_logs = list()
 	d_g_logs = list()
 	eval_logs = list()
+	itrs_logs = list()
 
 	### training inits
 	d_itr = 0
@@ -164,7 +198,7 @@ def train_ganist(ganist, im_data):
 			while fetch_batch is False:
 				### discriminator update
 				if d_update_flag is True:
-					batch_sum, batch_g_data = ganist.step(batch_data, batch_size, gen_update=False)
+					batch_sum, batch_g_data = ganist.step(batch_data, batch_size=None, gen_update=False)
 					ganist.write_sum(batch_sum, itr_total)
 					d_itr += 1
 					itr_total += 1
@@ -172,7 +206,7 @@ def train_ganist(ganist, im_data):
 					fetch_batch = True
 				else:
 				### generator updates: g_updates times for each d_updates of discriminator
-					batch_sum, batch_g_data = ganist.step(batch_data, batch_size, gen_update=True)
+					batch_sum, batch_g_data = ganist.step(batch_data, batch_size=None, gen_update=True)
 					ganist.write_sum(batch_sum, itr_total)
 					g_itr += 1
 					itr_total += 1
@@ -184,6 +218,7 @@ def train_ganist(ganist, im_data):
 					e_dist, e_norm = eval_ganist(ganist, train_dataset, draw_path)
 					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
+					itrs_logs.append(itr_total)
 
 				if itr_total >= max_itr_total:
 					break
@@ -195,8 +230,8 @@ def train_ganist(ganist, im_data):
 		if len(eval_logs) < 2:
 			continue
 		eval_logs_mat = np.array(eval_logs)
-		eval_logs_names = ['energy_distance_%d' % eval_step, 'energy_distance_norm_%d' % eval_step]
-		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path)
+		eval_logs_names = ['energy_distance', 'energy_distance_norm']
+		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path, itrs=itrs_logs)
 
 def eval_ganist(ganisy, im_data, draw_path=None):
 	### sample and batch size
@@ -228,17 +263,108 @@ def eval_ganist(ganisy, im_data, draw_path=None):
 
 	return 2*rg_score - rr_score - gg_score, rg_score
 
+def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
+	### dataset definition
+	train_size = im_data.shape[0]
+
+	### logs initi
+	eval_logs = list()
+	itrs_logs = list()
+
+	### training configs
+	max_itr_total = 1e6
+	batch_size = 64
+	eval_step = 100
+
+	### training inits
+	itr_total = 0
+	epoch = 0
+	widgets = ["Mnist_net", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=max_itr_total, widgets=widgets)
+	pbar.start()
+
+	while itr_total < max_itr_total:
+		### get a rgb stacked mnist dataset
+		epoch += 1
+		print ">>> Epoch %d started..." % epoch
+		### train one epoch
+		for batch_start in range(0, train_size, batch_size):
+			if itr_total >= max_itr_total:
+				break
+			pbar.update(itr_total)
+			batch_end = batch_start + batch_size
+			### fetch batch data
+			batch_data = im_data[batch_start:batch_end, ...]
+			batch_labels = labels[batch_start:batch_end, ...]
+			### train one step
+			batch_preds, batch_acc, batch_sum = mnet.step(batch_data, batch_labels)
+			mnet.write_sum(batch_sum, itr_total)
+			itr_total += 1
+
+			if itr_total % eval_step == 0 and eval_im_data is not None:
+				eval_loss, eval_acc = eval_mnist_net(eval_im_data, eval_labels, batch_size)
+				eval_logs.append([eval_loss, eval_acc])
+				itrs_logs.append(itr_total)
+
+			if itr_total >= max_itr_total:
+				break
+
+		### save network every epoch
+		mnet.save(c_log_path_snap+'/model_%d.h5' % itr_total)
+
+		### plot mnet evaluation plot every epoch
+		if len(eval_logs) < 2:
+			continue
+		eval_logs_mat = np.array(eval_logs)
+		eval_logs_names = ['eval_loss', 'eval_acc']
+		plot_time_mat(eval_logs_mat, eval_logs_names, 1, c_log_path, itrs=itrs_logs)
+
+def eval_mnist_net(im_data, labels, batch_size):
+	eval_size = im_data.shape[0]
+	eval_sum = 0.0
+	eval_loss = 0.0
+	eval_count = 0.0
+
+	### eval on all im_data
+	for batch_start in range(0, eval_size, batch_size):
+		pbar.update(itr_total)
+		batch_end = batch_start + batch_size
+		### fetch batch data
+		batch_data = im_data[batch_start:batch_end, ...]
+		batch_labels = labels[batch_start:batch_end, ...]
+		### eval one step
+		batch_preds, batch_acc, batch_loss = mnet.step(batch_data, batch_labels, train=False)
+		eval_sum += 1.0 * batch_acc * batch_data.shape[0]
+		eval_loss += 1.0 * batch_loss * batch_data.shape[0]
+		eval_count += batch_data.shape[0]
+
+	return eval_sum / eval_count, eval_loss / eval_count
+
+
 if __name__ == '__main__':
 	### read and process data
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
+	val_labs = val_data[1]
+	val_imgs = im_process(val_data[0])
+	test_labs = test_data[1]
+	test_imgs = im_process(test_data[0])
+	
+	### train mnist classifier
+	mnet = mnist_net(c_log_path_sum)
+	train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
+
+	### test mnist classifier
+	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs)
+	print ">>> test loss: ", test_loss
+	print ">>> test accuracy: ", test_acc
 
 	### get a ganist instance
 	ganist = tf_ganist.Ganist(log_path_sum)
 
-	### draw true images
+	### draw true stacked mnist images
 	train_imgs_stack = get_stack_mnist(train_imgs)
 	im_block_draw(train_imgs_stack, 10, log_path_draw+'/true_samples.png')
 
