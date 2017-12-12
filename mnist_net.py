@@ -82,7 +82,7 @@ class MnistNet:
 	def build_graph(self):
 		### define placeholders for image and label inputs
 		self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
-		self.labels = tf.placeholder(tf_dtype, [None, self.num_class], name='im_input')
+		self.labels = tf.placeholder(tf_dtype, [None, self.num_class], name='labs_input')
 		self.train_phase = tf.placeholder(tf.bool, name='phase')
 
 		### build classifier
