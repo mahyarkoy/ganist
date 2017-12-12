@@ -72,24 +72,24 @@ def im_process(im_data, im_size=28):
 '''
 Stacks images randomly on RGB channels, im_data shape must be (N, d, d, 1).
 '''
-def get_stack_mnist(im_data, labels):
+def get_stack_mnist(im_data, labels=None):
 	order = np.arange(im_data.shape[0])
 	
 	np.random.shuffle(order)
 	im_data_r = im_data[order]
-	labs_r = labels[order]
+	labs_r = labels[order] if labels is not None else None
 
 	np.random.shuffle(order)
 	im_data_g = im_data[order]
-	labs_g = labels[order]
+	labs_g = labels[order] if labels is not None else None
 
 	np.random.shuffle(order)
 	im_data_b = im_data[order]
-	labs_b = labels[order]
+	labs_b = labels[order] if labels is not None else None
 
 	### stack shuffled channels
 	im_data_stacked = np.concatenate((im_data_r, im_data_g, im_data_b), axis=3)
-	labs_stacked = labs_r + 10 * labs_g + 100 * labs_b
+	labs_stacked = labs_r + 10 * labs_g + 100 * labs_b if labels is not None else None
 	return im_data_stacked, labs_stacked
 
 def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear', itrs=None):
@@ -246,7 +246,7 @@ def sample_ganist(ganist, sample_size, batch_size=64):
 		batch_end = batch_start + batch_size
 		batch_len = g_samples[batch_start:batch_end, ...].shape[0]
 		g_samples[batch_start:batch_end, ...] = \
-			ganist.step(None, batch_len, gen_only=True).reshape((batch_len, -1))
+			ganist.step(None, batch_len, gen_only=True)
 	return g_samples
 
 def eval_ganist(ganist, im_data, draw_path=None):
@@ -254,11 +254,10 @@ def eval_ganist(ganist, im_data, draw_path=None):
 	sample_size = 1024
 	batch_size = 64
 	draw_size = 10
-	energy_d = None
 	
 	### collect real and gen samples
 	r_samples = im_data[0:sample_size, ...].reshape((sample_size, -1))
-	g_samples = sample_ganist(ganist, sample_size)
+	g_samples = sample_ganist(ganist, sample_size).reshape((sample_size, -1))
 	
 	### calculate energy distance
 	rr_score = np.mean(np.sqrt(np.sum(np.square( \
@@ -425,6 +424,8 @@ if __name__ == '__main__':
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
 	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
 	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_g1/snapshots/model_166666_1000000.h5'
+	sample_size = 70000
+
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
@@ -444,7 +445,7 @@ if __name__ == '__main__':
 	#print ">>> validation accuracy: ", val_acc
 
 	### load mnist classifier
-	mnet.load(mnist_net_path)
+	#mnet.load(mnist_net_path)
 
 	### test mnist classifier
 	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
@@ -459,7 +460,7 @@ if __name__ == '__main__':
 	ganist = tf_ganist.Ganist(log_path_sum)
 
 	### train ganist
-	train_ganist(ganist, all_imgs)
+	train_ganist(ganist, train_imgs)
 
 	### load ganist
 	#ganist.load(ganist_path)

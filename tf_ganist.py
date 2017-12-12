@@ -76,8 +76,8 @@ class Ganist:
 		self.data_dim = [28, 28, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
-		self.d_loss_type = 'log'
-		self.g_loss_type = 'mod'
+		self.d_loss_type = 'was'
+		self.g_loss_type = 'was'
 		#self.d_act = tf.tanh
 		#self.g_act = tf.tanh
 		self.d_act = lrelu
@@ -240,5 +240,6 @@ class Ganist:
 			res_list = [self.g_layer, self.summary, self.g_opt]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 
+		#print '>>> r_logits shape:', res_list[3].shape
 		### return summary and g_layer
 		return res_list[1], res_list[0]
