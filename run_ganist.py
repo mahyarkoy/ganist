@@ -423,8 +423,8 @@ def eval_mnist_net(mnet, im_data, labels, batch_size):
 if __name__ == '__main__':
 	### read and process data
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
-	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_net_models'
-	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_g1/snapshots'
+	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
+	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_g1/snapshots/model_166666_1000000.h5'
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
@@ -454,15 +454,15 @@ if __name__ == '__main__':
 	### draw true stacked mnist images
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs)
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
-	
+
 	### get a ganist instance
 	ganist = tf_ganist.Ganist(log_path_sum)
 
 	### train ganist
-	#train_ganist(ganist, all_imgs)
+	train_ganist(ganist, all_imgs)
 
 	### load ganist
-	ganist.restore(ganist_path)
+	#ganist.load(ganist_path)
 
 	### mode eval the trained gan
 	r_samples = all_imgs_stack
