@@ -63,15 +63,12 @@ class MnistNet:
 		self.log_dir = log_dir
 
 		### optimization parameters
-		self.g_lr = 1e-4
-		self.g_beta1 = 0.5
-		self.g_beta2 = 0.5
-		self.d_lr = 1e-4
-		self.d_beta1 = 0.5
-		self.d_beta2 = 0.5
+		self.lr = 1e-4
+		self.beta1 = 0.5
+		self.beta2 = 0.5
 
 		### network parameters
-		self.data_dim = [28, 28, 3]
+		self.data_dim = [28, 28, 1]
 		self.num_class = 10
 		self.c_act = lrelu
 
@@ -85,7 +82,7 @@ class MnistNet:
 	def build_graph(self):
 		### define placeholders for image and label inputs
 		self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
-		self.labels = tf.placeholder(tf_dtype, [None]+self.num_class, name='im_input')
+		self.labels = tf.placeholder(tf_dtype, [None, self.num_class], name='im_input')
 		self.train_phase = tf.placeholder(tf.bool, name='phase')
 
 		### build classifier
@@ -114,13 +111,14 @@ class MnistNet:
 
 	def build_classifier(self, data_layer, act, train_phase, reuse=False):
 		with tf.variable_scope('c_net'):
-			### encoding the 28*28*3 image with conv into 3*3*256
+			### encoding the 28*28*1 image with conv into 4*4*256
 			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
 			h2 = act(conv2d(h1, 128, d_h=2, d_w=2, scope='conv2', reuse=reuse))
 			h3 = act(conv2d(h2, 256, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 
 			### fully connected classifier
-			o = dense(h2, self.num_class, scope='fco', reuse=reuse)
+			flat_h3 = tf.contrib.layers.flatten(h3)
+			o = dense(flat_h3, self.num_class, scope='fco', reuse=reuse)
 			return o
 
 	def start_session(self):
@@ -134,6 +132,10 @@ class MnistNet:
 	def end_session(self):
 		self.sess.close()
 
+	def clean(self):
+		self.sess.close()
+		tf.reset_default_graph()
+
 	def save(self, fname):
 		self.saver.save(self.sess, fname)
 
@@ -143,19 +145,19 @@ class MnistNet:
 	def write_sum(self, sum_str, counter):
 		self.writer.add_summary(sum_str, counter)
 
-	def step(self, batch_data, labels, train=True, pred_only=False):
+	def step(self, batch_data, labels=None, train=True, pred_only=False):
 		batch_size = batch_data.shape[0]
 		batch_data = batch_data.astype(np_dtype)
-
-		### labels setup to matrix
-		mat_labels = 0.1 * np.ones((batch_size, self.num_class)) / (self.num_class-1)
-		mat_labels[np.arange(batch_size), labels] = 0.9
 
 		### only forward classifier on batch_data and return preds
 		if pred_only:
 			feed_dict = {self.im_input: batch_data, self.train_phase: False}
 			preds = self.sess.run(self.preds, feed_dict=feed_dict)
 			return preds.flatten()
+
+		### labels setup to matrix
+		mat_labels = 0.1 * np.ones((batch_size, self.num_class)) / (self.num_class-1)
+		mat_labels[np.arange(batch_size), labels] = 0.9
 
 		### only forward classifier on batch_data and return preds, acc and loss
 		if not train:

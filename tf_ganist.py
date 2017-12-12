@@ -177,7 +177,8 @@ class Ganist:
 			h3 = act(conv2d(h2, 256, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 
 			### fully connected discriminator
-			o = dense(h2, 1, scope='fco', reuse=reuse)
+			flat_h3 = tf.contrib.layers.flatten(h3)
+			o = dense(flat_h3, 1, scope='fco', reuse=reuse)
 			return o
 
 	def start_session(self):
@@ -190,6 +191,10 @@ class Ganist:
 
 	def end_session(self):
 		self.sess.close()
+
+	def clean(self):
+		self.sess.close()
+		tf.reset_default_graph()
 
 	def save(self, fname):
 		self.saver.save(self.sess, fname)

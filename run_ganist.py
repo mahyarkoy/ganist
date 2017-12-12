@@ -24,6 +24,8 @@ print matplotlib.get_backend()
 import cPickle as pk
 import gzip
 from skimage.transform import resize
+from sklearn.neighbors import NearestNeighbors, kneighbors_graph
+from sklearn.utils.graph import graph_shortest_path
 
 
 arg_parser = argparse.ArgumentParser()
@@ -56,7 +58,7 @@ def read_mnist(mnist_path):
 Resizes images to im_size and scale to (-1,1)
 '''
 def im_process(im_data, im_size=28):
-	im_data = im_data.reshape((im_data.shape[0], im_data.shape[1], im_data.shape[2], 1))
+	im_data = im_data.reshape((im_data.shape[0], 28, 28, 1))
 	### resize
 	#im_data_re = np.zeros((im_data.shape[0], im_size, im_size, 1))
 	#for i in range(im_data.shape[0]):
@@ -70,20 +72,25 @@ def im_process(im_data, im_size=28):
 '''
 Stacks images randomly on RGB channels, im_data shape must be (N, d, d, 1).
 '''
-def get_stack_mnist(im_data):
-	### copy channels
-	im_data_r = np.copy(im_data)
-	im_data_g = np.copy(im_data)
-	im_data_b = np.copy(im_data)
+def get_stack_mnist(im_data, labels):
+	order = np.arange(im_data.shape[0])
+	
+	np.random.shuffle(order)
+	im_data_r = im_data[order]
+	labs_r = labels[order]
 
-	### shuffle
-	np.random.shuffle(im_data_r)
-	np.random.shuffle(im_data_g)
-	np.random.shuffle(im_data_b)
+	np.random.shuffle(order)
+	im_data_g = im_data[order]
+	labs_g = labels[order]
+
+	np.random.shuffle(order)
+	im_data_b = im_data[order]
+	labs_b = labels[order]
 
 	### stack shuffled channels
 	im_data_stacked = np.concatenate((im_data_r, im_data_g, im_data_b), axis=3)
-	return im_data_stacked
+	labs_stacked = labs_r + 10 * labs_g + 100 * labs_b
+	return im_data_stacked, labs_stacked
 
 def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear', itrs=None):
 	plt.figure(fignum, figsize=(8, 6))
@@ -183,7 +190,7 @@ def train_ganist(ganist, im_data):
 
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
-		train_dataset = get_stack_mnist(im_data)
+		train_dataset, _ = get_stack_mnist(im_data)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
 		### train one epoch
@@ -233,20 +240,25 @@ def train_ganist(ganist, im_data):
 		eval_logs_names = ['energy_distance', 'energy_distance_norm']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path, itrs=itrs_logs)
 
-def eval_ganist(ganisy, im_data, draw_path=None):
-	### sample and batch size
-	sample_size = 1024
-	batch_size = 64
-	draw_size = 10
-	
-	### collect real and gen samples
-	r_samples = im_data[0:sample_size, ...].reshape((sample_size, -1))
-	g_samples = np.zeros(r_samples.shape)
+def sample_ganist(ganist, sample_size, batch_size=64):
+	g_samples = np.zeros([sample_size] + ganist.data_dim)
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
 		batch_len = g_samples[batch_start:batch_end, ...].shape[0]
 		g_samples[batch_start:batch_end, ...] = \
 			ganist.step(None, batch_len, gen_only=True).reshape((batch_len, -1))
+	return g_samples
+
+def eval_ganist(ganist, im_data, draw_path=None):
+	### sample and batch size
+	sample_size = 1024
+	batch_size = 64
+	draw_size = 10
+	energy_d = None
+	
+	### collect real and gen samples
+	r_samples = im_data[0:sample_size, ...].reshape((sample_size, -1))
+	g_samples = sample_ganist(ganist, sample_size)
 	
 	### calculate energy distance
 	rr_score = np.mean(np.sqrt(np.sum(np.square( \
@@ -255,6 +267,7 @@ def eval_ganist(ganisy, im_data, draw_path=None):
 		g_samples[0:sample_size//2, ...] - g_samples[sample_size//2:, ...]), axis=1)))
 	rg_score = np.mean(np.sqrt(np.sum(np.square( \
 		r_samples[0:sample_size//2, ...] - g_samples[0:sample_size//2, ...]), axis=1)))
+	energy_d = 2*rg_score - rr_score - gg_score, rg_score
 
 	### draw block image of gen samples
 	if draw_path is not None:
@@ -262,6 +275,68 @@ def eval_ganist(ganisy, im_data, draw_path=None):
 		im_block_draw(g_samples, draw_size, draw_path)
 
 	return 2*rg_score - rr_score - gg_score, rg_score
+
+'''
+Runs eval_modes and store the results in pathname
+'''
+def mode_analysis(mnet, im_data, pathname, labels=None):
+	mode_num, mode_count, mode_vars = eval_modes(mnet, im_data, labels)
+	with open(pathname, 'wb+') as fs:
+		pk.dump([mode_num, mode_count, mode_vars])
+	return mode_num, mode_count, mode_vars
+
+'''
+Returns #modes in stacked mnist, #im per modes, and average distance per mode.
+Images im_data shape is (N, 28, 28, 3)
+'''
+def eval_modes(mnet, im_data, labels=None):
+	batch_size = 64
+	mode_threshold = 0
+	data_size = im_data.shape[0]
+	im_class_ids = dict((i, list()) for i in range(1000))
+	if labels is None:
+		### classify images into modes
+		for batch_start in range(0, data_size, batch_size):
+			batch_end = batch_start + batch_size
+			preds = np.zeros(batch_size)
+			### red channel
+			batch_data = im_data[batch_start:batch_end, ..., 0]
+			preds += 1 * mnet.step(batch_data, pred_only=True)
+			### green channel
+			batch_data = im_data[batch_start:batch_end, ..., 1]
+			preds += 10 * mnet.step(batch_data, pred_only=True)
+			### blue channel
+			batch_data = im_data[batch_start:batch_end, ..., 2]
+			preds += 100 * mnet.step(batch_data, pred_only=True)
+			### put each image id into predicted class list
+			for i, c in enumerate(preds):
+				im_class_ids[c].append(batch_start+i)
+	else:
+		### put each image id into predicted class list
+		for i, c in enumerate(labels):
+			im_class_ids[c].append(i)
+
+	mode_count = np.zeros(1000) 
+	mode_vars = np.zeros(1000)
+	for c, l in im_class_ids.items():
+		mode_count[c] = len(l)
+		mode_vars[c] = eval_mode_var(im_data[l, ...]) if len(l) > 1 else 0.0
+	return np.sum(mode_count > mode_threshold), mode_count, mode_vars
+
+def eval_mode_var(im_data, n_neighbors=18, n_jobs=12):
+	### preprocess images
+	im_data.reshape((im_data.shape[0], -1))
+	### calculate isomap
+	nns = NearestNeighbors(n_neighbors=n_neighbors, algorithm='BallTree', n_jobs=n_jobs)
+	nns.fit(im_data)
+	kng = kneighbors_graph(nns, n_neighbors, mode='distance', n_jobs=n_jobs)
+	### calculate shortest path matrix
+	d_mat = graph_shortest_path(kng, method='auto', directed=False)
+	### calculate variance
+	d_tri = np.tril(d_mat)
+	count = np.sum(d_tri > 0)
+	d_var = 2.0 * np.sum(d_tri ** 2) / count
+	return d_var
 
 def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 	### dataset definition
@@ -272,7 +347,7 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 	itrs_logs = list()
 
 	### training configs
-	max_itr_total = 1e6
+	max_itr_total = 1e5
 	batch_size = 64
 	eval_step = 100
 
@@ -283,8 +358,12 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 	pbar = ProgressBar(maxval=max_itr_total, widgets=widgets)
 	pbar.start()
 
+	order = np.arange(train_size)
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
+		np.random.shuffle(order)
+		im_data_sh = im_data[order, ...]
+		labels_sh = labels[order, ...]
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
 		### train one epoch
@@ -294,15 +373,15 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 			pbar.update(itr_total)
 			batch_end = batch_start + batch_size
 			### fetch batch data
-			batch_data = im_data[batch_start:batch_end, ...]
-			batch_labels = labels[batch_start:batch_end, ...]
+			batch_data = im_data_sh[batch_start:batch_end, ...]
+			batch_labels = labels_sh[batch_start:batch_end, ...]
 			### train one step
 			batch_preds, batch_acc, batch_sum = mnet.step(batch_data, batch_labels)
 			mnet.write_sum(batch_sum, itr_total)
 			itr_total += 1
 
 			if itr_total % eval_step == 0 and eval_im_data is not None:
-				eval_loss, eval_acc = eval_mnist_net(eval_im_data, eval_labels, batch_size)
+				eval_loss, eval_acc = eval_mnist_net(mnet, eval_im_data, eval_labels, batch_size)
 				eval_logs.append([eval_loss, eval_acc])
 				itrs_logs.append(itr_total)
 
@@ -318,8 +397,9 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 		eval_logs_mat = np.array(eval_logs)
 		eval_logs_names = ['eval_loss', 'eval_acc']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, c_log_path, itrs=itrs_logs)
+	return eval_loss, eval_acc
 
-def eval_mnist_net(im_data, labels, batch_size):
+def eval_mnist_net(mnet, im_data, labels, batch_size):
 	eval_size = im_data.shape[0]
 	eval_sum = 0.0
 	eval_loss = 0.0
@@ -327,7 +407,6 @@ def eval_mnist_net(im_data, labels, batch_size):
 
 	### eval on all im_data
 	for batch_start in range(0, eval_size, batch_size):
-		pbar.update(itr_total)
 		batch_end = batch_start + batch_size
 		### fetch batch data
 		batch_data = im_data[batch_start:batch_end, ...]
@@ -338,12 +417,14 @@ def eval_mnist_net(im_data, labels, batch_size):
 		eval_loss += 1.0 * batch_loss * batch_data.shape[0]
 		eval_count += batch_data.shape[0]
 
-	return eval_sum / eval_count, eval_loss / eval_count
+	return eval_loss / eval_count, eval_sum / eval_count
 
 
 if __name__ == '__main__':
 	### read and process data
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
+	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_net_models'
+	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_g1/snapshots'
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
@@ -351,22 +432,49 @@ if __name__ == '__main__':
 	val_imgs = im_process(val_data[0])
 	test_labs = test_data[1]
 	test_imgs = im_process(test_data[0])
+	all_labs = np.concatenate([train_labs, val_labs, test_labs], axis=0)
+	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
 	
+	### create mnist classifier
+	mnet = mnist_net.MnistNet(c_log_path_sum)
+
 	### train mnist classifier
-	mnet = mnist_net(c_log_path_sum)
-	train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
+	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
+	#print ">>> validation loss: ", val_loss
+	#print ">>> validation accuracy: ", val_acc
+
+	### load mnist classifier
+	mnet.load(mnist_net_path)
 
 	### test mnist classifier
-	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs)
+	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
 	print ">>> test loss: ", test_loss
 	print ">>> test accuracy: ", test_acc
 
+	### draw true stacked mnist images
+	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs)
+	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
+	
 	### get a ganist instance
 	ganist = tf_ganist.Ganist(log_path_sum)
 
-	### draw true stacked mnist images
-	train_imgs_stack = get_stack_mnist(train_imgs)
-	im_block_draw(train_imgs_stack, 10, log_path_draw+'/true_samples.png')
-
 	### train ganist
-	train_ganist(ganist, train_imgs)
+	#train_ganist(ganist, all_imgs)
+
+	### load ganist
+	ganist.restore(ganist_path)
+
+	### mode eval the trained gan
+	r_samples = all_imgs_stack
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, log_path+'/mode_analysis_real.cpk', all_labs_stack)
+	print ">>> real_mode_num: ", mode_num
+	print ">>> real_mode_count: ", np.mean(mode_count)
+	print ">>> real_mode_num: ", np.mean(mode_vars)
+
+	g_samples = sample_ganist(ganist, sample_size)
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, log_path+'/mode_analysis_gen.cpk')
+	print ">>> gen_mode_num: ", mode_num
+	print ">>> gen_mode_count: ", np.mean(mode_count)
+	print ">>> gen_mode_num: ", np.mean(mode_vars)
+
+
