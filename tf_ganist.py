@@ -144,8 +144,8 @@ class Ganist:
 			self.d_opt = tf.train.AdamOptimizer(self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(self.d_loss, var_list=self.d_vars)
 
 		### summaries
-		g_loss_sum = tf.summary.scalar("d_loss", self.d_loss)
-		d_loss_sum = tf.summary.scalar("g_loss", self.d_loss)
+		g_loss_sum = tf.summary.scalar("g_loss", self.g_loss)
+		d_loss_sum = tf.summary.scalar("d_loss", self.d_loss)
 		self.summary = tf.summary.merge([g_loss_sum, d_loss_sum])
 
 	def build_gen(self, z, act, train_phase):
@@ -156,13 +156,13 @@ class Ganist:
 
 			### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
 			h1_us = tf.image.resize_nearest_neighbor(h1, [7, 7], name='us1')
-			h2 = act(conv2d(h1_us, 128, scope='conv2'))
+			h2 = act(conv2d(h1_us, 128, scope='conv1'))
 
 			h2_us = tf.image.resize_nearest_neighbor(h2, [14, 14], name='us2')
-			h3 = act(conv2d(h2_us, 64, scope='conv3'))
+			h3 = act(conv2d(h2_us, 64, scope='conv2'))
 
 			h3_us = tf.image.resize_nearest_neighbor(h3, [28, 28], name='us3')
-			h4 = conv2d(h3_us, 3, scope='conv4')
+			h4 = conv2d(h3_us, 3, scope='conv3')
 			
 			### output activation to bring data values in (-1,1)
 			o = tf.nn.tanh(h4)
@@ -178,7 +178,7 @@ class Ganist:
 
 			### fully connected discriminator
 			flat_h3 = tf.contrib.layers.flatten(h3)
-			o = dense(flat_h3, 1, scope='fco', reuse=reuse)
+			o = dense(h2, 1, scope='fco', reuse=reuse)
 			return o
 
 	def start_session(self):

@@ -13,7 +13,7 @@ Created on Tue Aug  8 11:10:34 2017
 
 import numpy as np
 import tf_ganist
-import mnist_net
+#import mnist_net
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -76,21 +76,36 @@ def get_stack_mnist(im_data, labels=None):
 	order = np.arange(im_data.shape[0])
 	
 	np.random.shuffle(order)
-	im_data_r = im_data[order]
+	im_data_r = im_data[order, ...]
 	labs_r = labels[order] if labels is not None else None
 
 	np.random.shuffle(order)
-	im_data_g = im_data[order]
+	im_data_g = im_data[order, ...]
 	labs_g = labels[order] if labels is not None else None
 
 	np.random.shuffle(order)
-	im_data_b = im_data[order]
+	im_data_b = im_data[order, ...]
 	labs_b = labels[order] if labels is not None else None
 
 	### stack shuffled channels
 	im_data_stacked = np.concatenate((im_data_r, im_data_g, im_data_b), axis=3)
 	labs_stacked = labs_r + 10 * labs_g + 100 * labs_b if labels is not None else None
 	return im_data_stacked, labs_stacked
+
+def get_stack_mnist_legacy(im_data):
+	### copy channels
+	im_data_r = np.copy(im_data)
+	im_data_g = np.copy(im_data)
+	im_data_b = np.copy(im_data)
+
+	### shuffle
+	np.random.shuffle(im_data_r)
+	np.random.shuffle(im_data_g)
+	np.random.shuffle(im_data_b)
+
+	### stack shuffled channels
+	im_data_stacked = np.concatenate((im_data_r, im_data_g, im_data_b), axis=3)
+	return im_data_stacked
 
 def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear', itrs=None):
 	plt.figure(fignum, figsize=(8, 6))
@@ -169,7 +184,7 @@ def train_ganist(ganist, im_data):
 	g_updates = 1
 	batch_size = 64
 	eval_step = 100
-	draw_step = 1000
+	draw_step = 100
 
 	### logs initi
 	g_logs = list()
@@ -190,7 +205,7 @@ def train_ganist(ganist, im_data):
 
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
-		train_dataset, _ = get_stack_mnist(im_data)
+		train_dataset = get_stack_mnist_legacy(im_data)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
 		### train one epoch
@@ -240,6 +255,9 @@ def train_ganist(ganist, im_data):
 		eval_logs_names = ['energy_distance', 'energy_distance_norm']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path, itrs=itrs_logs)
 
+'''
+Sample sample_size data points from ganist.
+'''
 def sample_ganist(ganist, sample_size, batch_size=64):
 	g_samples = np.zeros([sample_size] + ganist.data_dim)
 	for batch_start in range(0, sample_size, batch_size):
@@ -249,6 +267,9 @@ def sample_ganist(ganist, sample_size, batch_size=64):
 			ganist.step(None, batch_len, gen_only=True)
 	return g_samples
 
+'''
+Returns the energy distance of a trained GANist, and draws block images of GAN samples
+'''
 def eval_ganist(ganist, im_data, draw_path=None):
 	### sample and batch size
 	sample_size = 1024
@@ -322,6 +343,9 @@ def eval_modes(mnet, im_data, labels=None):
 		mode_vars[c] = eval_mode_var(im_data[l, ...]) if len(l) > 1 else 0.0
 	return np.sum(mode_count > mode_threshold), mode_count, mode_vars
 
+'''
+Return average pairwise iso-distance of im_data
+'''
 def eval_mode_var(im_data, n_neighbors=18, n_jobs=12):
 	### preprocess images
 	im_data.reshape((im_data.shape[0], -1))
@@ -437,7 +461,7 @@ if __name__ == '__main__':
 	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
 	
 	### create mnist classifier
-	mnet = mnist_net.MnistNet(c_log_path_sum)
+	#mnet = mnist_net.MnistNet(c_log_path_sum)
 
 	### train mnist classifier
 	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
@@ -448,12 +472,13 @@ if __name__ == '__main__':
 	#mnet.load(mnist_net_path)
 
 	### test mnist classifier
-	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
-	print ">>> test loss: ", test_loss
-	print ">>> test accuracy: ", test_acc
+	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
+	#print ">>> test loss: ", test_loss
+	#print ">>> test accuracy: ", test_acc
 
 	### draw true stacked mnist images
-	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs)
+	#all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs)
+	all_imgs_stack = get_stack_mnist_legacy(train_imgs)
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
 
 	### get a ganist instance
@@ -466,6 +491,7 @@ if __name__ == '__main__':
 	#ganist.load(ganist_path)
 
 	### mode eval the trained gan
+	'''
 	r_samples = all_imgs_stack
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, log_path+'/mode_analysis_real.cpk', all_labs_stack)
 	print ">>> real_mode_num: ", mode_num
@@ -477,5 +503,5 @@ if __name__ == '__main__':
 	print ">>> gen_mode_num: ", mode_num
 	print ">>> gen_mode_count: ", np.mean(mode_count)
 	print ">>> gen_mode_num: ", np.mean(mode_vars)
-
+	'''
 
