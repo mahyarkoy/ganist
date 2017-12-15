@@ -18,12 +18,12 @@ def lrelu(x, leak=0.2, name="lrelu"):
 		return f1 * x + f2 * abs(x)
 
 def conv2d(input_, output_dim,
-           k_h=5, k_w=5, d_h=1, d_w=1, stddev=0.02,
-           scope="conv2d", reuse=False):
+           k_h=3, k_w=3, d_h=1, d_w=1, stddev=0.02,
+           scope="conv2d", reuse=False, padding='SAME'):
     with tf.variable_scope(scope, reuse=reuse):
         w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
                             initializer=tf.contrib.layers.xavier_initializer())
-        conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding='SAME')
+        conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding=padding)
         biases = tf.get_variable('biases', [output_dim], initializer=tf.constant_initializer(0.0))
         # conv = tf.reshape(tf.nn.bias_add(conv, biases), conv.get_shape())
         conv = tf.nn.bias_add(conv, biases)
@@ -63,10 +63,10 @@ class Ganist:
 		self.log_dir = log_dir
 
 		### optimization parameters
-		self.g_lr = 1e-4
+		self.g_lr = 2e-4
 		self.g_beta1 = 0.5
 		self.g_beta2 = 0.5
-		self.d_lr = 1e-4
+		self.d_lr = 2e-4
 		self.d_beta1 = 0.5
 		self.d_beta2 = 0.5
 
@@ -75,13 +75,13 @@ class Ganist:
 		self.z_range = 1.0
 		self.data_dim = [28, 28, 3]
 		self.mm_loss_weight = 0.0
-		self.gp_loss_weight = 10.0
+		self.gp_loss_weight = 5.0
 		self.d_loss_type = 'was'
 		self.g_loss_type = 'was'
 		#self.d_act = tf.tanh
 		#self.g_act = tf.tanh
 		self.d_act = lrelu
-		self.g_act = tf.nn.relu
+		self.g_act = lrelu
 
 		### init graph and session
 		self.build_graph()
@@ -151,15 +151,15 @@ class Ganist:
 	def build_gen(self, z, act, train_phase):
 		with tf.variable_scope('g_net'):
 			### fully connected from hidden z to image shape
-			z_fc = act(dense(z, 4*4*256, scope='fcz'))
-			h1 = tf.reshape(z_fc, [-1, 4, 4, 256])
+			z_fc = act(dense(z, 4*4*64, scope='fcz'))
+			h1 = tf.reshape(z_fc, [-1, 4, 4, 64])
 
 			### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
 			h1_us = tf.image.resize_nearest_neighbor(h1, [7, 7], name='us1')
-			h2 = act(conv2d(h1_us, 128, scope='conv1'))
+			h2 = act(conv2d(h1_us, 32, scope='conv1'))
 
 			h2_us = tf.image.resize_nearest_neighbor(h2, [14, 14], name='us2')
-			h3 = act(conv2d(h2_us, 64, scope='conv2'))
+			h3 = act(conv2d(h2_us, 16, scope='conv2'))
 
 			h3_us = tf.image.resize_nearest_neighbor(h3, [28, 28], name='us3')
 			h4 = conv2d(h3_us, 3, scope='conv3')
@@ -172,13 +172,15 @@ class Ganist:
 	def build_dis(self, data_layer, act, train_phase, reuse=False):
 		with tf.variable_scope('d_net'):
 			### encoding the 28*28*3 image with conv into 3*3*256
-			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
-			h2 = act(conv2d(h1, 128, d_h=2, d_w=2, scope='conv2', reuse=reuse))
-			h3 = act(conv2d(h2, 256, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+			h1 = act(conv2d(data_layer, 16, d_h=2, d_w=2, scope='conv1', reuse=reuse))
+			h2 = act(conv2d(h1, 32, d_h=2, d_w=2, scope='conv2', reuse=reuse))
+			#h3 = act(conv2d(h2, 64, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+			#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
 
 			### fully connected discriminator
-			flat_h3 = tf.contrib.layers.flatten(h3)
-			o = dense(h2, 1, scope='fco', reuse=reuse)
+			#flat_h3 = tf.contrib.layers.flatten(h3)
+			flat_h3 = tf.reshape(h2, [-1, 32*7*7])
+			o = dense(flat_h3, 1, scope='fco', reuse=reuse)
 			return o
 
 	def start_session(self):
@@ -192,9 +194,9 @@ class Ganist:
 	def end_session(self):
 		self.sess.close()
 
-	def clean(self):
-		self.sess.close()
-		tf.reset_default_graph()
+	#def clean(self):
+#		self.sess.close()
+		#tf.reset_default_graph()
 
 	def save(self, fname):
 		self.saver.save(self.sess, fname)
@@ -236,6 +238,7 @@ class Ganist:
 		if not gen_update:
 			res_list = [self.g_layer, self.summary, self.d_opt]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
+			#print '>>> r_logits shape:', res_list[3].shape
 		else:
 			res_list = [self.g_layer, self.summary, self.g_opt]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)

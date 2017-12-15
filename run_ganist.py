@@ -182,7 +182,7 @@ def train_ganist(ganist, im_data):
 	g_max_itr = 2e4
 	d_updates = 5
 	g_updates = 1
-	batch_size = 64
+	batch_size = 4
 	eval_step = 100
 	draw_step = 100
 
@@ -287,7 +287,6 @@ def eval_ganist(ganist, im_data, draw_path=None):
 		g_samples[0:sample_size//2, ...] - g_samples[sample_size//2:, ...]), axis=1)))
 	rg_score = np.mean(np.sqrt(np.sum(np.square( \
 		r_samples[0:sample_size//2, ...] - g_samples[0:sample_size//2, ...]), axis=1)))
-	energy_d = 2*rg_score - rr_score - gg_score, rg_score
 
 	### draw block image of gen samples
 	if draw_path is not None:
@@ -453,12 +452,12 @@ if __name__ == '__main__':
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
-	val_labs = val_data[1]
-	val_imgs = im_process(val_data[0])
-	test_labs = test_data[1]
-	test_imgs = im_process(test_data[0])
-	all_labs = np.concatenate([train_labs, val_labs, test_labs], axis=0)
-	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
+	#val_labs = val_data[1]
+	#val_imgs = im_process(val_data[0])
+	#test_labs = test_data[1]
+	#test_imgs = im_process(test_data[0])
+	#all_labs = np.concatenate([train_labs, val_labs, test_labs], axis=0)
+	#all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
 	
 	### create mnist classifier
 	#mnet = mnist_net.MnistNet(c_log_path_sum)
