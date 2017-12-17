@@ -12,8 +12,7 @@ Created on Tue Aug  8 11:10:34 2017
 # for i in {0..7}; do mv baby_log_a"$((i))" baby_log_"$((i+74))"; done
 
 import numpy as np
-import tf_ganist
-#import mnist_net
+import tensorflow as tf
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -27,6 +26,14 @@ from skimage.transform import resize
 from sklearn.neighbors import NearestNeighbors, kneighbors_graph
 from sklearn.utils.graph import graph_shortest_path
 
+np.random.seed(13)
+tf.set_random_seed(13)
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
+os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
+
+import tf_ganist
+import mnist_net
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
@@ -147,7 +154,7 @@ def im_block_draw(im_data, draw_size, path, separate_channels=True):
 	fig.clf()
 	if not separate_channels:
 		fig.imshow(im_draw)
-		fig.savefig(path)
+		fig.savefig(path, dpi=300)
 	else:
 		im_tmp = np.zeros(im_draw.shape)
 		ax = fig.add_subplot(1, 3, 1)
@@ -298,35 +305,41 @@ def eval_ganist(ganist, im_data, draw_path=None):
 '''
 Runs eval_modes and store the results in pathname
 '''
-def mode_analysis(mnet, im_data, pathname, labels=None):
-	mode_num, mode_count, mode_vars = eval_modes(mnet, im_data, labels)
+def mode_analysis(mnet, im_data, pathname, labels=None, draw_list=None, draw_name='gen'):
+	mode_num, mode_count, mode_vars = eval_modes(mnet, im_data, labels, draw_list, draw_name)
 	with open(pathname, 'wb+') as fs:
-		pk.dump([mode_num, mode_count, mode_vars])
+		pk.dump([mode_num, mode_count, mode_vars], fs)
 	return mode_num, mode_count, mode_vars
 
 '''
 Returns #modes in stacked mnist, #im per modes, and average distance per mode.
 Images im_data shape is (N, 28, 28, 3)
 '''
-def eval_modes(mnet, im_data, labels=None):
+def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	batch_size = 64
 	mode_threshold = 0
 	data_size = im_data.shape[0]
 	im_class_ids = dict((i, list()) for i in range(1000))
+	print '>>> Mode Eval Started'
+	widgets = ["Eval_modes", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=data_size, widgets=widgets)
+	pbar.start()
 	if labels is None:
 		### classify images into modes
 		for batch_start in range(0, data_size, batch_size):
+			pbar.update(batch_start)
 			batch_end = batch_start + batch_size
-			preds = np.zeros(batch_size)
+			batch_len = batch_size if batch_end < data_size else data_size - batch_start
+			preds = np.zeros(batch_len)
 			### red channel
-			batch_data = im_data[batch_start:batch_end, ..., 0]
-			preds += 1 * mnet.step(batch_data, pred_only=True)
+			batch_data = im_data[batch_start:batch_end, ..., 0][..., np.newaxis]
+			preds += 1 * np.argmax(mnet.step(batch_data, pred_only=True), axis=1)
 			### green channel
-			batch_data = im_data[batch_start:batch_end, ..., 1]
-			preds += 10 * mnet.step(batch_data, pred_only=True)
+			batch_data = im_data[batch_start:batch_end, ..., 1][..., np.newaxis]
+			preds += 10 * np.argmax(mnet.step(batch_data, pred_only=True), axis=1)
 			### blue channel
-			batch_data = im_data[batch_start:batch_end, ..., 2]
-			preds += 100 * mnet.step(batch_data, pred_only=True)
+			batch_data = im_data[batch_start:batch_end, ..., 2][..., np.newaxis]
+			preds += 100 * np.argmax(mnet.step(batch_data, pred_only=True), axis=1)
 			### put each image id into predicted class list
 			for i, c in enumerate(preds):
 				im_class_ids[c].append(batch_start+i)
@@ -335,22 +348,37 @@ def eval_modes(mnet, im_data, labels=None):
 		for i, c in enumerate(labels):
 			im_class_ids[c].append(i)
 
+	### draw samples from modes
+	if draw_list is not None:
+		print '>>> Mode Draw Started'
+		for c in draw_list:
+			l = im_class_ids[c]
+			if len(l) >= 25:
+				im_block_draw(im_data[l, ...], 5, 
+					log_path_draw+'/'+draw_name+'_class_%d.png' % c)
+
+	### analyze modes
+	print '>>> Mode Var Started'
 	mode_count = np.zeros(1000) 
 	mode_vars = np.zeros(1000)
+	widgets = ["Var_modes", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=1000, widgets=widgets)
+	pbar.start()
 	for c, l in im_class_ids.items():
+		pbar.update(c)
 		mode_count[c] = len(l)
-		mode_vars[c] = eval_mode_var(im_data[l, ...]) if len(l) > 1 else 0.0
+		mode_vars[c] = eval_mode_var(im_data[l, ...], 18) if len(l) > 18 else 0.0
 	return np.sum(mode_count > mode_threshold), mode_count, mode_vars
 
 '''
 Return average pairwise iso-distance of im_data
 '''
-def eval_mode_var(im_data, n_neighbors=18, n_jobs=12):
+def eval_mode_var(im_data, n_neighbors, n_jobs=12):
 	### preprocess images
-	im_data.reshape((im_data.shape[0], -1))
+	eval_data = im_data.reshape((im_data.shape[0], -1))
 	### calculate isomap
-	nns = NearestNeighbors(n_neighbors=n_neighbors, algorithm='BallTree', n_jobs=n_jobs)
-	nns.fit(im_data)
+	nns = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree', n_jobs=n_jobs)
+	nns.fit(eval_data)
 	kng = kneighbors_graph(nns, n_neighbors, mode='distance', n_jobs=n_jobs)
 	### calculate shortest path matrix
 	d_mat = graph_shortest_path(kng, method='auto', directed=False)
@@ -445,62 +473,124 @@ def eval_mnist_net(mnet, im_data, labels, batch_size):
 if __name__ == '__main__':
 	### read and process data
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
+	stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
+	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
 	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_g1/snapshots/model_166666_1000000.h5'
-	sample_size = 70000
+	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_3/snapshots/model_333333_2000000.h5'
+	sample_size = 350000
 
+	'''
+	DATASET LOADING AND DRAWING
+	'''
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
-	#val_labs = val_data[1]
-	#val_imgs = im_process(val_data[0])
-	#test_labs = test_data[1]
-	#test_imgs = im_process(test_data[0])
-	#all_labs = np.concatenate([train_labs, val_labs, test_labs], axis=0)
-	#all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
-	
-	### create mnist classifier
-	#mnet = mnist_net.MnistNet(c_log_path_sum)
+	val_labs = val_data[1]
+	val_imgs = im_process(val_data[0])
+	test_labs = test_data[1]
+	test_imgs = im_process(test_data[0])
+	all_labs = np.concatenate([train_labs, val_labs, test_labs], axis=0)
+	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
 
+	### draw true stacked mnist images
+	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs)
+		
+	#all_imgs_stack = get_stack_mnist_legacy(train_imgs)
+	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
+	
+	'''
+	TENSORFLOW SETUP
+	'''
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	sess = tf.Session(config=config)
+	### create mnist classifier
+	mnet = mnist_net.MnistNet(sess, c_log_path_sum)
+	### get a ganist instance
+	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	### init variables
+	sess.run(tf.global_variables_initializer())
+
+	'''
+	CLASSIFIER SETUP SECTION
+	'''
 	### train mnist classifier
 	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
 	#print ">>> validation loss: ", val_loss
 	#print ">>> validation accuracy: ", val_acc
 
 	### load mnist classifier
-	#mnet.load(mnist_net_path)
+	mnet.load(mnist_net_path)
 
 	### test mnist classifier
-	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
-	#print ">>> test loss: ", test_loss
-	#print ">>> test accuracy: ", test_acc
+	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
+	print ">>> test loss: ", test_loss
+	print ">>> test accuracy: ", test_acc
 
-	### draw true stacked mnist images
-	#all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs)
-	all_imgs_stack = get_stack_mnist_legacy(train_imgs)
-	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
-
-	### get a ganist instance
-	ganist = tf_ganist.Ganist(log_path_sum)
+	'''
+	GAN SETUP SECTION
+	'''
 
 	### train ganist
-	train_ganist(ganist, train_imgs)
+	#train_ganist(ganist, train_imgs)
 
 	### load ganist
-	#ganist.load(ganist_path)
+	ganist.load(ganist_path)
 
-	### mode eval the trained gan
 	'''
-	r_samples = all_imgs_stack
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, log_path+'/mode_analysis_real.cpk', all_labs_stack)
+	EVALUATION SECTION
+	'''
+	### create stack mnist dataset of all_imgs_size*factor
+	'''
+	factor = 5
+	r_samples = np.zeros((factor,)+all_imgs_stack.shape)
+	r_labs = np.zeros((factor,)+all_labs_stack.shape)
+	for i in range(factor):
+		ims, labs = get_stack_mnist(all_imgs, all_labs)
+		r_samples[i, ...] = ims[...]
+		r_labs[i, ...] = labs[...]
+	r_samples = r_samples.reshape((-1,)+all_imgs_stack.shape[1:])
+	r_labs = r_labs.flatten()
+
+	print '>>> r_samples shape: ', r_samples.shape
+	print '>>> r_labs shape: ', r_labs.shape
+	with open(log_path+'/stack_mnist_dataset.cpk', 'wb') as fs:
+		pk.dump([r_samples, r_labs], fs)
+	### OR load stack mnist dataset
+	with open(stack_mnist_path, 'rb') as fs:
+		r_samples, r_labs = pk.load(fs)
+	### mode eval real data
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
+		log_path+'/mode_analysis_real.cpk', r_labs)
+	'''
+	
+	### OR load mode eval real data
+	with open(stack_mnist_mode_path, 'rb') as fs:
+		mode_num, mode_count, mode_vars = pk.load(fs)
+
+	pr = 1.0 * mode_count / sample_size
 	print ">>> real_mode_num: ", mode_num
-	print ">>> real_mode_count: ", np.mean(mode_count)
-	print ">>> real_mode_num: ", np.mean(mode_vars)
+	print ">>> real_mode_count_std: ", np.std(mode_count)
+	print ">>> real_mode_var ", np.mean(mode_vars)
 
+	### sample gen data
 	g_samples = sample_ganist(ganist, sample_size)
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, log_path+'/mode_analysis_gen.cpk')
+	im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
+	### mode eval gen data
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
+		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
+	pg = 1.0 * mode_count / sample_size
 	print ">>> gen_mode_num: ", mode_num
-	print ">>> gen_mode_count: ", np.mean(mode_count)
-	print ">>> gen_mode_num: ", np.mean(mode_vars)
-	'''
+	print ">>> gen_mode_count: ", np.std(mode_count)
+	print ">>> gen_mode_var: ", np.mean(mode_vars)
+
+	### KL and JSD computation
+	kl_g = np.sum(pg*np.log(pg / pr))
+	kl_p = np.sum(pr*np.log(pr / pg))
+	jsd = (np.sum(pg*np.log(2 * pg / (pg+pr))) + np.sum(pr*np.log(2 * pr / (pg+pr)))) / 2.0
+	print ">>> KL(g||p): ", kl_g
+	print ">>> KL(p||g): ", kl_p
+	print ">>> JSD(g||p): ", jsd
+
+	sess.close()
 

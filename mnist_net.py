@@ -4,8 +4,8 @@ import os
 #os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 #os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
 
-np.random.seed(13)
-tf.set_random_seed(13)
+#np.random.seed(13)
+#tf.set_random_seed(13)
 
 tf_dtype = tf.float32
 np_dtype = 'float32'
@@ -58,9 +58,10 @@ def dense(x, h_size, scope, reuse=False):
 
 ### Mnist Classifier Class definition
 class MnistNet:
-	def __init__(self, log_dir='logs'):
+	def __init__(self, sess, log_dir='logs'):
 		### run parameters
 		self.log_dir = log_dir
+		self.sess = sess
 
 		### optimization parameters
 		self.lr = 1e-4
@@ -76,38 +77,36 @@ class MnistNet:
 		self.build_graph()
 		self.start_session()
 
-	def __del__(self):
-		self.end_session()
-
 	def build_graph(self):
-		### define placeholders for image and label inputs
-		self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
-		self.labels = tf.placeholder(tf_dtype, [None, self.num_class], name='labs_input')
-		self.train_phase = tf.placeholder(tf.bool, name='phase')
+		with tf.name_scope('mnist_net'):
+			### define placeholders for image and label inputs
+			self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
+			self.labels = tf.placeholder(tf_dtype, [None, self.num_class], name='labs_input')
+			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
-		### build classifier
-		self.logits = self.build_classifier(self.im_input, self.c_act, self.train_phase)
+			### build classifier
+			self.logits = self.build_classifier(self.im_input, self.c_act, self.train_phase)
 
-		### build losses, preds and acc
-		self.c_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.labels), axis=None)
-		self.preds = tf.nn.softmax(self.logits)
-		self.acc = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(self.preds, axis=1), tf.argmax(self.labels, axis=1)), tf_dtype))
+			### build losses, preds and acc
+			self.c_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.labels), axis=None)
+			self.preds = tf.nn.softmax(self.logits)
+			self.acc = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(self.preds, axis=1), tf.argmax(self.labels, axis=1)), tf_dtype))
 
-		### collect params
-		self.c_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "c_net")
+			### collect params
+			self.c_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "c_net")
 
-		### build optimizers
-		update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-		with tf.control_dependencies(update_ops):
-			self.c_opt = tf.train.AdamOptimizer(self.lr, beta1=self.beta1, beta2=self.beta2).minimize(self.c_loss, var_list=self.c_vars)
+			### build optimizers
+			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+			with tf.control_dependencies(update_ops):
+				self.c_opt = tf.train.AdamOptimizer(self.lr, beta1=self.beta1, beta2=self.beta2).minimize(self.c_loss, var_list=self.c_vars)
 
-		### summaries
-		train_loss_sum = tf.summary.scalar("train_loss", self.c_loss)
-		train_acc = tf.summary.scalar("train_acc", self.acc)
-		eval_loss_sum = tf.summary.scalar("eval_loss", self.c_loss)
-		eval_acc = tf.summary.scalar("eval_acc", self.acc)
-		self.train_summary = tf.summary.merge([train_loss_sum, train_acc])
-		self.eval_summary = tf.summary.merge([eval_loss_sum, eval_acc])
+			### summaries
+			train_loss_sum = tf.summary.scalar("train_loss", self.c_loss)
+			train_acc = tf.summary.scalar("train_acc", self.acc)
+			eval_loss_sum = tf.summary.scalar("eval_loss", self.c_loss)
+			eval_acc = tf.summary.scalar("eval_acc", self.acc)
+			self.train_summary = tf.summary.merge([train_loss_sum, train_acc])
+			self.eval_summary = tf.summary.merge([eval_loss_sum, eval_acc])
 
 	def build_classifier(self, data_layer, act, train_phase, reuse=False):
 		with tf.variable_scope('c_net'):
@@ -122,19 +121,8 @@ class MnistNet:
 			return o
 
 	def start_session(self):
-		gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
-		config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-		self.saver = tf.train.Saver(tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=10)
-		self.sess = tf.Session(config=config)
-		self.sess.run(tf.global_variables_initializer())
+		self.saver = tf.train.Saver(self.c_vars, keep_checkpoint_every_n_hours=1, max_to_keep=10)
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
-
-	def end_session(self):
-		self.sess.close()
-
-	def clean(self):
-		self.sess.close()
-		tf.reset_default_graph()
 
 	def save(self, fname):
 		self.saver.save(self.sess, fname)
@@ -153,7 +141,7 @@ class MnistNet:
 		if pred_only:
 			feed_dict = {self.im_input: batch_data, self.train_phase: False}
 			preds = self.sess.run(self.preds, feed_dict=feed_dict)
-			return preds.flatten()
+			return preds
 
 		### labels setup to matrix
 		mat_labels = 0.1 * np.ones((batch_size, self.num_class)) / (self.num_class-1)
@@ -164,7 +152,7 @@ class MnistNet:
 			feed_dict = {self.im_input: batch_data, self.labels: mat_labels, self.train_phase: False}
 			res_list = [self.preds, self.acc, self.c_loss]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
-			return res_list[0].flatten(), res_list[1], res_list[2]
+			return res_list[0], res_list[1], res_list[2]
 
 		### run one training step on classifier and return preds, acc and sum
 		feed_dict = {self.im_input:batch_data, self.labels: mat_labels, self.train_phase: True}
@@ -172,4 +160,4 @@ class MnistNet:
 		res_list = self.sess.run(res_list, feed_dict=feed_dict)
 
 		### return preds, acc and sum
-		return res_list[0].flatten(), res_list[1], res_list[2]
+		return res_list[0], res_list[1], res_list[2]
