@@ -189,7 +189,7 @@ def train_ganist(ganist, im_data):
 	g_max_itr = 2e4
 	d_updates = 5
 	g_updates = 1
-	batch_size = 4
+	batch_size = 32
 	eval_step = 100
 	draw_step = 100
 
@@ -198,6 +198,7 @@ def train_ganist(ganist, im_data):
 	d_r_logs = list()
 	d_g_logs = list()
 	eval_logs = list()
+	stats_logs = list()
 	itrs_logs = list()
 
 	### training inits
@@ -244,9 +245,10 @@ def train_ganist(ganist, im_data):
 				### evaluate energy distance between real and gen distributions
 				if itr_total % eval_step == 0:
 					draw_path = log_path_draw+'/gen_sample_%d.png' % itr_total if itr_total % draw_step == 0 else None
-					e_dist, e_norm = eval_ganist(ganist, train_dataset, draw_path)
+					e_dist, e_norm, net_stats = eval_ganist(ganist, train_dataset, draw_path)
 					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
+					stats_logs.append(net_stats)
 					itrs_logs.append(itr_total)
 
 				if itr_total >= max_itr_total:
@@ -259,8 +261,11 @@ def train_ganist(ganist, im_data):
 		if len(eval_logs) < 2:
 			continue
 		eval_logs_mat = np.array(eval_logs)
+		stats_logs_mat = np.array(stats_logs)
 		eval_logs_names = ['energy_distance', 'energy_distance_norm']
+		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 'vars_count']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path, itrs=itrs_logs)
+		plot_time_mat(stats_logs_mat, stats_logs_names, 1, log_path, itrs=itrs_logs)
 
 '''
 Sample sample_size data points from ganist.
@@ -300,7 +305,10 @@ def eval_ganist(ganist, im_data, draw_path=None):
 		g_samples = g_samples.reshape((-1,) + im_data.shape[1:])
 		im_block_draw(g_samples, draw_size, draw_path)
 
-	return 2*rg_score - rr_score - gg_score, rg_score
+	### get network stats
+	net_stats = ganist.step(None, None, stats_only=True)
+
+	return 2*rg_score - rr_score - gg_score, rg_score, net_stats
 
 '''
 Runs eval_modes and store the results in pathname
@@ -532,10 +540,10 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	#train_ganist(ganist, train_imgs)
+	train_ganist(ganist, train_imgs)
 
 	### load ganist
-	ganist.load(ganist_path)
+	#ganist.load(ganist_path)
 
 	'''
 	EVALUATION SECTION
@@ -563,7 +571,7 @@ if __name__ == '__main__':
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
 		log_path+'/mode_analysis_real.cpk', r_labs)
 	'''
-	
+
 	### OR load mode eval real data
 	with open(stack_mnist_mode_path, 'rb') as fs:
 		mode_num, mode_count, mode_vars = pk.load(fs)

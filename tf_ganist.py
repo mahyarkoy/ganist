@@ -105,15 +105,28 @@ class Ganist:
 
 			### build d losses
 			if self.d_loss_type == 'log':
-				self.d_r_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.r_logits, labels=tf.ones_like(self.r_logits, tf_dtype)), axis=None)
-				self.d_g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.g_logits, labels=tf.zeros_like(self.g_logits, tf_dtype)), axis=None)
+				self.d_r_loss = tf.reduce_mean(
+					tf.nn.sigmoid_cross_entropy_with_logits(
+						logits=self.r_logits, labels=tf.ones_like(self.r_logits, tf_dtype)), axis=None)
+				self.d_g_loss = tf.reduce_mean(
+					tf.nn.sigmoid_cross_entropy_with_logits(
+						logits=self.g_logits, labels=tf.zeros_like(self.g_logits, tf_dtype)), axis=None)
 				self.d_loss = self.d_r_loss + self.d_g_loss
 			elif self.d_loss_type == 'was':
 				self.d_r_loss = -tf.reduce_mean(self.r_logits, axis=None)
 				self.d_g_loss = tf.reduce_mean(self.g_logits, axis=None)
 				rg_layer = (1.0 - self.e_input) * self.g_layer + self.e_input * self.im_input
 				rg_logits = self.build_dis(rg_layer, self.d_act, self.train_phase, reuse=True)
-				gp_loss = tf.reduce_mean(tf.square(tf.sqrt(tf.reduce_sum(tf.square(tf.gradients(rg_logits, rg_layer)), axis=1)) - 1.0), axis=None)
+				#gp_loss = tf.reduce_mean(tf.square(tf.sqrt(tf.reduce_sum(tf.square(tf.gradients(rg_logits, rg_layer)), axis=1)) - 1.0), axis=None)
+				### NaN free norm gradient
+				rg_grad = tf.gradients(rg_logits, rg_layer)
+				rg_grad_flat = tf.reshape(rg_grad, [-1, np.prod(self.data_dim)])
+				rg_grad_ok = tf.reduce_sum(tf.square(rg_grad_flat), axis=1) > 0.
+				rg_grad_safe = tf.where(rg_grad_ok, rg_grad_flat, tf.ones_like(rg_grad_flat))
+				rg_grad_abs = tf.where(rg_grad_flat >= 0., rg_grad_flat, -rg_grad_flat)
+				rg_grad_norm = tf.where(rg_grad_ok, 
+					tf.norm(rg_grad_safe, axis=1), tf.reduce_sum(rg_grad_abs, axis=1))
+				gp_loss = tf.reduce_mean(tf.square(rg_grad_norm - 1.0))
 				self.d_loss = self.d_r_loss + self.d_g_loss + self.gp_loss_weight * gp_loss
 			else:
 				raise ValueError('>>> d_loss_type: %s is not defined!' % self.d_loss_type)
@@ -135,6 +148,21 @@ class Ganist:
 			### collect params
 			self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
 			self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net")
+
+			### compute stat of weights
+			self.nan_vars = 0.
+			self.inf_vars = 0.
+			self.zero_vars = 0.
+			self.count_vars = 0
+			for v in self.g_vars + self.d_vars:
+				self.nan_vars += tf.reduce_sum(tf.cast(tf.is_nan(v), tf_dtype))
+				self.inf_vars += tf.reduce_sum(tf.cast(tf.is_inf(v), tf_dtype))
+				self.zero_vars += tf.reduce_sum(tf.cast(tf.square(v) < 1e-6, tf_dtype))
+				self.count_vars += tf.reduce_prod(v.get_shape())
+			self.count_vars = tf.cast(self.count_vars, tf_dtype)
+			self.nan_vars /= self.count_vars 
+			self.inf_vars /= self.count_vars
+			self.zero_vars /= self.count_vars
 
 			### build optimizers
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -195,9 +223,15 @@ class Ganist:
 	def write_sum(self, sum_str, counter):
 		self.writer.add_summary(sum_str, counter)
 
-	def step(self, batch_data, batch_size, gen_update=False, dis_only=False, gen_only=False, z_data=None):
+	def step(self, batch_data, batch_size, gen_update=False, 
+		dis_only=False, gen_only=False, stats_only=False, z_data=None):
 		batch_size = batch_data.shape[0] if batch_data is not None else batch_size		
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
+
+		if stats_only:
+			res_list = [self.nan_vars, self.inf_vars, self.zero_vars, self.count_vars]
+			res_list = self.sess.run(res_list, feed_dict={})
+			return res_list
 
 		### sample e from uniform (-1,1): for gp penalty in WGAN
 		e_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1, 1, 1))
