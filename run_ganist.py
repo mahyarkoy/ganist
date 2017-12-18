@@ -37,8 +37,10 @@ import mnist_net
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
+arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
 args = arg_parser.parse_args()
 log_path = args.log_path
+eval_int = args.eval_int
 c_log_path = log_path+'/classifier'
 log_path_snap = log_path+'/snapshots'
 c_log_path_snap = c_log_path+'/snapshots'
@@ -190,8 +192,8 @@ def train_ganist(ganist, im_data):
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
-	eval_step = 100
-	draw_step = 100
+	eval_step = eval_int
+	draw_step = eval_int
 
 	### logs initi
 	g_logs = list()
@@ -589,7 +591,7 @@ if __name__ == '__main__':
 		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
 	pg = 1.0 * mode_count / sample_size
 	print ">>> gen_mode_num: ", mode_num
-	print ">>> gen_mode_count: ", np.std(mode_count)
+	print ">>> gen_mode_count_std: ", np.std(mode_count)
 	print ">>> gen_mode_var: ", np.mean(mode_vars)
 
 	### KL and JSD computation
