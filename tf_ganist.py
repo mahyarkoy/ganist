@@ -76,7 +76,7 @@ class Ganist:
 		self.z_range = 1.0
 		self.data_dim = [28, 28, 3]
 		self.mm_loss_weight = 0.0
-		self.gp_loss_weight = 5.0
+		self.gp_loss_weight = 10.0
 		self.d_loss_type = 'was'
 		self.g_loss_type = 'was'
 		#self.d_act = tf.tanh

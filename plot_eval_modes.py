@@ -56,8 +56,8 @@ def plot_analysis(ax, vals, name, window_size=50):
 	sm_std_vals = np.convolve(std_vals, k, 'same')
 	sm_std_vals[0:window_size/2+1] = None
 	sm_std_vals[-window_size/2:] = None
-	ax.plot(sm_mean_vals+sm_std_vals, linestyle='--', linewidth=1, color=cp[0].get_color())
-	ax.plot(sm_mean_vals-sm_std_vals, linestyle='--', linewidth=1, color=cp[0].get_color())
+	ax.plot(sm_mean_vals+sm_std_vals, linestyle='--', linewidth=0.5, color=cp[0].get_color())
+	ax.plot(sm_mean_vals-sm_std_vals, linestyle='--', linewidth=0.5, color=cp[0].get_color())
 
 def setup_plot_ax(fignum, x_axis, y_axis, title):
 	fig = plt.figure(fignum)
@@ -71,7 +71,7 @@ def setup_plot_ax(fignum, x_axis, y_axis, title):
 
 if __name__ == '__main__':
 	real_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_10_%d/mode_analysis_gen.cpk']
+	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_cart_1/run_%d/mode_analysis_gen.cpk']
 	names = ['monet_10_mult']
 	log_path = '/media/evl/Public/Mahyar/ganist_logs'
 

@@ -26,21 +26,24 @@ from skimage.transform import resize
 from sklearn.neighbors import NearestNeighbors, kneighbors_graph
 from sklearn.utils.graph import graph_shortest_path
 
-np.random.seed(13)
-tf.set_random_seed(13)
-
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
-
-import tf_ganist
-import mnist_net
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
 arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
+arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
 args = arg_parser.parse_args()
 log_path = args.log_path
-eval_int = args.eval_int
+eval_int = int(args.eval_int)
+run_seed = int(args.seed)
+
+np.random.seed(run_seed)
+tf.set_random_seed(run_seed)
+
+import tf_ganist
+import mnist_net
+
 c_log_path = log_path+'/classifier'
 log_path_snap = log_path+'/snapshots'
 c_log_path_snap = c_log_path+'/snapshots'
@@ -187,7 +190,7 @@ def train_ganist(ganist, im_data):
 	train_size = im_data.shape[0]
 
 	### baby gan training configs
-	max_itr_total = 1e6
+	max_itr_total = 5e5
 	g_max_itr = 2e4
 	d_updates = 5
 	g_updates = 1
