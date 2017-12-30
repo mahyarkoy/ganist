@@ -72,9 +72,10 @@ class Ganist:
 		self.d_beta2 = 0.5
 
 		### network parameters
-		self.z_dim = [100] #256
+		self.z_dim = 100 #256
+		self.man_dim = 10
 		self.z_range = 1.0
-		self.data_dim = [28, 28, 3]
+		self.data_dim = [28, 28, 1]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.d_loss_type = 'was'
@@ -92,7 +93,7 @@ class Ganist:
 		with tf.name_scope('ganist'):
 			### define placeholders for image and label inputs
 			self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
-			self.z_input = tf.placeholder(tf_dtype, [None]+self.z_dim, name='z_input')
+			self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
 			self.e_input = tf.placeholder(tf_dtype, [None, 1, 1, 1], name='e_input')
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
@@ -189,7 +190,7 @@ class Ganist:
 			h3 = act(conv2d(h2_us, 32, scope='conv2'))
 
 			h3_us = tf.image.resize_nearest_neighbor(h3, [28, 28], name='us3')
-			h4 = conv2d(h3_us, 3, scope='conv3')
+			h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
 			
 			### output activation to bring data values in (-1,1)
 			o = tf.nn.tanh(h4)
@@ -205,8 +206,8 @@ class Ganist:
 			#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
 
 			### fully connected discriminator
-			#flat_h3 = tf.contrib.layers.flatten(h3)
-			flat_h3 = tf.reshape(h2, [-1, 64])
+			flat_h3 = tf.contrib.layers.flatten(h2)
+			#flat_h3 = tf.reshape(h2, [-1, 64])
 			o = dense(flat_h3, 1, scope='fco', reuse=reuse)
 			return o
 
@@ -245,8 +246,15 @@ class Ganist:
 
 		### sample z from uniform (-1,1)
 		if z_data is None:
-			z_data = np.random.uniform(low=-self.z_range, high=self.z_range, size=[batch_size]+self.z_dim)
+			z_data = np.random.uniform(low=-self.z_range, high=self.z_range, 
+				size=[batch_size, self.z_dim-self.man_dim])
 			#z_data = np.random.normal(loc=0.0, scale=1.0, size=(batch_size, self.z_dim))
+			if self.man_dim > 0:
+				### select manifold of each random point (1 hot)
+				man_id = np.random.choice(self.man_dim, batch_size)
+				z_man = np.zeros((batch_size, self.man_dim))
+				z_man[range(batch_size), man_id] = 1.
+				z_data = np.concatenate([z_data, z_man], axis=1)
 		z_data = z_data.astype(np_dtype)
 
 		### only forward generator on z

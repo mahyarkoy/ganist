@@ -71,8 +71,16 @@ def setup_plot_ax(fignum, x_axis, y_axis, title):
 
 if __name__ == '__main__':
 	real_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_cart_1/run_%d/mode_analysis_gen.cpk']
-	names = ['monet_10_mult']
+	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_14/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_cart_1/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_16/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_17/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_cart_2/run_%d/mode_analysis_gen.cpk']
+	names = ['monet_14', 
+				'cart_1', 
+				#'monet_16', 
+				#'monet_17', 
+				'cart_2']
 	log_path = '/media/evl/Public/Mahyar/ganist_logs'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Pr', 'Probability over Modes')

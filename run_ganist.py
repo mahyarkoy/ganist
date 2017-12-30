@@ -84,12 +84,15 @@ def im_process(im_data, im_size=28):
 '''
 Stacks images randomly on RGB channels, im_data shape must be (N, d, d, 1).
 '''
-def get_stack_mnist(im_data, labels=None):
+def get_stack_mnist(im_data, labels=None, stack_size=3):
 	order = np.arange(im_data.shape[0])
 	
 	np.random.shuffle(order)
 	im_data_r = im_data[order, ...]
 	labs_r = labels[order] if labels is not None else None
+
+	if stack_size != 3:
+		return im_data_r, labs_r
 
 	np.random.shuffle(order)
 	im_data_g = im_data[order, ...]
@@ -102,6 +105,7 @@ def get_stack_mnist(im_data, labels=None):
 	### stack shuffled channels
 	im_data_stacked = np.concatenate((im_data_r, im_data_g, im_data_b), axis=3)
 	labs_stacked = labs_r + 10 * labs_g + 100 * labs_b if labels is not None else None
+	
 	return im_data_stacked, labs_stacked
 
 def get_stack_mnist_legacy(im_data):
@@ -143,22 +147,26 @@ def plot_time_mat(mat, mat_names, fignum, save_path, ytype=None, itrs=None):
 
 '''
 Draws a draw_size*draw_size block image by randomly selecting from im_data.
-Assumes im_data range of (-1,1) and shape (N, d, d, 3).
+Assumes im_data range of (-1,1) and shape (N, d, d, c).
+If c is not 3 then draws first channel only.
 '''
 def im_block_draw(im_data, draw_size, path, separate_channels=True):
 	sample_size = im_data.shape[0]
 	im_size = im_data.shape[1]
-	im_channel = im_data.shape[3]
 	### choses images and puts them into a block shape
 	draw_ids = np.random.choice(sample_size, size=draw_size**2, replace=False)
-	im_draw = im_data[draw_ids, ...].reshape([draw_size, im_size*draw_size, im_size, im_channel])
+	im_draw = im_data[draw_ids, ...].reshape([draw_size, im_size*draw_size, im_size, -1])
 	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
 	im_draw = (im_draw + 1.0) / 2.0
 	### plots
 	fig = plt.figure(0)
 	fig.clf()
-	if not separate_channels:
-		fig.imshow(im_draw)
+	if not separate_channels or im_draw.shape[-1] != 3:
+		ax = fig.add_subplot(1, 1, 1)
+		if im_draw.shape[-1] == 1:
+			ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
+		else:
+			ax.imshow(im_draw)
 		fig.savefig(path, dpi=300)
 	else:
 		im_tmp = np.zeros(im_draw.shape)
@@ -218,7 +226,7 @@ def train_ganist(ganist, im_data):
 
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
-		train_dataset = get_stack_mnist_legacy(im_data)
+		train_dataset, _ = get_stack_mnist(im_data, stack_size=1)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
 		### train one epoch
@@ -275,13 +283,14 @@ def train_ganist(ganist, im_data):
 '''
 Sample sample_size data points from ganist.
 '''
-def sample_ganist(ganist, sample_size, batch_size=64):
+def sample_ganist(ganist, sample_size, batch_size=64, z_data=None):
 	g_samples = np.zeros([sample_size] + ganist.data_dim)
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
 		batch_len = g_samples[batch_start:batch_end, ...].shape[0]
+		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
 		g_samples[batch_start:batch_end, ...] = \
-			ganist.step(None, batch_len, gen_only=True)
+			ganist.step(None, batch_len, gen_only=True, z_data=batch_z)
 	return g_samples
 
 '''
@@ -332,7 +341,10 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	batch_size = 64
 	mode_threshold = 0
 	data_size = im_data.shape[0]
-	im_class_ids = dict((i, list()) for i in range(1000))
+	channels = im_data.shape[-1]
+	class_size = 10
+	knn = 6
+	im_class_ids = dict((i, list()) for i in range(class_size))
 	print '>>> Mode Eval Started'
 	widgets = ["Eval_modes", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=data_size, widgets=widgets)
@@ -344,15 +356,10 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 			batch_end = batch_start + batch_size
 			batch_len = batch_size if batch_end < data_size else data_size - batch_start
 			preds = np.zeros(batch_len)
-			### red channel
-			batch_data = im_data[batch_start:batch_end, ..., 0][..., np.newaxis]
-			preds += 1 * np.argmax(mnet.step(batch_data, pred_only=True), axis=1)
-			### green channel
-			batch_data = im_data[batch_start:batch_end, ..., 1][..., np.newaxis]
-			preds += 10 * np.argmax(mnet.step(batch_data, pred_only=True), axis=1)
-			### blue channel
-			batch_data = im_data[batch_start:batch_end, ..., 2][..., np.newaxis]
-			preds += 100 * np.argmax(mnet.step(batch_data, pred_only=True), axis=1)
+			### channels predictions
+			for ch in range(channels):
+				batch_data = im_data[batch_start:batch_end, ..., ch][..., np.newaxis]
+				preds += 10**ch * np.argmax(mnet.step(batch_data, pred_only=True), axis=1)
 			### put each image id into predicted class list
 			for i, c in enumerate(preds):
 				im_class_ids[c].append(batch_start+i)
@@ -372,15 +379,15 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 
 	### analyze modes
 	print '>>> Mode Var Started'
-	mode_count = np.zeros(1000) 
-	mode_vars = np.zeros(1000)
+	mode_count = np.zeros(class_size) 
+	mode_vars = np.zeros(class_size)
 	widgets = ["Var_modes", Percentage(), Bar(), ETA()]
-	pbar = ProgressBar(maxval=1000, widgets=widgets)
+	pbar = ProgressBar(maxval=class_size, widgets=widgets)
 	pbar.start()
 	for c, l in im_class_ids.items():
 		pbar.update(c)
 		mode_count[c] = len(l)
-		mode_vars[c] = eval_mode_var(im_data[l, ...], 18) if len(l) > 18 else 0.0
+		mode_vars[c] = eval_mode_var(im_data[l, ...], knn) if len(l) > knn else 0.0
 	return np.sum(mode_count > mode_threshold), mode_count, mode_vars
 
 '''
@@ -400,6 +407,22 @@ def eval_mode_var(im_data, n_neighbors, n_jobs=12):
 	count = np.sum(d_tri > 0)
 	d_var = 2.0 * np.sum(d_tri ** 2) / count
 	return d_var
+
+'''
+Draw manifold samples
+'''
+def man_sample_draw(ganist, block_size):
+	sample_size = block_size ** 2
+	z_data = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
+		size=[sample_size, ganist.z_dim-ganist.man_dim])
+	#z_data = np.random.normal(loc=0.0, scale=1.0, size=(batch_size, self.z_dim))
+	for m in range(ganist.man_dim):
+		### select manifold of each random point (1 hot)
+		z_man = np.zeros((sample_size, ganist.man_dim))
+		z_man[:, m] = 1.
+		z_aug = np.concatenate([z_data, z_man], axis=1)
+		samples = sample_ganist(ganist, sample_size, z_data=z_aug)
+		im_block_draw(samples, block_size, log_path_draw+'/man_gen_%d' % m)
 
 def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 	### dataset definition
@@ -486,11 +509,13 @@ def eval_mnist_net(mnet, im_data, labels, batch_size):
 if __name__ == '__main__':
 	### read and process data
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
-	stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
-	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
+	#stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
+	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
+	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
+	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_3/snapshots/model_333333_2000000.h5'
-	sample_size = 350000
+	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_cart_3/snapshots/model_83333_500000.h5'
+	sample_size = 10000
 
 	'''
 	DATASET LOADING AND DRAWING
@@ -506,7 +531,7 @@ if __name__ == '__main__':
 	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
 
 	### draw true stacked mnist images
-	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs)
+	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=1)
 		
 	#all_imgs_stack = get_stack_mnist_legacy(train_imgs)
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
@@ -545,43 +570,57 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, train_imgs)
+	#train_ganist(ganist, train_imgs)
 
 	### load ganist
-	#ganist.load(ganist_path)
+	ganist.load(ganist_path)
+
+	man_sample_draw(ganist, 10)
 
 	'''
 	EVALUATION SECTION
 	'''
 	### create stack mnist dataset of all_imgs_size*factor
 	'''
-	factor = 5
-	r_samples = np.zeros((factor,)+all_imgs_stack.shape)
-	r_labs = np.zeros((factor,)+all_labs_stack.shape)
-	for i in range(factor):
-		ims, labs = get_stack_mnist(all_imgs, all_labs)
-		r_samples[i, ...] = ims[...]
-		r_labs[i, ...] = labs[...]
-	r_samples = r_samples.reshape((-1,)+all_imgs_stack.shape[1:])
-	r_labs = r_labs.flatten()
+	factor = sample_size // all_imgs_stack.shape[0]
+	mod = sample_size % all_imgs_stack.shape[0]
+	if mod > 0:
+		ims, labs = get_stack_mnist(all_imgs, all_labs, stack_size=1)
+		ims_mod = ims[:mod, ...]
+		labs_mod = labs[:mod, ...]
+	if factor > 0:
+		r_samples = np.zeros((factor,)+all_imgs_stack.shape)
+		r_labs = np.zeros((factor,)+all_labs_stack.shape)
+		for i in range(factor):
+			ims, labs = get_stack_mnist(all_imgs, all_labs, stack_size=1)
+			r_samples[i, ...] = ims[...]
+			r_labs[i, ...] = labs[...]
+		r_samples = r_samples.reshape((-1,)+all_imgs_stack.shape[1:])
+		r_labs = r_labs.flatten()
+		r_samples = np.concatenate((r_samples, ims_mod), axis=0)
+		r_labs = np.concatenate((r_labs, labs_mod), axis=0)
+	else:
+		r_samples = ims_mod
+		r_labs = labs_mod
 
 	print '>>> r_samples shape: ', r_samples.shape
 	print '>>> r_labs shape: ', r_labs.shape
 	with open(log_path+'/stack_mnist_dataset.cpk', 'wb') as fs:
 		pk.dump([r_samples, r_labs], fs)
 	### OR load stack mnist dataset
-	with open(stack_mnist_path, 'rb') as fs:
-		r_samples, r_labs = pk.load(fs)
+	#with open(stack_mnist_path, 'rb') as fs:
+	#	r_samples, r_labs = pk.load(fs)
 	### mode eval real data
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
 		log_path+'/mode_analysis_real.cpk', r_labs)
 	'''
 
 	### OR load mode eval real data
-	with open(stack_mnist_mode_path, 'rb') as fs:
-		mode_num, mode_count, mode_vars = pk.load(fs)
+	#with open(stack_mnist_mode_path, 'rb') as fs:
+	#	mode_num, mode_count, mode_vars = pk.load(fs)
 
-	pr = 1.0 * mode_count / sample_size
+	'''
+	pr = 1.0 * mode_count / np.sum(mode_count)
 	print ">>> real_mode_num: ", mode_num
 	print ">>> real_mode_count_std: ", np.std(mode_count)
 	print ">>> real_mode_var ", np.mean(mode_vars)
@@ -591,7 +630,7 @@ if __name__ == '__main__':
 	im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
 	### mode eval gen data
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
-		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
+		log_path+'/mode_analysis_gen.cpk', draw_list=range(10), draw_name='gen')
 	pg = 1.0 * mode_count / sample_size
 	print ">>> gen_mode_num: ", mode_num
 	print ">>> gen_mode_count_std: ", np.std(mode_count)
@@ -604,6 +643,6 @@ if __name__ == '__main__':
 	print ">>> KL(g||p): ", kl_g
 	print ">>> KL(p||g): ", kl_p
 	print ">>> JSD(g||p): ", jsd
-
+	'''
 	sess.close()
 
