@@ -226,6 +226,7 @@ def train_ganist(ganist, im_data):
 
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
+		### >>> dataset sensitive
 		train_dataset, _ = get_stack_mnist(im_data, stack_size=1)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
@@ -336,6 +337,7 @@ def mode_analysis(mnet, im_data, pathname, labels=None, draw_list=None, draw_nam
 '''
 Returns #modes in stacked mnist, #im per modes, and average distance per mode.
 Images im_data shape is (N, 28, 28, 3)
+>>> dataset sensitive
 '''
 def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	batch_size = 64
@@ -505,9 +507,9 @@ def eval_mnist_net(mnet, im_data, labels, batch_size):
 
 	return eval_loss / eval_count, eval_sum / eval_count
 
-
 if __name__ == '__main__':
 	### read and process data
+	### >>> dataset sensitive
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
 	#stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
 	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
@@ -531,6 +533,7 @@ if __name__ == '__main__':
 	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
 
 	### draw true stacked mnist images
+	### >>> dataset sensitive
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=1)
 		
 	#all_imgs_stack = get_stack_mnist_legacy(train_imgs)
@@ -570,11 +573,12 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	#train_ganist(ganist, train_imgs)
+	train_ganist(ganist, train_imgs)
 
 	### load ganist
-	ganist.load(ganist_path)
+	#ganist.load(ganist_path)
 
+	### draw samples from each component of manifold
 	man_sample_draw(ganist, 10)
 
 	'''
@@ -616,21 +620,22 @@ if __name__ == '__main__':
 	'''
 
 	### OR load mode eval real data
-	#with open(stack_mnist_mode_path, 'rb') as fs:
-	#	mode_num, mode_count, mode_vars = pk.load(fs)
+	with open(stack_mnist_mode_path, 'rb') as fs:
+		mode_num, mode_count, mode_vars = pk.load(fs)
 
-	'''
 	pr = 1.0 * mode_count / np.sum(mode_count)
 	print ">>> real_mode_num: ", mode_num
 	print ">>> real_mode_count_std: ", np.std(mode_count)
 	print ">>> real_mode_var ", np.mean(mode_vars)
 
-	### sample gen data
+	### sample gen data and draw
 	g_samples = sample_ganist(ganist, sample_size)
 	im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
+	
 	### mode eval gen data
+	### >>> dataset sensitive
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
-		log_path+'/mode_analysis_gen.cpk', draw_list=range(10), draw_name='gen')
+		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
 	pg = 1.0 * mode_count / sample_size
 	print ">>> gen_mode_num: ", mode_num
 	print ">>> gen_mode_count_std: ", np.std(mode_count)
@@ -643,6 +648,6 @@ if __name__ == '__main__':
 	print ">>> KL(g||p): ", kl_g
 	print ">>> KL(p||g): ", kl_p
 	print ">>> JSD(g||p): ", jsd
-	'''
+	
 	sess.close()
 
