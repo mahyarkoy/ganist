@@ -72,8 +72,9 @@ class Ganist:
 		self.d_beta2 = 0.5
 
 		### network parameters
+		### >>> dataset sensitive: data_dim
 		self.z_dim = 100 #256
-		self.man_dim = 10
+		self.man_dim = 0
 		self.z_range = 1.0
 		self.data_dim = [28, 28, 1]
 		self.mm_loss_weight = 0.0
@@ -154,16 +155,19 @@ class Ganist:
 			self.nan_vars = 0.
 			self.inf_vars = 0.
 			self.zero_vars = 0.
+			self.big_vars = 0.
 			self.count_vars = 0
 			for v in self.g_vars + self.d_vars:
 				self.nan_vars += tf.reduce_sum(tf.cast(tf.is_nan(v), tf_dtype))
 				self.inf_vars += tf.reduce_sum(tf.cast(tf.is_inf(v), tf_dtype))
 				self.zero_vars += tf.reduce_sum(tf.cast(tf.square(v) < 1e-6, tf_dtype))
+				self.big_vars += tf.reduce_sum(tf.cast(tf.square(v) > 1e2, tf_dtype))
 				self.count_vars += tf.reduce_prod(v.get_shape())
 			self.count_vars = tf.cast(self.count_vars, tf_dtype)
 			self.nan_vars /= self.count_vars 
 			self.inf_vars /= self.count_vars
 			self.zero_vars /= self.count_vars
+			self.big_vars /= self.count_vars
 
 			### build optimizers
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -212,7 +216,8 @@ class Ganist:
 			return o
 
 	def start_session(self):
-		self.saver = tf.train.Saver(self.g_vars+self.d_vars, keep_checkpoint_every_n_hours=1, max_to_keep=10)
+		self.saver = tf.train.Saver(self.g_vars+self.d_vars, 
+			keep_checkpoint_every_n_hours=1, max_to_keep=10)
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):
@@ -230,17 +235,18 @@ class Ganist:
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
 
 		if stats_only:
-			res_list = [self.nan_vars, self.inf_vars, self.zero_vars, self.count_vars]
+			res_list = [self.nan_vars, self.inf_vars, self.zero_vars, 
+						self.big_vars, self.count_vars]
 			res_list = self.sess.run(res_list, feed_dict={})
 			return res_list
 
-		### sample e from uniform (-1,1): for gp penalty in WGAN
+		### sample e from uniform (0,1): for gp penalty in WGAN
 		e_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1, 1, 1))
 		e_data = e_data.astype(np_dtype)
 
 		### only forward discriminator on batch_data
 		if dis_only:
-			feed_dict = {self.im_input: batch_data, self.e_input: e_data, self.train_phase: False}
+			feed_dict = {self.im_input: batch_data, self.train_phase: False}
 			u_logits = self.sess.run(self.r_logits, feed_dict=feed_dict)
 			return u_logits.flatten()
 

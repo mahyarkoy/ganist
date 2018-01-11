@@ -46,6 +46,8 @@ def plot_analysis(ax, vals, name, window_size=50):
 	mean_vals = np.mean(vals, axis=0)
 	std_vals = np.std(vals, axis=0)
 
+	print '>>> std vals', np.sum(std_vals)
+
 	### plot mean values
 	sm_mean_vals = np.convolve(mean_vals, k, 'same')
 	sm_mean_vals[0:window_size/2+1] = None
@@ -70,17 +72,18 @@ def setup_plot_ax(fignum, x_axis, y_axis, title):
 	return ax, fig
 
 if __name__ == '__main__':
-	real_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_14/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_cart_1/run_%d/mode_analysis_gen.cpk',
+	#real_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
+	real_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
+	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_20/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_cart_1/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_16/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_17/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_cart_2/run_%d/mode_analysis_gen.cpk']
-	names = ['monet_14', 
-				'cart_1', 
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_19/run_%d/mode_analysis_gen.cpk']
+	names = ['monet_20', 
+				#'cart_1', 
 				#'monet_16', 
 				#'monet_17', 
-				'cart_2']
+				'monet_19']
 	log_path = '/media/evl/Public/Mahyar/ganist_logs'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Pr', 'Probability over Modes')
@@ -94,7 +97,7 @@ if __name__ == '__main__':
 	### gen modes plotting
 	for p, n in zip(paths, names):
 		modes_g, counts_g, vars_g, p_g = read_mode_analysis(p)
-		kl_p, kl_g, jsd = compute_stats(p_r, p_g)
+		kl_p, kl_g, jsd = compute_stats(np.mean(p_r, axis=0), p_g)
 		plot_analysis(ax_p, p_g, n)
 		plot_analysis(ax_vars, vars_g, n)
 		print 'KL(p||g) for %s: %f std %f' % (n, np.mean(kl_p), np.std(kl_p))

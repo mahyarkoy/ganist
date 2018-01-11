@@ -13,6 +13,10 @@ Created on Tue Aug  8 11:10:34 2017
 
 import numpy as np
 import tensorflow as tf
+
+np.random.seed(run_seed)
+tf.set_random_seed(run_seed)
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -38,12 +42,12 @@ log_path = args.log_path
 eval_int = int(args.eval_int)
 run_seed = int(args.seed)
 
-np.random.seed(run_seed)
-tf.set_random_seed(run_seed)
-
 import tf_ganist
 import mnist_net
 
+### init setup
+### >>> dataset sensitive: stack_size
+mnist_stack_size = 1
 c_log_path = log_path+'/classifier'
 log_path_snap = log_path+'/snapshots'
 c_log_path_snap = c_log_path+'/snapshots'
@@ -197,8 +201,8 @@ def train_ganist(ganist, im_data):
 	### dataset definition
 	train_size = im_data.shape[0]
 
-	### baby gan training configs
-	max_itr_total = 5e5
+	### training configs
+	max_itr_total = 1e5
 	g_max_itr = 2e4
 	d_updates = 5
 	g_updates = 1
@@ -226,8 +230,8 @@ def train_ganist(ganist, im_data):
 
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
-		### >>> dataset sensitive
-		train_dataset, _ = get_stack_mnist(im_data, stack_size=1)
+		### >>> dataset sensitive: stack_size
+		train_dataset, _ = get_stack_mnist(im_data, stack_size=mnist_stack_size)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
 		### train one epoch
@@ -248,8 +252,8 @@ def train_ganist(ganist, im_data):
 					itr_total += 1
 					d_update_flag = False if d_itr % d_updates == 0 else True
 					fetch_batch = True
-				else:
 				### generator updates: g_updates times for each d_updates of discriminator
+				elif g_updates > 0:
 					batch_sum, batch_g_data = ganist.step(batch_data, batch_size=None, gen_update=True)
 					ganist.write_sum(batch_sum, itr_total)
 					g_itr += 1
@@ -277,7 +281,8 @@ def train_ganist(ganist, im_data):
 		eval_logs_mat = np.array(eval_logs)
 		stats_logs_mat = np.array(stats_logs)
 		eval_logs_names = ['energy_distance', 'energy_distance_norm']
-		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 'vars_count']
+		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 
+							'big_vars_ratio', 'vars_count']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path, itrs=itrs_logs)
 		plot_time_mat(stats_logs_mat, stats_logs_names, 1, log_path, itrs=itrs_logs)
 
@@ -336,16 +341,16 @@ def mode_analysis(mnet, im_data, pathname, labels=None, draw_list=None, draw_nam
 
 '''
 Returns #modes in stacked mnist, #im per modes, and average distance per mode.
-Images im_data shape is (N, 28, 28, 3)
->>> dataset sensitive
+Images im_data shape is (N, 28, 28, ch)
+>>> dataset sensitive: class_size, chennels predictions, knn
 '''
 def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	batch_size = 64
 	mode_threshold = 0
 	data_size = im_data.shape[0]
 	channels = im_data.shape[-1]
-	class_size = 10
-	knn = 6
+	class_size = 10**channels
+	knn = 6 * channels
 	im_class_ids = dict((i, list()) for i in range(class_size))
 	print '>>> Mode Eval Started'
 	widgets = ["Eval_modes", Percentage(), Bar(), ETA()]
@@ -396,6 +401,8 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 Return average pairwise iso-distance of im_data
 '''
 def eval_mode_var(im_data, n_neighbors, n_jobs=12):
+	max_size = 1000
+	im_data = im_data[0:max_size, ...]
 	### preprocess images
 	eval_data = im_data.reshape((im_data.shape[0], -1))
 	### calculate isomap
@@ -516,8 +523,9 @@ if __name__ == '__main__':
 	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
 	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_cart_3/snapshots/model_83333_500000.h5'
-	sample_size = 10000
+	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_cart_3/snapshots/model_83333_500000.h5'
+	#sample_size = 10000
+	#sample_size = 350000
 
 	'''
 	DATASET LOADING AND DRAWING
@@ -534,7 +542,7 @@ if __name__ == '__main__':
 
 	### draw true stacked mnist images
 	### >>> dataset sensitive
-	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=1)
+	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
 		
 	#all_imgs_stack = get_stack_mnist_legacy(train_imgs)
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
@@ -582,7 +590,7 @@ if __name__ == '__main__':
 	man_sample_draw(ganist, 10)
 
 	'''
-	EVALUATION SECTION
+	REAL DATASET CREATE OR LOAD AND EVAL
 	'''
 	### create stack mnist dataset of all_imgs_size*factor
 	'''
@@ -628,15 +636,19 @@ if __name__ == '__main__':
 	print ">>> real_mode_count_std: ", np.std(mode_count)
 	print ">>> real_mode_var ", np.mean(mode_vars)
 
+	'''
+	GAN DATA EVAL
+	'''
 	### sample gen data and draw
+	sample_size = np.sum(mode_count)
 	g_samples = sample_ganist(ganist, sample_size)
 	im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
 	
 	### mode eval gen data
-	### >>> dataset sensitive
+	### >>> dataset sensitive: draw_list
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
 		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
-	pg = 1.0 * mode_count / sample_size
+	pg = 1.0 * mode_count / np.sum(mode_count)
 	print ">>> gen_mode_num: ", mode_num
 	print ">>> gen_mode_count_std: ", np.std(mode_count)
 	print ">>> gen_mode_var: ", np.mean(mode_vars)
