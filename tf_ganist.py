@@ -217,7 +217,7 @@ class Ganist:
 
 	def start_session(self):
 		self.saver = tf.train.Saver(self.g_vars+self.d_vars, 
-			keep_checkpoint_every_n_hours=1, max_to_keep=10)
+			keep_checkpoint_every_n_hours=0.1, max_to_keep=10)
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):
