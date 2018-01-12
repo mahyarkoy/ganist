@@ -13,10 +13,6 @@ Created on Tue Aug  8 11:10:34 2017
 
 import numpy as np
 import tensorflow as tf
-
-np.random.seed(run_seed)
-tf.set_random_seed(run_seed)
-
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -42,12 +38,15 @@ log_path = args.log_path
 eval_int = int(args.eval_int)
 run_seed = int(args.seed)
 
+np.random.seed(run_seed)
+tf.set_random_seed(run_seed)
+
 import tf_ganist
 import mnist_net
 
 ### init setup
 ### >>> dataset sensitive: stack_size
-mnist_stack_size = 1
+mnist_stack_size = 3
 c_log_path = log_path+'/classifier'
 log_path_snap = log_path+'/snapshots'
 c_log_path_snap = c_log_path+'/snapshots'
@@ -202,7 +201,7 @@ def train_ganist(ganist, im_data):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 1e5
+	max_itr_total = 5e5
 	g_max_itr = 2e4
 	d_updates = 5
 	g_updates = 1
@@ -347,6 +346,7 @@ Images im_data shape is (N, 28, 28, ch)
 def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	batch_size = 64
 	mode_threshold = 0
+	pr_threshold = 0.8
 	data_size = im_data.shape[0]
 	channels = im_data.shape[-1]
 	class_size = 10**channels
@@ -363,13 +363,18 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 			batch_end = batch_start + batch_size
 			batch_len = batch_size if batch_end < data_size else data_size - batch_start
 			preds = np.zeros(batch_len)
-			### channels predictions
+			### channels predictions (nan if less than pr_threshold)
 			for ch in range(channels):
 				batch_data = im_data[batch_start:batch_end, ..., ch][..., np.newaxis]
-				preds += 10**ch * np.argmax(mnet.step(batch_data, pred_only=True), axis=1)
+				preds_pr = mnet.step(batch_data, pred_only=True)
+				preds_id = np.argmax(preds_pr, axis=1)
+				preds[np.max(preds_pr, axis=1) < pr_threshold] = np.nan
+				preds += 10**ch * preds_id
+
 			### put each image id into predicted class list
 			for i, c in enumerate(preds):
-				im_class_ids[c].append(batch_start+i)
+				if not np.isnan(c):
+					im_class_ids[c].append(batch_start+i)
 	else:
 		### put each image id into predicted class list
 		for i, c in enumerate(labels):
@@ -518,14 +523,14 @@ if __name__ == '__main__':
 	### read and process data
 	### >>> dataset sensitive
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
-	#stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
-	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
-	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
+	stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
+	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
+	#stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
+	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_cart_3/snapshots/model_83333_500000.h5'
+	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_14/run_%d/snapshots/model_83333_500000.h5'
 	#sample_size = 10000
-	#sample_size = 350000
+	sample_size = 350000
 
 	'''
 	DATASET LOADING AND DRAWING
@@ -559,6 +564,8 @@ if __name__ == '__main__':
 	ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### init variables
 	sess.run(tf.global_variables_initializer())
+	### save network initially
+	ganist.save(log_path_snap+'/model_0_0.h5')
 
 	'''
 	CLASSIFIER SETUP SECTION
@@ -581,50 +588,51 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, train_imgs)
+	train_ganist(ganist, all_imgs)
 
 	### load ganist
-	#ganist.load(ganist_path)
+	#ganist.load(ganist_path % run_seed)
 
 	### draw samples from each component of manifold
-	man_sample_draw(ganist, 10)
+	#man_sample_draw(ganist, 10)
 
 	'''
 	REAL DATASET CREATE OR LOAD AND EVAL
 	'''
-	### create stack mnist dataset of all_imgs_size*factor
 	'''
+	### create stack mnist dataset of all_imgs_size*factor
 	factor = sample_size // all_imgs_stack.shape[0]
 	mod = sample_size % all_imgs_stack.shape[0]
 	if mod > 0:
-		ims, labs = get_stack_mnist(all_imgs, all_labs, stack_size=1)
+		ims, labs = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
 		ims_mod = ims[:mod, ...]
 		labs_mod = labs[:mod, ...]
 	if factor > 0:
 		r_samples = np.zeros((factor,)+all_imgs_stack.shape)
 		r_labs = np.zeros((factor,)+all_labs_stack.shape)
 		for i in range(factor):
-			ims, labs = get_stack_mnist(all_imgs, all_labs, stack_size=1)
+			ims, labs = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
 			r_samples[i, ...] = ims[...]
 			r_labs[i, ...] = labs[...]
 		r_samples = r_samples.reshape((-1,)+all_imgs_stack.shape[1:])
 		r_labs = r_labs.flatten()
-		r_samples = np.concatenate((r_samples, ims_mod), axis=0)
-		r_labs = np.concatenate((r_labs, labs_mod), axis=0)
+		if mod > 0:
+			r_samples = np.concatenate((r_samples, ims_mod), axis=0)
+			r_labs = np.concatenate((r_labs, labs_mod), axis=0)
 	else:
 		r_samples = ims_mod
 		r_labs = labs_mod
 
 	print '>>> r_samples shape: ', r_samples.shape
 	print '>>> r_labs shape: ', r_labs.shape
-	with open(log_path+'/stack_mnist_dataset.cpk', 'wb') as fs:
-		pk.dump([r_samples, r_labs], fs)
+	#with open(log_path+'/stack_mnist_dataset.cpk', 'wb') as fs:
+	#	pk.dump([r_samples, r_labs], fs)
 	### OR load stack mnist dataset
 	#with open(stack_mnist_path, 'rb') as fs:
 	#	r_samples, r_labs = pk.load(fs)
 	### mode eval real data
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-		log_path+'/mode_analysis_real.cpk', r_labs)
+		log_path+'/mode_analysis_real.cpk')
 	'''
 
 	### OR load mode eval real data
@@ -640,7 +648,6 @@ if __name__ == '__main__':
 	GAN DATA EVAL
 	'''
 	### sample gen data and draw
-	sample_size = np.sum(mode_count)
 	g_samples = sample_ganist(ganist, sample_size)
 	im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
 	
@@ -654,9 +661,10 @@ if __name__ == '__main__':
 	print ">>> gen_mode_var: ", np.mean(mode_vars)
 
 	### KL and JSD computation
-	kl_g = np.sum(pg*np.log(pg / pr))
-	kl_p = np.sum(pr*np.log(pr / pg))
-	jsd = (np.sum(pg*np.log(2 * pg / (pg+pr))) + np.sum(pr*np.log(2 * pr / (pg+pr)))) / 2.0
+	kl_g = np.sum(pg*np.log(1e-6 + pg / (pr+1e-6)))
+	kl_p = np.sum(pr*np.log(1e-6 + pr / (pg+1e-6)))
+	jsd = (np.sum(pg*np.log(1e-6 + 2 * pg / (pg+pr+1e-6))) + \
+	np.sum(pr*np.log(1e-6 + 2 * pr / (pg+pr+1e-6)))) / 2.0
 	print ">>> KL(g||p): ", kl_g
 	print ">>> KL(p||g): ", kl_p
 	print ">>> JSD(g||p): ", jsd

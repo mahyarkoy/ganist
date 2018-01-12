@@ -76,7 +76,7 @@ class Ganist:
 		self.z_dim = 100 #256
 		self.man_dim = 0
 		self.z_range = 1.0
-		self.data_dim = [28, 28, 1]
+		self.data_dim = [28, 28, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.d_loss_type = 'was'
@@ -217,7 +217,7 @@ class Ganist:
 
 	def start_session(self):
 		self.saver = tf.train.Saver(self.g_vars+self.d_vars, 
-			keep_checkpoint_every_n_hours=0.1, max_to_keep=10)
+			keep_checkpoint_every_n_hours=0.1, max_to_keep=20)
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):

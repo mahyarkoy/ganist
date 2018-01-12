@@ -36,17 +36,16 @@ pr and pg must have same shape: (N, 1000)
 return kl_p, kl_g, and jsd of shape (N,)
 '''
 def compute_stats(pr, pg):
-	kl_p = np.sum(pr*np.log(pr / pg), axis=1)
-	kl_g = np.sum(pg*np.log(pg / pr), axis=1)
-	jsd = (np.sum(pg*np.log(2. * pg / (pg+pr)), axis=1) + np.sum(pr*np.log(2. * pr / (pg+pr)), axis=1)) / 2.
+	kl_p = np.sum(pr*np.log(1e-6 + pr / (pg+1e-6)), axis=1)
+	kl_g = np.sum(pg*np.log(1e-6 + pg / (pr+1e-6)), axis=1)
+	jsd = (np.sum(pg*np.log(1e-6 + 2. * pg / (pg+pr+1e-6)), axis=1) + \
+		np.sum(pr*np.log(1e-6 + 2. * pr / (pg+pr+1e-6)), axis=1)) / 2.
 	return kl_p, kl_g, jsd
 
 def plot_analysis(ax, vals, name, window_size=50):
 	k = 1. * np.ones(window_size) / window_size
 	mean_vals = np.mean(vals, axis=0)
 	std_vals = np.std(vals, axis=0)
-
-	print '>>> std vals', np.sum(std_vals)
 
 	### plot mean values
 	sm_mean_vals = np.convolve(mean_vals, k, 'same')
@@ -73,17 +72,18 @@ def setup_plot_ax(fignum, x_axis, y_axis, title):
 
 if __name__ == '__main__':
 	#real_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
+	#real_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	real_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
-	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_20/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_cart_1/run_%d/mode_analysis_gen.cpk',
+	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_dup/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_c0/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_16/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_17/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_19/run_%d/mode_analysis_gen.cpk']
-	names = ['monet_20', 
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_dup/run_%d/mode_analysis_real.cpk']
+	names = ['gen', 
 				#'cart_1', 
 				#'monet_16', 
 				#'monet_17', 
-				'monet_19']
+				'real']
 	log_path = '/media/evl/Public/Mahyar/ganist_logs'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Pr', 'Probability over Modes')
