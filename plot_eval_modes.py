@@ -48,49 +48,54 @@ def plot_analysis(ax, vals, name, window_size=50):
 	std_vals = np.std(vals, axis=0)
 
 	### plot mean values
-	sm_mean_vals = np.convolve(mean_vals, k, 'same')
-	sm_mean_vals[0:window_size/2+1] = None
-	sm_mean_vals[-window_size/2:] = None
+	sm_mean_vals = mean_vals
+	if window_size > 1:
+		sm_mean_vals = np.convolve(mean_vals, k, 'same')
+		sm_mean_vals[0:window_size/2+1] = None
+		sm_mean_vals[-window_size/2:] = None
 	cp = ax.plot(sm_mean_vals, label=name)
 
 	### plot mean +- std values
-	sm_std_vals = np.convolve(std_vals, k, 'same')
-	sm_std_vals[0:window_size/2+1] = None
-	sm_std_vals[-window_size/2:] = None
+	sm_std_vals = std_vals
+	if window_size > 1:
+		sm_std_vals = np.convolve(std_vals, k, 'same')
+		sm_std_vals[0:window_size/2+1] = None
+		sm_std_vals[-window_size/2:] = None
 	ax.plot(sm_mean_vals+sm_std_vals, linestyle='--', linewidth=0.5, color=cp[0].get_color())
-	ax.plot(sm_mean_vals-sm_std_vals, linestyle='--', linewidth=0.5, color=cp[0].get_color())
+	ax.plot(np.clip(sm_mean_vals-sm_std_vals, 0., None), linestyle='--', linewidth=0.5, color=cp[0].get_color())
 
-def setup_plot_ax(fignum, x_axis, y_axis, title):
+def setup_plot_ax(fignum, x_axis, y_axis, title, yscale='linear'):
 	fig = plt.figure(fignum)
 	ax = fig.add_subplot(1,1,1)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_xlabel(x_axis)
 	ax.set_ylabel(y_axis)
+	ax.set_yscale(yscale)
 	ax.set_title(title)
 	#ax.xaxis.set_ticks(np.arange(0, 1000, 1))
 	return ax, fig
 
 if __name__ == '__main__':
-	#real_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	#real_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
-	real_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
-	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_dup/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_c0/run_%d/mode_analysis_gen.cpk',
+	#true_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
+	#true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
+	true_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
+	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk']
+				#'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk']
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_16/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_17/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_dup/run_%d/mode_analysis_real.cpk']
-	names = ['gen', 
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_sisley_2/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_25_c8/run_%d/mode_analysis_gen.cpk']
+	names = ['real']
 				#'cart_1', 
 				#'monet_16', 
-				#'monet_17', 
-				'real']
+				#'was_gp', 
+				#'modlog_tr']
 	log_path = '/media/evl/Public/Mahyar/ganist_logs'
 
-	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Pr', 'Probability over Modes')
-	ax_vars, fig_vars = setup_plot_ax(1, 'Modes', 'Vars', 'Average Distance over Modes')
+	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Probability', 'Probability over Modes')
+	ax_vars, fig_vars = setup_plot_ax(1, 'Modes', 'Variance', 'Average Distance over Modes')
 
 	### real modes plotting
-	modes_r, counts_r, vars_r, p_r = read_mode_analysis(real_path)
+	modes_r, counts_r, vars_r, p_r = read_mode_analysis(true_path)
 	plot_analysis(ax_p, p_r, 'true')
 	plot_analysis(ax_vars, vars_r, 'true')
 	
@@ -103,6 +108,8 @@ if __name__ == '__main__':
 		print 'KL(p||g) for %s: %f std %f' % (n, np.mean(kl_p), np.std(kl_p))
 		print 'KL(g||p) for %s: %f std %f' % (n, np.mean(kl_g), np.std(kl_g))
 		print 'JSD(p||g) for %s: %f std %f' % (n, np.mean(jsd), np.std(jsd))
+		print np.mean(modes_g, axis=0)
+		print modes_g
 
 	### save figures
 	ax_p.legend(loc=0)

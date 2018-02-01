@@ -75,12 +75,13 @@ class Ganist:
 		### >>> dataset sensitive: data_dim
 		self.z_dim = 100 #256
 		self.man_dim = 0
+		self.g_num = 128
 		self.z_range = 1.0
 		self.data_dim = [28, 28, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
-		self.d_loss_type = 'was'
-		self.g_loss_type = 'was'
+		self.d_loss_type = 'log'
+		self.g_loss_type = 'mod'
 		#self.d_act = tf.tanh
 		#self.g_act = tf.tanh
 		self.d_act = lrelu
@@ -94,7 +95,8 @@ class Ganist:
 		with tf.name_scope('ganist'):
 			### define placeholders for image and label inputs
 			self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
-			self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
+			#self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
+			self.z_input = tf.placeholder(tf_dtype, [None, self.g_num]+self.data_dim, name='z_input')
 			self.e_input = tf.placeholder(tf_dtype, [None, 1, 1, 1], name='e_input')
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
@@ -181,24 +183,34 @@ class Ganist:
 			self.summary = tf.summary.merge([g_loss_sum, d_loss_sum])
 
 	def build_gen(self, z, act, train_phase):
+		ol = list()
+		anchors = np.random.uniform(low=-1., high=1., size=(self.g_num, self.z_dim))
 		with tf.variable_scope('g_net'):
-			### fully connected from hidden z to image shape
-			z_fc = act(dense(z, 4*4*128, scope='fcz'))
-			h1 = tf.reshape(z_fc, [-1, 4, 4, 128])
-
-			### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
-			h1_us = tf.image.resize_nearest_neighbor(h1, [7, 7], name='us1')
-			h2 = act(conv2d(h1_us, 64, scope='conv1'))
-
-			h2_us = tf.image.resize_nearest_neighbor(h2, [14, 14], name='us2')
-			h3 = act(conv2d(h2_us, 32, scope='conv2'))
-
-			h3_us = tf.image.resize_nearest_neighbor(h3, [28, 28], name='us3')
-			h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
+			for gi in range(self.g_num):
+				with tf.variable_scope('gnum_%d' % gi):
+					zi = tf.random_uniform([tf.shape(z)[0], self.z_dim], 
+						minval=-0.2, maxval=0.2, dtype=tf_dtype)
+					zi = anchors[gi, ...] + zi
 			
-			### output activation to bring data values in (-1,1)
-			o = tf.nn.tanh(h4)
+					### fully connected from hidden z to image shape
+					z_fc = act(dense(zi, 4*4*128, scope='fcz'))
+					h1 = tf.reshape(z_fc, [-1, 4, 4, 128])
 
+					### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
+					h1_us = tf.image.resize_nearest_neighbor(h1, [7, 7], name='us1')
+					h2 = act(conv2d(h1_us, 64, scope='conv1'))
+
+					h2_us = tf.image.resize_nearest_neighbor(h2, [14, 14], name='us2')
+					h3 = act(conv2d(h2_us, 32, scope='conv2'))
+
+					h3_us = tf.image.resize_nearest_neighbor(h3, [28, 28], name='us3')
+					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
+					
+					### output activation to bring data values in (-1,1)
+					ol.append(tf.nn.tanh(h4))
+
+			os = tf.stack(ol, axis=1)
+			o = tf.reduce_sum(os * z, axis=1)
 			return o
 
 	def build_dis(self, data_layer, act, train_phase, reuse=False):
@@ -251,6 +263,7 @@ class Ganist:
 			return u_logits.flatten()
 
 		### sample z from uniform (-1,1)
+		'''
 		if z_data is None:
 			z_data = np.random.uniform(low=-self.z_range, high=self.z_range, 
 				size=[batch_size, self.z_dim-self.man_dim])
@@ -261,6 +274,13 @@ class Ganist:
 				z_man = np.zeros((batch_size, self.man_dim))
 				z_man[range(batch_size), man_id] = 1.
 				z_data = np.concatenate([z_data, z_man], axis=1)
+		'''
+		### multiple generator uses z_data to select gen
+		if z_data is None:
+			z_ids = np.random.randint(low=0, high=self.g_num, size=batch_size)
+			z_data = np.zeros([batch_size, self.g_num]+self.data_dim)
+			z_data[np.arange(batch_size), z_ids, ...] = 1.
+
 		z_data = z_data.astype(np_dtype)
 
 		### only forward generator on z
