@@ -46,7 +46,7 @@ import mnist_net
 
 ### init setup
 ### >>> dataset sensitive: stack_size
-mnist_stack_size = 3
+mnist_stack_size = 1
 c_log_path = log_path+'/classifier'
 log_path_snap = log_path+'/snapshots'
 c_log_path_snap = c_log_path+'/snapshots'
@@ -167,9 +167,10 @@ def im_block_draw(im_data, draw_size, path, separate_channels=True):
 	if not separate_channels or im_draw.shape[-1] != 3:
 		ax = fig.add_subplot(1, 1, 1)
 		if im_draw.shape[-1] == 1:
-			ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
+			ims = ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
 		else:
-			ax.imshow(im_draw)
+			ims = ax.imshow(im_draw)
+		fig.colorbar(ims)
 		fig.savefig(path, dpi=300)
 	else:
 		im_tmp = np.zeros(im_draw.shape)
@@ -243,6 +244,15 @@ def train_ganist(ganist, im_data):
 			batch_data = train_dataset[batch_start:batch_end, ...]
 			fetch_batch = False
 			while fetch_batch is False:
+				### evaluate energy distance between real and gen distributions
+				if itr_total % eval_step == 0:
+					draw_path = log_path_draw+'/gen_sample_%d.png' % itr_total if itr_total % draw_step == 0 else None
+					e_dist, e_norm, net_stats = eval_ganist(ganist, train_dataset, draw_path)
+					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
+					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
+					stats_logs.append(net_stats)
+					itrs_logs.append(itr_total)
+
 				### discriminator update
 				if d_update_flag is True:
 					batch_sum, batch_g_data = ganist.step(batch_data, batch_size=None, gen_update=False)
@@ -258,15 +268,6 @@ def train_ganist(ganist, im_data):
 					g_itr += 1
 					itr_total += 1
 					d_update_flag = True if g_itr % g_updates == 0 else False
-				
-				### evaluate energy distance between real and gen distributions
-				if itr_total % eval_step == 0:
-					draw_path = log_path_draw+'/gen_sample_%d.png' % itr_total if itr_total % draw_step == 0 else None
-					e_dist, e_norm, net_stats = eval_ganist(ganist, train_dataset, draw_path)
-					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
-					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
-					stats_logs.append(net_stats)
-					itrs_logs.append(itr_total)
 
 				if itr_total >= max_itr_total:
 					break
@@ -523,14 +524,14 @@ if __name__ == '__main__':
 	### read and process data
 	### >>> dataset sensitive
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
-	stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
-	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	#stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
-	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
+	#stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
+	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
+	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
+	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
 	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_14/run_%d/snapshots/model_83333_500000.h5'
-	#sample_size = 10000
-	sample_size = 350000
+	sample_size = 10000
+	#sample_size = 350000
 
 	'''
 	DATASET LOADING AND DRAWING
@@ -555,7 +556,7 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.45)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
 	### create mnist classifier

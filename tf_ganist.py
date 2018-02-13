@@ -23,6 +23,8 @@ def conv2d(input_, output_dim,
     with tf.variable_scope(scope, reuse=reuse):
         w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
                             initializer=tf.contrib.layers.xavier_initializer())
+        #w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
+        #                    initializer=tf.truncated_normal_initializer(stddev=stddev))
         conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding=padding)
         biases = tf.get_variable('biases', [output_dim], initializer=tf.constant_initializer(0.0))
         # conv = tf.reshape(tf.nn.bias_add(conv, biases), conv.get_shape())
@@ -75,17 +77,18 @@ class Ganist:
 		### >>> dataset sensitive: data_dim
 		self.z_dim = 100 #256
 		self.man_dim = 0
-		self.g_num = 128
+		self.g_num = 1
 		self.z_range = 1.0
-		self.data_dim = [28, 28, 3]
+		self.data_dim = [28, 28, 1]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
+		self.rg_loss_weight = 0.0
 		self.d_loss_type = 'log'
 		self.g_loss_type = 'mod'
 		#self.d_act = tf.tanh
-		#self.g_act = tf.tanh
+		self.g_act = tf.tanh
 		self.d_act = lrelu
-		self.g_act = lrelu
+		#self.g_act = lrelu
 
 		### init graph and session
 		self.build_graph()
@@ -93,10 +96,10 @@ class Ganist:
 
 	def build_graph(self):
 		with tf.name_scope('ganist'):
-			### define placeholders for image and label inputs
+			### define placeholders for image and label inputs **g_num**
 			self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
-			#self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
-			self.z_input = tf.placeholder(tf_dtype, [None, self.g_num]+self.data_dim, name='z_input')
+			self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
+			#self.z_input = tf.placeholder(tf_dtype, [None, self.g_num]+self.data_dim, name='z_input')
 			self.e_input = tf.placeholder(tf_dtype, [None, 1, 1, 1], name='e_input')
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
@@ -107,6 +110,10 @@ class Ganist:
 			self.r_logits = self.build_dis(self.im_input, self.d_act, self.train_phase)
 			self.g_logits = self.build_dis(self.g_layer, self.d_act, self.train_phase, reuse=True)
 
+			### real gen manifold interpolation
+			rg_layer = (1.0 - self.e_input) * self.g_layer + self.e_input * self.im_input
+			self.rg_logits = self.build_dis(rg_layer, self.d_act, self.train_phase, reuse=True)
+
 			### build d losses
 			if self.d_loss_type == 'log':
 				self.d_r_loss = tf.reduce_mean(
@@ -115,25 +122,29 @@ class Ganist:
 				self.d_g_loss = tf.reduce_mean(
 					tf.nn.sigmoid_cross_entropy_with_logits(
 						logits=self.g_logits, labels=tf.zeros_like(self.g_logits, tf_dtype)), axis=None)
-				self.d_loss = self.d_r_loss + self.d_g_loss
+				self.d_rg_loss = tf.reduce_mean(
+					tf.nn.sigmoid_cross_entropy_with_logits(
+						logits=self.rg_logits, labels=tf.ones_like(self.rg_logits, tf_dtype)), axis=None)
 			elif self.d_loss_type == 'was':
 				self.d_r_loss = -tf.reduce_mean(self.r_logits, axis=None)
 				self.d_g_loss = tf.reduce_mean(self.g_logits, axis=None)
-				rg_layer = (1.0 - self.e_input) * self.g_layer + self.e_input * self.im_input
-				rg_logits = self.build_dis(rg_layer, self.d_act, self.train_phase, reuse=True)
-				#gp_loss = tf.reduce_mean(tf.square(tf.sqrt(tf.reduce_sum(tf.square(tf.gradients(rg_logits, rg_layer)), axis=1)) - 1.0), axis=None)
-				### NaN free norm gradient
-				rg_grad = tf.gradients(rg_logits, rg_layer)
-				rg_grad_flat = tf.reshape(rg_grad, [-1, np.prod(self.data_dim)])
-				rg_grad_ok = tf.reduce_sum(tf.square(rg_grad_flat), axis=1) > 0.
-				rg_grad_safe = tf.where(rg_grad_ok, rg_grad_flat, tf.ones_like(rg_grad_flat))
-				rg_grad_abs = tf.where(rg_grad_flat >= 0., rg_grad_flat, -rg_grad_flat)
-				rg_grad_norm = tf.where(rg_grad_ok, 
-					tf.norm(rg_grad_safe, axis=1), tf.reduce_sum(rg_grad_abs, axis=1))
-				gp_loss = tf.reduce_mean(tf.square(rg_grad_norm - 1.0))
-				self.d_loss = self.d_r_loss + self.d_g_loss + self.gp_loss_weight * gp_loss
+				self.d_rg_loss = -tf.reduce_mean(self.rg_logits, axis=None)
 			else:
 				raise ValueError('>>> d_loss_type: %s is not defined!' % self.d_loss_type)
+
+			### gradient penalty
+			### NaN free norm gradient
+			rg_grad = tf.gradients(self.rg_logits, rg_layer)
+			rg_grad_flat = tf.reshape(rg_grad, [-1, np.prod(self.data_dim)])
+			rg_grad_ok = tf.reduce_sum(tf.square(rg_grad_flat), axis=1) > 0.
+			rg_grad_safe = tf.where(rg_grad_ok, rg_grad_flat, tf.ones_like(rg_grad_flat))
+			rg_grad_abs = tf.where(rg_grad_flat >= 0., rg_grad_flat, -rg_grad_flat)
+			rg_grad_norm = tf.where(rg_grad_ok, 
+				tf.norm(rg_grad_safe, axis=1), tf.reduce_sum(rg_grad_abs, axis=1))
+			gp_loss = tf.reduce_mean(tf.square(rg_grad_norm - 1.0))
+			
+			### d loss combination
+			self.d_loss = self.d_r_loss + self.d_g_loss + self.rg_loss_weight * self.d_rg_loss + self.gp_loss_weight * gp_loss
 
 			### build g loss
 			if self.g_loss_type == 'log':
@@ -147,6 +158,8 @@ class Ganist:
 
 			### mean matching
 			mm_loss = tf.reduce_mean(tf.square(tf.reduce_mean(self.g_layer, axis=0) - tf.reduce_mean(self.im_input, axis=0)), axis=None)
+
+			### g loss combination
 			self.g_loss = self.g_loss + self.mm_loss_weight * mm_loss
 
 			### collect params
@@ -163,7 +176,7 @@ class Ganist:
 				self.nan_vars += tf.reduce_sum(tf.cast(tf.is_nan(v), tf_dtype))
 				self.inf_vars += tf.reduce_sum(tf.cast(tf.is_inf(v), tf_dtype))
 				self.zero_vars += tf.reduce_sum(tf.cast(tf.square(v) < 1e-6, tf_dtype))
-				self.big_vars += tf.reduce_sum(tf.cast(tf.square(v) > 1e2, tf_dtype))
+				self.big_vars += tf.reduce_sum(tf.cast(tf.square(v) > 1., tf_dtype))
 				self.count_vars += tf.reduce_prod(v.get_shape())
 			self.count_vars = tf.cast(self.count_vars, tf_dtype)
 			self.nan_vars /= self.count_vars 
@@ -184,13 +197,16 @@ class Ganist:
 
 	def build_gen(self, z, act, train_phase):
 		ol = list()
-		anchors = np.random.uniform(low=-1., high=1., size=(self.g_num, self.z_dim))
+		anchors = np.random.uniform(low=-10., high=10., size=(self.g_num, self.z_dim))
 		with tf.variable_scope('g_net'):
 			for gi in range(self.g_num):
 				with tf.variable_scope('gnum_%d' % gi):
-					zi = tf.random_uniform([tf.shape(z)[0], self.z_dim], 
-						minval=-0.2, maxval=0.2, dtype=tf_dtype)
-					zi = anchors[gi, ...] + zi
+					### **g_num**
+					#zi = tf.random_uniform([tf.shape(z)[0], self.z_dim], 
+					#	minval=-self.z_range/2., maxval=self.z_range/2., dtype=tf_dtype)
+					#zi = anchors[gi, ...] + zi
+					zi = z
+					bn = tf.contrib.layers.batch_norm
 			
 					### fully connected from hidden z to image shape
 					z_fc = act(dense(zi, 4*4*128, scope='fcz'))
@@ -209,8 +225,9 @@ class Ganist:
 					### output activation to bring data values in (-1,1)
 					ol.append(tf.nn.tanh(h4))
 
-			os = tf.stack(ol, axis=1)
-			o = tf.reduce_sum(os * z, axis=1)
+			#os = tf.stack(ol, axis=1)
+			#o = tf.reduce_sum(os * z, axis=1)
+			o = ol[0]
 			return o
 
 	def build_dis(self, data_layer, act, train_phase, reuse=False):
@@ -229,7 +246,7 @@ class Ganist:
 
 	def start_session(self):
 		self.saver = tf.train.Saver(self.g_vars+self.d_vars, 
-			keep_checkpoint_every_n_hours=0.1, max_to_keep=20)
+			keep_checkpoint_every_n_hours=5, max_to_keep=5)
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):
@@ -263,7 +280,7 @@ class Ganist:
 			return u_logits.flatten()
 
 		### sample z from uniform (-1,1)
-		'''
+		
 		if z_data is None:
 			z_data = np.random.uniform(low=-self.z_range, high=self.z_range, 
 				size=[batch_size, self.z_dim-self.man_dim])
@@ -274,12 +291,14 @@ class Ganist:
 				z_man = np.zeros((batch_size, self.man_dim))
 				z_man[range(batch_size), man_id] = 1.
 				z_data = np.concatenate([z_data, z_man], axis=1)
+		
+		### multiple generator uses z_data to select gen **g_num**
 		'''
-		### multiple generator uses z_data to select gen
 		if z_data is None:
 			z_ids = np.random.randint(low=0, high=self.g_num, size=batch_size)
 			z_data = np.zeros([batch_size, self.g_num]+self.data_dim)
 			z_data[np.arange(batch_size), z_ids, ...] = 1.
+		'''
 
 		z_data = z_data.astype(np_dtype)
 
