@@ -43,6 +43,7 @@ tf.set_random_seed(run_seed)
 
 import tf_ganist
 import mnist_net
+import vae_ganist
 
 ### init setup
 ### >>> dataset sensitive: stack_size
@@ -53,11 +54,20 @@ c_log_path_snap = c_log_path+'/snapshots'
 log_path_draw = log_path+'/draws'
 log_path_sum = log_path+'/sums'
 c_log_path_sum = c_log_path+'/sums'
+
+log_path_vae = log_path+'/vae'
+log_path_draw_vae = log_path_vae+'/draws'
+log_path_snap_vae = log_path_vae+'/snapshots'
+log_path_sum_vae = log_path_vae+'/sums'
+
 os.system('mkdir -p '+log_path_snap)
 os.system('mkdir -p '+c_log_path_snap)
 os.system('mkdir -p '+log_path_draw)
 os.system('mkdir -p '+log_path_sum)
 os.system('mkdir -p '+c_log_path_sum)
+os.system('mkdir -p '+log_path_draw_vae)
+os.system('mkdir -p '+log_path_snap_vae)
+os.system('mkdir -p '+log_path_sum_vae)
 
 '''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
@@ -202,8 +212,7 @@ def train_ganist(ganist, im_data):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 5e5
-	g_max_itr = 2e4
+	max_itr_total = 2e5
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
@@ -287,30 +296,102 @@ def train_ganist(ganist, im_data):
 		plot_time_mat(stats_logs_mat, stats_logs_names, 1, log_path, itrs=itrs_logs)
 
 '''
+Train VAE Ganist
+'''
+def train_vae(vae, im_data):
+	### dataset definition
+	train_size = im_data.shape[0]
+
+	### training configs
+	max_itr_total = 3e5
+	batch_size = 32
+	eval_step = eval_int
+	draw_step = eval_int
+
+	### logs initi
+	eval_logs = list()
+	stats_logs = list()
+	itrs_logs = list()
+
+	### training inits
+	itr_total = 0
+	epoch = 0
+	widgets = ["VAEGanist", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=max_itr_total, widgets=widgets)
+	pbar.start()
+
+	while itr_total < max_itr_total:
+		### get a rgb stacked mnist dataset
+		### >>> dataset sensitive: stack_size
+		train_dataset, _ = get_stack_mnist(im_data, stack_size=mnist_stack_size)
+		epoch += 1
+		print ">>> Epoch %d started..." % epoch
+		### train one epoch
+		for batch_start in range(0, train_size, batch_size):
+			if itr_total >= max_itr_total:
+				break
+			pbar.update(itr_total)
+			batch_end = batch_start + batch_size
+			### fetch batch data
+			batch_data = train_dataset[batch_start:batch_end, ...]
+			fetch_batch = False
+
+			### evaluate energy distance between real and gen distributions
+			if itr_total % eval_step == 0:
+				draw_path = log_path_draw_vae+'/vae_sample_%d.png' % itr_total if itr_total % draw_step == 0 else None
+				e_dist, e_norm, net_stats = eval_ganist(vae, train_dataset, draw_path, vae.step_vae)
+				e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
+				eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
+				stats_logs.append(net_stats)
+				itrs_logs.append(itr_total)
+
+			batch_sum, batch_g_data = vae.step_vae(batch_data, batch_size=None, update=True)
+			vae.write_sum(batch_sum, itr_total)
+			itr_total += 1
+
+		### save network every epoch
+		vae.save(log_path_snap_vae+'/model_%d.h5' % itr_total)
+
+		### plot vae evaluation plot every epoch
+		if len(eval_logs) < 2:
+			continue
+		eval_logs_mat = np.array(eval_logs)
+		stats_logs_mat = np.array(stats_logs)
+		eval_logs_names = ['energy_distance', 'energy_distance_norm']
+		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 
+							'big_vars_ratio', 'vars_count']
+		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path_vae, itrs=itrs_logs)
+		plot_time_mat(stats_logs_mat, stats_logs_names, 1, log_path_vae, itrs=itrs_logs)
+
+'''
 Sample sample_size data points from ganist.
 '''
-def sample_ganist(ganist, sample_size, batch_size=64, z_data=None):
+def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, z_data=None, z_im=None):
+	sampler = sampler if sampler is not None else ganist.step
 	g_samples = np.zeros([sample_size] + ganist.data_dim)
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
 		batch_len = g_samples[batch_start:batch_end, ...].shape[0]
 		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
+		batch_im = z_im[batch_start:batch_end, ...] if z_im is not None else None
 		g_samples[batch_start:batch_end, ...] = \
-			ganist.step(None, batch_len, gen_only=True, z_data=batch_z)
+			sampler(batch_im, batch_len, gen_only=True, z_data=batch_z)
 	return g_samples
 
 '''
 Returns the energy distance of a trained GANist, and draws block images of GAN samples
 '''
-def eval_ganist(ganist, im_data, draw_path=None):
+def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	### sample and batch size
 	sample_size = 1024
 	batch_size = 64
 	draw_size = 10
+	sampler = sampler if sampler is not None else ganist.step
 	
-	### collect real and gen samples
+	### collect real and gen samples **mt**
 	r_samples = im_data[0:sample_size, ...].reshape((sample_size, -1))
-	g_samples = sample_ganist(ganist, sample_size).reshape((sample_size, -1))
+	g_samples = sample_ganist(ganist, sample_size, sampler=sampler,
+		z_im=im_data[-sample_size:, ...]).reshape((sample_size, -1))
 	
 	### calculate energy distance
 	rr_score = np.mean(np.sqrt(np.sum(np.square( \
@@ -323,6 +404,16 @@ def eval_ganist(ganist, im_data, draw_path=None):
 	### draw block image of gen samples
 	if draw_path is not None:
 		g_samples = g_samples.reshape((-1,) + im_data.shape[1:])
+		### manifold interpolation drawing mode **mt**
+		'''
+		gr_samples = im_data[-sample_size:, ...]
+		gr_flip = np.array(gr_samples)
+		for batch_start in range(0, sample_size, batch_size):
+			batch_end = batch_start + batch_size
+			gr_flip[batch_start:batch_end, ...] = np.flip(gr_flip[batch_start:batch_end, ...], axis=0)
+		draw_samples = np.concatenate([g_samples, gr_samples, gr_flip], axis=3)
+		im_block_draw(draw_samples, draw_size, draw_path)
+		'''
 		im_block_draw(g_samples, draw_size, draw_path)
 
 	### get network stats
@@ -438,6 +529,7 @@ def man_sample_draw(ganist, block_size):
 		z_aug = np.concatenate([z_data, z_man], axis=1)
 		samples = sample_ganist(ganist, sample_size, z_data=z_aug)
 		im_block_draw(samples, block_size, log_path_draw+'/man_gen_%d' % m)
+
 
 def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 	### dataset definition
@@ -561,8 +653,10 @@ if __name__ == '__main__':
 	sess = tf.Session(config=config)
 	### create mnist classifier
 	mnet = mnist_net.MnistNet(sess, c_log_path_sum)
-	### get a ganist instance
+	### create a ganist instance
 	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	### create a vaeganist instance
+	vae = vae_ganist.VAEGanist(sess, log_path_sum_vae)
 	### init variables
 	sess.run(tf.global_variables_initializer())
 	### save network initially
@@ -589,7 +683,7 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, all_imgs)
+	#train_ganist(ganist, all_imgs)
 
 	### load ganist
 	#ganist.load(ganist_path % run_seed)
@@ -598,8 +692,22 @@ if __name__ == '__main__':
 	#man_sample_draw(ganist, 10)
 
 	'''
-	REAL DATASET CREATE OR LOAD AND EVAL
+	VAE GANIST SETUP SECTION
 	'''
+	### train the vae part
+	train_vae(vae, all_imgs)
+
+	### load the vae part
+	#vae.load_vae(ganist_path % run_seed)
+
+	### train the ganist part
+	train_ganist(vae, all_imgs)
+
+	### load the whole vaeganist
+	#vae.load(ganist_path % run_seed)
+
+	'''
+	REAL DATASET CREATE OR LOAD AND EVAL
 	'''
 	### create stack mnist dataset of all_imgs_size*factor
 	factor = sample_size // all_imgs_stack.shape[0]
@@ -632,9 +740,8 @@ if __name__ == '__main__':
 	#with open(stack_mnist_path, 'rb') as fs:
 	#	r_samples, r_labs = pk.load(fs)
 	### mode eval real data
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-		log_path+'/mode_analysis_real.cpk')
-	'''
+	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
+	#	log_path+'/mode_analysis_real.cpk')
 
 	### OR load mode eval real data
 	with open(stack_mnist_mode_path, 'rb') as fs:
@@ -646,10 +753,41 @@ if __name__ == '__main__':
 	print ">>> real_mode_var ", np.mean(mode_vars)
 
 	'''
+	VAE DATA EVAL
+	'''
+	gan_model = vae
+	sampler = vae.step_vae
+	### sample gen data and draw **mt**
+	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler,
+		z_im=r_samples[0:sample_size, ...])
+	im_block_draw(g_samples, 10, log_path_draw_vae+'/vae_samples.png')
+	
+	### mode eval gen data
+	### >>> dataset sensitive: draw_list
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
+		log_path_vae+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
+	pg = 1.0 * mode_count / np.sum(mode_count)
+	print ">>> gen_mode_num: ", mode_num
+	print ">>> gen_mode_count_std: ", np.std(mode_count)
+	print ">>> gen_mode_var: ", np.mean(mode_vars)
+
+	### KL and JSD computation
+	kl_g = np.sum(pg*np.log(1e-6 + pg / (pr+1e-6)))
+	kl_p = np.sum(pr*np.log(1e-6 + pr / (pg+1e-6)))
+	jsd = (np.sum(pg*np.log(1e-6 + 2 * pg / (pg+pr+1e-6))) + \
+	np.sum(pr*np.log(1e-6 + 2 * pr / (pg+pr+1e-6)))) / 2.0
+	print ">>> KL(g||p): ", kl_g
+	print ">>> KL(p||g): ", kl_p
+	print ">>> JSD(g||p): ", jsd
+
+	'''
 	GAN DATA EVAL
 	'''
-	### sample gen data and draw
-	g_samples = sample_ganist(ganist, sample_size)
+	gan_model = vae
+	sampler = vae.step
+	### sample gen data and draw **mt**
+	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler,
+		z_im=r_samples[0:sample_size, ...])
 	im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
 	
 	### mode eval gen data

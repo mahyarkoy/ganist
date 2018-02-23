@@ -73,7 +73,7 @@ class Ganist:
 		self.d_beta1 = 0.5
 		self.d_beta2 = 0.5
 
-		### network parameters
+		### network parameters **g_num** **mt**
 		### >>> dataset sensitive: data_dim
 		self.z_dim = 100 #256
 		self.man_dim = 0
@@ -81,14 +81,15 @@ class Ganist:
 		self.z_range = 1.0
 		self.data_dim = [28, 28, 1]
 		self.mm_loss_weight = 0.0
-		self.gp_loss_weight = 10.0
+		self.gp_loss_weight = 0.0
 		self.rg_loss_weight = 0.0
+		self.rec_penalty_weight = 0.0
 		self.d_loss_type = 'log'
 		self.g_loss_type = 'mod'
 		#self.d_act = tf.tanh
-		self.g_act = tf.tanh
+		#self.g_act = tf.tanh
 		self.d_act = lrelu
-		#self.g_act = lrelu
+		self.g_act = lrelu
 
 		### init graph and session
 		self.build_graph()
@@ -96,15 +97,17 @@ class Ganist:
 
 	def build_graph(self):
 		with tf.name_scope('ganist'):
-			### define placeholders for image and label inputs **g_num**
+			### define placeholders for image and label inputs **g_num** **mt**
 			self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
 			self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
+			#self.z_input = tf.placeholder(tf_dtype, [None, 1, 1, 1], name='z_input')
 			#self.z_input = tf.placeholder(tf_dtype, [None, self.g_num]+self.data_dim, name='z_input')
 			self.e_input = tf.placeholder(tf_dtype, [None, 1, 1, 1], name='e_input')
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
-			### build generator
+			### build generator **mt**
 			self.g_layer = self.build_gen(self.z_input, self.g_act, self.train_phase)
+			#self.g_layer = self.build_gen_mt(self.im_input, self.z_input, self.g_act, self.train_phase)
 
 			### build discriminator
 			self.r_logits = self.build_dis(self.im_input, self.d_act, self.train_phase)
@@ -159,8 +162,14 @@ class Ganist:
 			### mean matching
 			mm_loss = tf.reduce_mean(tf.square(tf.reduce_mean(self.g_layer, axis=0) - tf.reduce_mean(self.im_input, axis=0)), axis=None)
 
+			### reconstruction penalty
+			rec_penalty = tf.reduce_mean(tf.minimum(tf.log(tf.reduce_sum(
+				tf.square(self.g_layer - self.im_input), axis=[1, 2, 3])+1e-6), 6.)) \
+				+ tf.reduce_mean(tf.minimum(tf.log(tf.reduce_sum(
+				tf.square(self.g_layer - tf.reverse(self.im_input, axis=[0])), axis=[1, 2, 3])+1e-6), 6.))
+
 			### g loss combination
-			self.g_loss = self.g_loss + self.mm_loss_weight * mm_loss
+			self.g_loss = self.g_loss + self.mm_loss_weight * mm_loss - self.rec_penalty_weight * rec_penalty
 
 			### collect params
 			self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
@@ -195,6 +204,18 @@ class Ganist:
 			d_loss_sum = tf.summary.scalar("d_loss", self.d_loss)
 			self.summary = tf.summary.merge([g_loss_sum, d_loss_sum])
 
+	def build_gen_mt(self, im_data, z, act, train_phase):
+		with tf.variable_scope('g_net'):
+			### interpolate im_data with its reverse, odd batch_size gives true image
+			zi = (1.0 - z) * im_data + z * tf.reverse(im_data, [0])
+			h1 = act(conv2d(zi, 32, scope='conv1'))
+			h2 = act(conv2d(h1, 32, scope='conv2'))
+			h3 = act(conv2d(h2, 32, scope='conv3'))
+			h4 = conv2d(h3, self.data_dim[-1], scope='conv4')
+			o = tf.tanh(h4)
+			#o = h4 + zi
+			return o
+
 	def build_gen(self, z, act, train_phase):
 		ol = list()
 		anchors = np.random.uniform(low=-10., high=10., size=(self.g_num, self.z_dim))
@@ -214,16 +235,18 @@ class Ganist:
 
 					### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
 					h1_us = tf.image.resize_nearest_neighbor(h1, [7, 7], name='us1')
+					#h2 = tf.maximum(tf.minimum(conv2d(h1_us, 64, scope='conv1'), 1.0), -1.0)
 					h2 = act(conv2d(h1_us, 64, scope='conv1'))
 
 					h2_us = tf.image.resize_nearest_neighbor(h2, [14, 14], name='us2')
+					#h3 = tf.maximum(tf.minimum(conv2d(h2_us, 32, scope='conv2'), 1.0), -1.0)
 					h3 = act(conv2d(h2_us, 32, scope='conv2'))
 
 					h3_us = tf.image.resize_nearest_neighbor(h3, [28, 28], name='us3')
 					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
 					
 					### output activation to bring data values in (-1,1)
-					ol.append(tf.nn.tanh(h4))
+					ol.append(tf.tanh(h4))
 
 			#os = tf.stack(ol, axis=1)
 			#o = tf.reduce_sum(os * z, axis=1)
@@ -291,7 +314,7 @@ class Ganist:
 				z_man = np.zeros((batch_size, self.man_dim))
 				z_man[range(batch_size), man_id] = 1.
 				z_data = np.concatenate([z_data, z_man], axis=1)
-		
+
 		### multiple generator uses z_data to select gen **g_num**
 		'''
 		if z_data is None:
@@ -299,12 +322,17 @@ class Ganist:
 			z_data = np.zeros([batch_size, self.g_num]+self.data_dim)
 			z_data[np.arange(batch_size), z_ids, ...] = 1.
 		'''
-
+		### z_data for manifold transform **mt**
+		'''
+		if z_data is None:
+			### sample e from uniform (0,1): for interpolation in mt
+			z_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1, 1, 1))
 		z_data = z_data.astype(np_dtype)
+		'''
 
 		### only forward generator on z
 		if gen_only:
-			feed_dict = {self.z_input: z_data, self.train_phase: False}
+			feed_dict = {self.im_input:batch_data, self.z_input: z_data, self.train_phase: False}
 			g_layer = self.sess.run(self.g_layer, feed_dict=feed_dict)
 			return g_layer
 

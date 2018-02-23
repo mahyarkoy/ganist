@@ -42,7 +42,7 @@ def compute_stats(pr, pg):
 		np.sum(pr*np.log(1e-6 + 2. * pr / (pg+pr+1e-6)), axis=1)) / 2.
 	return kl_p, kl_g, jsd
 
-def plot_analysis(ax, vals, name, window_size=50):
+def plot_analysis(ax, vals, name, window_size=1):
 	k = 1. * np.ones(window_size) / window_size
 	mean_vals = np.mean(vals, axis=0)
 	std_vals = np.std(vals, axis=0)
@@ -77,18 +77,20 @@ def setup_plot_ax(fignum, x_axis, y_axis, title, yscale='linear'):
 
 if __name__ == '__main__':
 	#true_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	#true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
-	true_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
-	paths = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk']
-				#'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk']
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_16/run_%d/mode_analysis_gen.cpk',
+	true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
+	#true_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
+	paths = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk',
+				'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_50/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_52/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_25_c8/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_sisley_2/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_25_c8/run_%d/mode_analysis_gen.cpk']
-	names = ['real']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_60/run_%d/mode_analysis_gen.cpk']
+	names = ['real',
 				#'cart_1', 
-				#'monet_16', 
-				#'was_gp', 
-				#'modlog_tr']
+				'monet_50', 
+				'monet_52', 
+				'monet_60']
 	log_path = '/media/evl/Public/Mahyar/ganist_logs'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Probability', 'Probability over Modes')
