@@ -140,7 +140,7 @@ def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear', i
 	plt.figure(fignum, figsize=(8, 6))
 	plt.clf()
 	if itrs is None:
-		plt.plot(vals, color=color)	
+		plt.plot(vals, color=color)
 	else:
 		plt.plot(itrs, vals, color=color)
 	plt.grid(True, which='both', linestyle='dotted')
@@ -212,7 +212,7 @@ def train_ganist(ganist, im_data):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 2e5
+	max_itr_total = 5e5
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
@@ -225,6 +225,7 @@ def train_ganist(ganist, im_data):
 	d_g_logs = list()
 	eval_logs = list()
 	stats_logs = list()
+	norms_logs = list()
 	itrs_logs = list()
 
 	### training inits
@@ -243,6 +244,7 @@ def train_ganist(ganist, im_data):
 		train_dataset, _ = get_stack_mnist(im_data, stack_size=mnist_stack_size)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
+
 		### train one epoch
 		for batch_start in range(0, train_size, batch_size):
 			if itr_total >= max_itr_total:
@@ -260,6 +262,9 @@ def train_ganist(ganist, im_data):
 					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
 					stats_logs.append(net_stats)
+					### log norms every epoch
+					_, grad_norms = run_ganist_disc(ganist, train_dataset[0:10000, ...], batch_size=256)
+					norms_logs.append([np.max(grad_norms), np.mean(grad_norms), np.std(grad_norms)])
 					itrs_logs.append(itr_total)
 
 				### discriminator update
@@ -289,11 +294,29 @@ def train_ganist(ganist, im_data):
 			continue
 		eval_logs_mat = np.array(eval_logs)
 		stats_logs_mat = np.array(stats_logs)
+		norms_logs_mat = np.array(norms_logs)
 		eval_logs_names = ['energy_distance', 'energy_distance_norm']
 		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 
 							'big_vars_ratio', 'vars_count']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path, itrs=itrs_logs)
 		plot_time_mat(stats_logs_mat, stats_logs_names, 1, log_path, itrs=itrs_logs)
+		### plot norms
+		plt.figure(0, figsize=(8, 6))
+		plt.clf()
+		plt.plot(itrs_logs, norms_logs_mat[:,0], color='r', label='max_norm')
+		plt.plot(itrs_logs, norms_logs_mat[:,1], color='b', label='mean_norm')
+		plt.plot(itrs_logs, norms_logs_mat[:,1]+norms_logs_mat[:,2], color='b', linestyle='--')
+		plt.plot(itrs_logs, norms_logs_mat[:,1]-norms_logs_mat[:,2], color='b', linestyle='--')
+		plt.grid(True, which='both', linestyle='dotted')
+		plt.title('Norm Grads')
+		plt.xlabel('Iterations')
+		plt.ylabel('Values')
+		plt.legend(loc=0)
+		plt.savefig(log_path+'/norm_grads.png')
+
+	### save norm_logs
+	with open(log_path+'/norm_grads.cpk', 'wb+') as fs:
+		pk.dump(norms_logs_mat, fs)
 
 '''
 Train VAE Ganist
@@ -377,6 +400,23 @@ def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, z_data=None,
 		g_samples[batch_start:batch_end, ...] = \
 			sampler(batch_im, batch_len, gen_only=True, z_data=batch_z)
 	return g_samples
+
+'''
+Run discriminator of ganist on the given im_data, return logits and gradient norms.
+'''
+def run_ganist_disc(ganist, im_data, sampler=None, batch_size=64, z_data=None):
+	sampler = sampler if sampler is not None else ganist.step
+	sample_size = im_data.shape[0]
+	logits = np.zeros(sample_size)
+	grad_norms = np.zeros(sample_size)
+	for batch_start in range(0, sample_size, batch_size):
+		batch_end = batch_start + batch_size
+		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
+		batch_im = im_data[batch_start:batch_end, ...]
+		batch_logits, batch_grad_norms = sampler(batch_im, None, dis_only=True, z_data=batch_z)
+		logits[batch_start:batch_end] = batch_logits
+		grad_norms[batch_start:batch_end] = batch_grad_norms
+	return logits, grad_norms
 
 '''
 Returns the energy distance of a trained GANist, and draws block images of GAN samples
@@ -683,7 +723,7 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	#train_ganist(ganist, all_imgs)
+	train_ganist(ganist, all_imgs)
 
 	### load ganist
 	#ganist.load(ganist_path % run_seed)
@@ -695,13 +735,13 @@ if __name__ == '__main__':
 	VAE GANIST SETUP SECTION
 	'''
 	### train the vae part
-	train_vae(vae, all_imgs)
+	#train_vae(vae, all_imgs)
 
 	### load the vae part
 	#vae.load_vae(ganist_path % run_seed)
 
 	### train the ganist part
-	train_ganist(vae, all_imgs)
+	#train_ganist(vae, all_imgs)
 
 	### load the whole vaeganist
 	#vae.load(ganist_path % run_seed)
@@ -755,6 +795,7 @@ if __name__ == '__main__':
 	'''
 	VAE DATA EVAL
 	'''
+	'''
 	gan_model = vae
 	sampler = vae.step_vae
 	### sample gen data and draw **mt**
@@ -779,12 +820,12 @@ if __name__ == '__main__':
 	print ">>> KL(g||p): ", kl_g
 	print ">>> KL(p||g): ", kl_p
 	print ">>> JSD(g||p): ", jsd
-
+	'''
 	'''
 	GAN DATA EVAL
 	'''
-	gan_model = vae
-	sampler = vae.step
+	gan_model = ganist#vae
+	sampler = ganist#vae.step
 	### sample gen data and draw **mt**
 	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler,
 		z_im=r_samples[0:sample_size, ...])

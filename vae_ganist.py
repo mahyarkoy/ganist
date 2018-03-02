@@ -110,7 +110,7 @@ class VAEGanist:
 
 			### build vae loss
 			self.rec_loss = tf.reduce_mean(tf.reduce_sum(tf.square(self.im_decode - self.im_input), [1, 2, 3]))
-			self.kl_loss = tf.reduce_mean(0.5 * tf.reduce_sum(tf.square(z_mean) + tf.square(z_std) - tf.log(tf.square(z_std)) ,1))
+			self.kl_loss = tf.reduce_mean(0.5 * tf.reduce_sum(tf.square(z_mean) + tf.square(z_std) - tf.log(1e-8+tf.square(z_std)) ,1))
 			self.vae_loss = self.rec_loss + self.kl_loss
 
 			### build transform to get g_layer
@@ -218,7 +218,7 @@ class VAEGanist:
 			### flatten and dense to get hidden mean and std
 			flat_h2 = tf.contrib.layers.flatten(h2)
 			z_mean = dense(flat_h2, self.z_dim, scope='z_mean')
-			z_std = dense(flat_h2, self.z_dim, scope='z_std')
+			z_std = tf.sigmoid(dense(flat_h2, self.z_dim, scope='z_std'))
 			return z_mean, z_std
 	
 	def build_decoder(self, z, act, train_phase, reuse=False):

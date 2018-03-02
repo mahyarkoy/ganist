@@ -87,9 +87,9 @@ class Ganist:
 		self.d_loss_type = 'log'
 		self.g_loss_type = 'mod'
 		#self.d_act = tf.tanh
-		#self.g_act = tf.tanh
+		self.g_act = tf.tanh
 		self.d_act = lrelu
-		self.g_act = lrelu
+		#self.g_act = lrelu
 
 		### init graph and session
 		self.build_graph()
@@ -145,6 +145,8 @@ class Ganist:
 			rg_grad_norm = tf.where(rg_grad_ok, 
 				tf.norm(rg_grad_safe, axis=1), tf.reduce_sum(rg_grad_abs, axis=1))
 			gp_loss = tf.reduce_mean(tf.square(rg_grad_norm - 1.0))
+			### for logging
+			self.rg_grad_norm_output = tf.norm(rg_grad_flat, axis=1)
 			
 			### d loss combination
 			self.d_loss = self.d_r_loss + self.d_g_loss + self.rg_loss_weight * self.d_rg_loss + self.gp_loss_weight * gp_loss
@@ -296,12 +298,6 @@ class Ganist:
 		e_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1, 1, 1))
 		e_data = e_data.astype(np_dtype)
 
-		### only forward discriminator on batch_data
-		if dis_only:
-			feed_dict = {self.im_input: batch_data, self.train_phase: False}
-			u_logits = self.sess.run(self.r_logits, feed_dict=feed_dict)
-			return u_logits.flatten()
-
 		### sample z from uniform (-1,1)
 		
 		if z_data is None:
@@ -329,6 +325,13 @@ class Ganist:
 			z_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1, 1, 1))
 		z_data = z_data.astype(np_dtype)
 		'''
+		### only forward discriminator on batch_data
+		if dis_only:
+			feed_dict = {self.im_input: batch_data, self.z_input: z_data, 
+				self.e_input: e_data, self.train_phase: False}
+			res_list = [self.r_logits, self.rg_grad_norm_output]
+			res_list = self.sess.run(res_list, feed_dict=feed_dict)
+			return res_list[0].flatten(), res_list[1].flatten()
 
 		### only forward generator on z
 		if gen_only:
