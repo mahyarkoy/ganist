@@ -825,7 +825,7 @@ if __name__ == '__main__':
 	GAN DATA EVAL
 	'''
 	gan_model = ganist#vae
-	sampler = ganist#vae.step
+	sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
 	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler,
 		z_im=r_samples[0:sample_size, ...])
