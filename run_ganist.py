@@ -25,6 +25,7 @@ import gzip
 from skimage.transform import resize
 from sklearn.neighbors import NearestNeighbors, kneighbors_graph
 from sklearn.utils.graph import graph_shortest_path
+import sys
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
@@ -94,6 +95,14 @@ def im_process(im_data, im_size=28):
 	im_data_re = im_data_re * 2.0 - 1.0
 	return im_data_re
 
+def read_cifar(cifar_path):
+	with open(cifar_path, 'rb') as fs:
+		datadict = pk.load(fs)
+	data = datadict['data'].reshape((-1, 3, 32, 32))
+	labs = np.array(datadict['labels'])
+	data_proc = data / 128.0 - 1.0
+	return np.transpose(data_proc, axes=(0,2,3,1)), labs
+
 '''
 Stacks images randomly on RGB channels, im_data shape must be (N, d, d, 1).
 '''
@@ -158,12 +167,55 @@ def plot_time_mat(mat, mat_names, fignum, save_path, ytype=None, itrs=None):
 			ytype = 'log' if 'param' in fig_name else 'linear'
 		plot_time_series(fig_name, mat[:,n], fignum, save_path+'/'+fig_name+'.png', ytype=ytype, itrs=itrs)
 
+def gset_block_draw(ganist, sample_size, path, separate_channels=False):
+	im_data = np.zeros([ganist.g_num, sample_size]+ganist.data_dim)
+	im_size = ganist.data_dim[0]
+	for g in range(ganist.g_num):
+		z_data = g * np.ones(sample_size, dtype=np.int32)
+		im_data[g, ...] = sample_ganist(ganist, sample_size, z_data=z_data)
+	im_draw = im_data.reshape([ganist.g_num, im_size*sample_size, im_size, -1])
+	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
+	im_draw = (im_draw + 1.0) / 2.0
+	### plots
+	fig = plt.figure(0)
+	fig.clf()
+	if not separate_channels or im_draw.shape[-1] != 3:
+		ax = fig.add_subplot(1, 1, 1)
+		if im_draw.shape[-1] == 1:
+			ims = ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
+		else:
+			ims = ax.imshow(im_draw)
+		fig.colorbar(ims)
+		fig.savefig(path, dpi=300)
+	else:
+		im_tmp = np.zeros(im_draw.shape)
+		ax = fig.add_subplot(1, 3, 1)
+		im_tmp[..., 0] = im_draw[..., 0]
+		ax.set_axis_off()
+		ax.imshow(im_tmp)
+
+		ax = fig.add_subplot(1, 3, 2)
+		im_tmp[...] = 0.0
+		im_tmp[..., 1] = im_draw[..., 1]
+		ax.set_axis_off()
+		ax.imshow(im_tmp)
+
+		ax = fig.add_subplot(1, 3, 3)
+		im_tmp[...] = 0.0
+		im_tmp[..., 2] = im_draw[..., 2]
+		ax.set_axis_off()
+		ax.imshow(im_tmp)
+
+		fig.subplots_adjust(wspace=0, hspace=0)
+		fig.savefig(path, dpi=300)
+
+
 '''
 Draws a draw_size*draw_size block image by randomly selecting from im_data.
 Assumes im_data range of (-1,1) and shape (N, d, d, c).
 If c is not 3 then draws first channel only.
 '''
-def im_block_draw(im_data, draw_size, path, separate_channels=True):
+def im_block_draw(im_data, draw_size, path, separate_channels=False):
 	sample_size = im_data.shape[0]
 	im_size = im_data.shape[1]
 	### choses images and puts them into a block shape
@@ -207,7 +259,7 @@ def im_block_draw(im_data, draw_size, path, separate_channels=True):
 '''
 Train Ganist
 '''
-def train_ganist(ganist, im_data):
+def train_ganist(ganist, im_data, labels=None):
 	### dataset definition
 	train_size = im_data.shape[0]
 
@@ -227,6 +279,7 @@ def train_ganist(ganist, im_data):
 	stats_logs = list()
 	norms_logs = list()
 	itrs_logs = list()
+	rl_vals_logs = list()
 
 	### training inits
 	d_itr = 0
@@ -241,7 +294,7 @@ def train_ganist(ganist, im_data):
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
 		### >>> dataset sensitive: stack_size
-		train_dataset, _ = get_stack_mnist(im_data, stack_size=mnist_stack_size)
+		train_dataset, train_labs = get_stack_mnist(im_data, labels=labels, stack_size=mnist_stack_size)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
 
@@ -257,15 +310,35 @@ def train_ganist(ganist, im_data):
 			while fetch_batch is False:
 				### evaluate energy distance between real and gen distributions
 				if itr_total % eval_step == 0:
-					draw_path = log_path_draw+'/gen_sample_%d.png' % itr_total if itr_total % draw_step == 0 else None
+					draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 else None
 					e_dist, e_norm, net_stats = eval_ganist(ganist, train_dataset, draw_path)
 					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
 					stats_logs.append(net_stats)
 					### log norms every epoch
-					_, grad_norms = run_ganist_disc(ganist, train_dataset[0:10000, ...], batch_size=256)
+					d_sample_size = 100
+					_, grad_norms, en_logits = run_ganist_disc(ganist, train_dataset[0:d_sample_size, ...], batch_size=256)
 					norms_logs.append([np.max(grad_norms), np.mean(grad_norms), np.std(grad_norms)])
 					itrs_logs.append(itr_total)
+					rl_vals_logs.append(list(ganist.g_rl_vals))
+					### en_preds
+					'''
+					en_preds = np.argmax(en_logits, axis=1)
+					en_order = np.argsort(en_preds)
+					preds_order = en_preds[en_order]
+					logits_order = en_logits[en_order]
+					labels_order = train_labs[en_order]
+					start = 0
+					preds_list = list()
+					for i, v in enumerate(labels_order):
+						if i == len(labels_order)-1 or preds_order[i] < preds_order[i+1]:
+							preds_list.append(list(labels_order[start:i+1]))
+							start = i+1
+
+					print '>>> EN_LABELS:'
+					for l in preds_list:
+						print l
+					'''
 
 				### discriminator update
 				if d_update_flag is True:
@@ -295,6 +368,7 @@ def train_ganist(ganist, im_data):
 		eval_logs_mat = np.array(eval_logs)
 		stats_logs_mat = np.array(stats_logs)
 		norms_logs_mat = np.array(norms_logs)
+		rl_vals_logs_mat = np.array(rl_vals_logs)
 		eval_logs_names = ['energy_distance', 'energy_distance_norm']
 		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 
 							'big_vars_ratio', 'vars_count']
@@ -313,6 +387,17 @@ def train_ganist(ganist, im_data):
 		plt.ylabel('Values')
 		plt.legend(loc=0)
 		plt.savefig(log_path+'/norm_grads.png')
+		### plot rl_vals **g_num**
+		plt.figure(0, figsize=(8, 6))
+		plt.clf()
+		for g in range(ganist.g_num):
+			plt.plot(itrs_logs, rl_vals_logs_mat[:, g], label='g_%d' % g)
+		plt.grid(True, which='both', linestyle='dotted')
+		plt.title('RL Returns')
+		plt.xlabel('Iterations')
+		plt.ylabel('Values')
+		plt.legend(loc=0)
+		plt.savefig(log_path+'/rl_returns.png')
 
 	### save norm_logs
 	with open(log_path+'/norm_grads.cpk', 'wb+') as fs:
@@ -361,7 +446,7 @@ def train_vae(vae, im_data):
 
 			### evaluate energy distance between real and gen distributions
 			if itr_total % eval_step == 0:
-				draw_path = log_path_draw_vae+'/vae_sample_%d.png' % itr_total if itr_total % draw_step == 0 else None
+				draw_path = log_path_draw_vae+'/vae_sample_%d' % itr_total if itr_total % draw_step == 0 else None
 				e_dist, e_norm, net_stats = eval_ganist(vae, train_dataset, draw_path, vae.step_vae)
 				e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 				eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
@@ -402,21 +487,23 @@ def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, z_data=None,
 	return g_samples
 
 '''
-Run discriminator of ganist on the given im_data, return logits and gradient norms.
+Run discriminator of ganist on the given im_data, return logits and gradient norms. **g_num**
 '''
 def run_ganist_disc(ganist, im_data, sampler=None, batch_size=64, z_data=None):
 	sampler = sampler if sampler is not None else ganist.step
 	sample_size = im_data.shape[0]
 	logits = np.zeros(sample_size)
 	grad_norms = np.zeros(sample_size)
+	en_logits = np.zeros((sample_size, ganist.g_num))
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
 		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
 		batch_im = im_data[batch_start:batch_end, ...]
-		batch_logits, batch_grad_norms = sampler(batch_im, None, dis_only=True, z_data=batch_z)
+		batch_logits, batch_grad_norms, batch_en_logits = sampler(batch_im, None, dis_only=True, z_data=batch_z)
 		logits[batch_start:batch_end] = batch_logits
 		grad_norms[batch_start:batch_end] = batch_grad_norms
-	return logits, grad_norms
+		en_logits[batch_start:batch_end, ...] = batch_en_logits
+	return logits, grad_norms, en_logits
 
 '''
 Returns the energy distance of a trained GANist, and draws block images of GAN samples
@@ -444,7 +531,7 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	### draw block image of gen samples
 	if draw_path is not None:
 		g_samples = g_samples.reshape((-1,) + im_data.shape[1:])
-		### manifold interpolation drawing mode **mt**
+		### manifold interpolation drawing mode **mt** **g_num**
 		'''
 		gr_samples = im_data[-sample_size:, ...]
 		gr_flip = np.array(gr_samples)
@@ -454,10 +541,12 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 		draw_samples = np.concatenate([g_samples, gr_samples, gr_flip], axis=3)
 		im_block_draw(draw_samples, draw_size, draw_path)
 		'''
-		im_block_draw(g_samples, draw_size, draw_path)
+		im_block_draw(g_samples, draw_size, draw_path+'.png')
+		gset_block_draw(ganist, 10, draw_path+'_gset.png')
 
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
+	print '>>> rl_vals:', ganist.g_rl_vals
 
 	return 2*rg_score - rr_score - gg_score, rg_score, net_stats
 
@@ -478,10 +567,12 @@ Images im_data shape is (N, 28, 28, ch)
 def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	batch_size = 64
 	mode_threshold = 0
-	pr_threshold = 0.8
+	pr_threshold = 0.3 #0.8
 	data_size = im_data.shape[0]
 	channels = im_data.shape[-1]
-	class_size = 10**channels
+	### **cifar**
+	#class_size = 10**channels
+	class_size = 10
 	knn = 6 * channels
 	im_class_ids = dict((i, list()) for i in range(class_size))
 	print '>>> Mode Eval Started'
@@ -496,12 +587,20 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 			batch_len = batch_size if batch_end < data_size else data_size - batch_start
 			preds = np.zeros(batch_len)
 			### channels predictions (nan if less than pr_threshold)
+			'''
 			for ch in range(channels):
 				batch_data = im_data[batch_start:batch_end, ..., ch][..., np.newaxis]
 				preds_pr = mnet.step(batch_data, pred_only=True)
 				preds_id = np.argmax(preds_pr, axis=1)
 				preds[np.max(preds_pr, axis=1) < pr_threshold] = np.nan
 				preds += 10**ch * preds_id
+			'''
+			### prediction **cifar**
+			batch_data = im_data[batch_start:batch_end, ...]
+			preds_pr = mnet.step(batch_data, pred_only=True)
+			preds_id = np.argmax(preds_pr, axis=1)
+			preds[np.max(preds_pr, axis=1) < pr_threshold] = np.nan
+			preds += preds_id
 
 			### put each image id into predicted class list
 			for i, c in enumerate(preds):
@@ -509,6 +608,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 					im_class_ids[c].append(batch_start+i)
 	else:
 		### put each image id into predicted class list
+		print 'labs>>> ', labels[0:10]
 		for i, c in enumerate(labels):
 			im_class_ids[c].append(i)
 
@@ -570,6 +670,15 @@ def man_sample_draw(ganist, block_size):
 		samples = sample_ganist(ganist, sample_size, z_data=z_aug)
 		im_block_draw(samples, block_size, log_path_draw+'/man_gen_%d' % m)
 
+'''
+Draw gan specific manifold samples **g_num**
+'''
+def gset_sample_draw(ganist, block_size):
+	sample_size = block_size ** 2
+	for g in range(ganist.g_num):
+		z_data = g * np.ones(sample_size, dtype=np.int32)
+		samples = sample_ganist(ganist, sample_size, z_data=z_data)
+		im_block_draw(samples, block_size, log_path_draw+'/g_%d_manifold' % g)
 
 def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 	### dataset definition
@@ -615,8 +724,12 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 
 			if itr_total % eval_step == 0 and eval_im_data is not None:
 				eval_loss, eval_acc = eval_mnist_net(mnet, eval_im_data, eval_labels, batch_size)
-				eval_logs.append([eval_loss, eval_acc])
+				train_loss, train_acc = eval_mnist_net(mnet, im_data_sh[0:10000, ...], 
+					labels_sh[0:10000], batch_size)
+				eval_logs.append([eval_loss, eval_acc, train_loss, train_acc])
 				itrs_logs.append(itr_total)
+				print '>>> train_acc: ', train_acc
+				print '>>> eval_acc: ', eval_acc
 
 			if itr_total >= max_itr_total:
 				break
@@ -628,7 +741,7 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 		if len(eval_logs) < 2:
 			continue
 		eval_logs_mat = np.array(eval_logs)
-		eval_logs_names = ['eval_loss', 'eval_acc']
+		eval_logs_names = ['eval_loss', 'eval_acc', 'train_loss', 'train_acc']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, c_log_path, itrs=itrs_logs)
 	return eval_loss, eval_acc
 
@@ -660,13 +773,16 @@ if __name__ == '__main__':
 	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
 	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
 	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
-	mnist_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_14/run_%d/snapshots/model_83333_500000.h5'
+	#class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
+	class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
+	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_85/run_%d/snapshots/model_83333_500000.h5'
+	ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
 	sample_size = 10000
 	#sample_size = 350000
 
 	'''
 	DATASET LOADING AND DRAWING
+	'''
 	'''
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
@@ -677,10 +793,28 @@ if __name__ == '__main__':
 	test_imgs = im_process(test_data[0])
 	all_labs = np.concatenate([train_labs, val_labs, test_labs], axis=0)
 	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
+	'''
+	cifar_batch_path= '/media/evl/Public/Mahyar/cifar_10/data_batch_%d'
+	cifar_test_path= '/media/evl/Public/Mahyar/cifar_10/test_batch'
+	cifar_data_list = list()
+	cifar_labs_list = list()
+	for i in range(1, 6):
+		data, labs = read_cifar(cifar_batch_path % i)
+		cifar_data_list.append(data)
+		cifar_labs_list.append(labs)
+	cifar_test_data, cifar_test_labs = read_cifar(cifar_test_path)
+	train_labs = np.concatenate(cifar_labs_list, axis=0)
+	train_imgs = np.concatenate(cifar_data_list, axis=0)
+	all_labs = np.concatenate(cifar_labs_list+[cifar_test_labs], axis=0)
+	all_imgs = np.concatenate(cifar_data_list+[cifar_test_data], axis=0)
+	test_labs = val_labs = cifar_test_labs
+	test_imgs = val_imgs = cifar_test_data
 
 	### draw true stacked mnist images
 	### >>> dataset sensitive
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
+	print all_imgs_stack.shape
+	print all_labs_stack.shape
 		
 	#all_imgs_stack = get_stack_mnist_legacy(train_imgs)
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
@@ -688,7 +822,7 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.4)
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
 	### create mnist classifier
@@ -706,12 +840,12 @@ if __name__ == '__main__':
 	CLASSIFIER SETUP SECTION
 	'''
 	### train mnist classifier
-	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
+	val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
 	#print ">>> validation loss: ", val_loss
 	#print ">>> validation accuracy: ", val_acc
 
 	### load mnist classifier
-	mnet.load(mnist_net_path)
+	#mnet.load(class_net_path)
 
 	### test mnist classifier
 	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
@@ -723,10 +857,13 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, all_imgs)
+	#train_ganist(ganist, all_imgs, all_labs)
 
-	### load ganist
+	### load ganist **g_num**
 	#ganist.load(ganist_path % run_seed)
+	#ganist.load(ganist_path)
+	#gset_sample_draw(ganist, 10)
+	#sys.exit(0)
 
 	### draw samples from each component of manifold
 	#man_sample_draw(ganist, 10)
@@ -779,13 +916,16 @@ if __name__ == '__main__':
 	### OR load stack mnist dataset
 	#with open(stack_mnist_path, 'rb') as fs:
 	#	r_samples, r_labs = pk.load(fs)
+	### mode eval true data
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
+		log_path+'/mode_analysis_true.cpk', labels=r_labs)
 	### mode eval real data
-	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-	#	log_path+'/mode_analysis_real.cpk')
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
+		log_path+'/mode_analysis_real_c8.cpk')
 
 	### OR load mode eval real data
-	with open(stack_mnist_mode_path, 'rb') as fs:
-		mode_num, mode_count, mode_vars = pk.load(fs)
+	#with open(stack_mnist_mode_path, 'rb') as fs:
+	#	mode_num, mode_count, mode_vars = pk.load(fs)
 
 	pr = 1.0 * mode_count / np.sum(mode_count)
 	print ">>> real_mode_num: ", mode_num

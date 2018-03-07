@@ -65,11 +65,11 @@ class MnistNet:
 
 		### optimization parameters
 		self.lr = 1e-4
-		self.beta1 = 0.5
-		self.beta2 = 0.5
+		self.beta1 = 0.9
+		self.beta2 = 0.99
 
 		### network parameters
-		self.data_dim = [28, 28, 1]
+		self.data_dim = [32, 32, 3] #[28, 28, 1]
 		self.num_class = 10
 		self.c_act = lrelu
 
@@ -110,7 +110,9 @@ class MnistNet:
 
 	def build_classifier(self, data_layer, act, train_phase, reuse=False):
 		with tf.variable_scope('c_net'):
+			### mnist classifier
 			### encoding the 28*28*1 image with conv into 4*4*256
+			'''
 			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
 			h2 = act(conv2d(h1, 128, d_h=2, d_w=2, scope='conv2', reuse=reuse))
 			h3 = act(conv2d(h2, 256, d_h=2, d_w=2, scope='conv3', reuse=reuse))
@@ -118,6 +120,23 @@ class MnistNet:
 			### fully connected classifier
 			flat_h3 = tf.contrib.layers.flatten(h3)
 			o = dense(flat_h3, self.num_class, scope='fco', reuse=reuse)
+			return o
+			'''
+			### encoding the 28*28*1 image with conv into 4*4*256
+			h1 = act(conv2d(tf.layers.dropout(data_layer, rate=0.2, training=train_phase), 64, d_h=1, d_w=1, scope='conv1', reuse=reuse))
+			h2 = act(conv2d(h1, 64, d_h=1, d_w=1, scope='conv2', reuse=reuse))
+			h3 = act(conv2d(h2, 128, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+			#h4 = act(conv2d(h3, 128, d_h=1, d_w=1, scope='conv4', reuse=reuse))
+			#h5 = act(conv2d(h4, 128, d_h=1, d_w=1, scope='conv5', reuse=reuse))
+			h6 = tf.layers.dropout(act(conv2d(h3, 128, d_h=2, d_w=2, scope='conv6', reuse=reuse)), training=train_phase)
+			#h7 = act(conv2d(h6, 128, d_h=1, d_w=1, scope='conv7', reuse=reuse))
+			#h8 = act(conv2d(h7, 128, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv8', reuse=reuse))
+			#h9 = act(conv2d(h8, 10, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv9', reuse=reuse))
+			#o = tf.reduce_mean(h9, axis=[1,2])
+
+			### fully connected classifier
+			flat = tf.contrib.layers.flatten(h6)
+			o = dense(flat, self.num_class, scope='fco', reuse=reuse)
 			return o
 
 	def start_session(self):

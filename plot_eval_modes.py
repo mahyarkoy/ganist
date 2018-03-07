@@ -77,21 +77,24 @@ def setup_plot_ax(fignum, x_axis, y_axis, title, yscale='linear'):
 
 if __name__ == '__main__':
 	#true_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
+	true_path = 'logs_c3_cifar/mode_analysis_true.cpk'
+	#true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	#true_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
 	paths = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk',
-				'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
+				#'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_72/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_73/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_74/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_sisley_2/run_%d/mode_analysis_gen.cpk']
-	names = ['real',
-				#'monet_72', 
-				'monet_73', 
-				'monet_74', 
-				'sisley_2']
-	log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_52/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_46/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_90/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_91/run_%d/mode_analysis_gen.cpk']
+				'logs_c3_cifar/mode_analysis_gen.cpk']
+	names = ['real']
+				#'monet_52', 
+				#'monet_46', 
+				#'monet_90', 
+				#'monet_91']
+	#log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
+	log_path = 'plots'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Probability', 'Probability over Modes', yscale='log')
 	ax_vars, fig_vars = setup_plot_ax(1, 'Modes', 'Variance', 'Average Distance over Modes')
