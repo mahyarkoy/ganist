@@ -186,6 +186,7 @@ def gset_block_draw(ganist, sample_size, path, separate_channels=False):
 		else:
 			ims = ax.imshow(im_draw)
 		fig.colorbar(ims)
+		ax.set_axis_off()
 		fig.savefig(path, dpi=300)
 	else:
 		im_tmp = np.zeros(im_draw.shape)
@@ -232,6 +233,7 @@ def im_block_draw(im_data, draw_size, path, separate_channels=False):
 			ims = ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
 		else:
 			ims = ax.imshow(im_draw)
+		ax.set_axis_off()
 		fig.colorbar(ims)
 		fig.savefig(path, dpi=300)
 	else:
@@ -317,7 +319,8 @@ def train_ganist(ganist, im_data, labels=None):
 					stats_logs.append(net_stats)
 					### log norms every epoch
 					d_sample_size = 100
-					_, grad_norms, en_logits = run_ganist_disc(ganist, train_dataset[0:d_sample_size, ...], batch_size=256)
+					_, grad_norms, en_logits = run_ganist_disc(ganist, 
+						train_dataset[0:d_sample_size, ...], batch_size=256)
 					norms_logs.append([np.max(grad_norms), np.mean(grad_norms), np.std(grad_norms)])
 					itrs_logs.append(itr_total)
 					rl_vals_logs.append(list(ganist.g_rl_vals))
@@ -567,12 +570,12 @@ Images im_data shape is (N, 28, 28, ch)
 def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	batch_size = 64
 	mode_threshold = 0
-	pr_threshold = 0.3 #0.8
+	pr_threshold = 0.8
 	data_size = im_data.shape[0]
 	channels = im_data.shape[-1]
 	### **cifar**
-	#class_size = 10**channels
-	class_size = 10
+	class_size = 10**channels
+	#class_size = 10
 	knn = 6 * channels
 	im_class_ids = dict((i, list()) for i in range(class_size))
 	print '>>> Mode Eval Started'
@@ -587,7 +590,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 			batch_len = batch_size if batch_end < data_size else data_size - batch_start
 			preds = np.zeros(batch_len)
 			### channels predictions (nan if less than pr_threshold)
-			'''
+			
 			for ch in range(channels):
 				batch_data = im_data[batch_start:batch_end, ..., ch][..., np.newaxis]
 				preds_pr = mnet.step(batch_data, pred_only=True)
@@ -601,7 +604,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 			preds_id = np.argmax(preds_pr, axis=1)
 			preds[np.max(preds_pr, axis=1) < pr_threshold] = np.nan
 			preds += preds_id
-
+			'''
 			### put each image id into predicted class list
 			for i, c in enumerate(preds):
 				if not np.isnan(c):
@@ -766,24 +769,25 @@ def eval_mnist_net(mnet, im_data, labels, batch_size):
 	return eval_loss / eval_count, eval_sum / eval_count
 
 if __name__ == '__main__':
-	### read and process data
+	### read and process data **cifar**
 	### >>> dataset sensitive
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
 	#stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
 	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
 	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
 	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
-	#class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
+	class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
+	#class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
 	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_85/run_%d/snapshots/model_83333_500000.h5'
-	ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
+	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
 	sample_size = 10000
 	#sample_size = 350000
 
 	'''
 	DATASET LOADING AND DRAWING
 	'''
-	'''
+	### mnist dataset
+	
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
@@ -793,6 +797,8 @@ if __name__ == '__main__':
 	test_imgs = im_process(test_data[0])
 	all_labs = np.concatenate([train_labs, val_labs, test_labs], axis=0)
 	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
+
+	### cifar dataset **cifar**
 	'''
 	cifar_batch_path= '/media/evl/Public/Mahyar/cifar_10/data_batch_%d'
 	cifar_test_path= '/media/evl/Public/Mahyar/cifar_10/test_batch'
@@ -809,7 +815,7 @@ if __name__ == '__main__':
 	all_imgs = np.concatenate(cifar_data_list+[cifar_test_data], axis=0)
 	test_labs = val_labs = cifar_test_labs
 	test_imgs = val_imgs = cifar_test_data
-
+	'''
 	### draw true stacked mnist images
 	### >>> dataset sensitive
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
@@ -822,7 +828,7 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.4)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
 	### create mnist classifier
@@ -840,12 +846,12 @@ if __name__ == '__main__':
 	CLASSIFIER SETUP SECTION
 	'''
 	### train mnist classifier
-	val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
+	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
 	#print ">>> validation loss: ", val_loss
 	#print ">>> validation accuracy: ", val_acc
 
 	### load mnist classifier
-	#mnet.load(class_net_path)
+	mnet.load(class_net_path)
 
 	### test mnist classifier
 	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
@@ -857,12 +863,12 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	#train_ganist(ganist, all_imgs, all_labs)
+	train_ganist(ganist, all_imgs, all_labs)
 
 	### load ganist **g_num**
 	#ganist.load(ganist_path % run_seed)
 	#ganist.load(ganist_path)
-	#gset_sample_draw(ganist, 10)
+	gset_sample_draw(ganist, 10)
 	#sys.exit(0)
 
 	### draw samples from each component of manifold
@@ -917,15 +923,15 @@ if __name__ == '__main__':
 	#with open(stack_mnist_path, 'rb') as fs:
 	#	r_samples, r_labs = pk.load(fs)
 	### mode eval true data
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
-		log_path+'/mode_analysis_true.cpk', labels=r_labs)
+	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
+	#	log_path+'/mode_analysis_true.cpk', labels=r_labs)
 	### mode eval real data
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-		log_path+'/mode_analysis_real_c8.cpk')
+	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
+	#	log_path+'/mode_analysis_real_c8.cpk')
 
 	### OR load mode eval real data
-	#with open(stack_mnist_mode_path, 'rb') as fs:
-	#	mode_num, mode_count, mode_vars = pk.load(fs)
+	with open(stack_mnist_mode_path, 'rb') as fs:
+		mode_num, mode_count, mode_vars = pk.load(fs)
 
 	pr = 1.0 * mode_count / np.sum(mode_count)
 	print ">>> real_mode_num: ", mode_num

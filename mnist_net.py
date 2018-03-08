@@ -18,17 +18,17 @@ def lrelu(x, leak=0.2, name="lrelu"):
 		return f1 * x + f2 * abs(x)
 
 def conv2d(input_, output_dim,
-           k_h=5, k_w=5, d_h=1, d_w=1, stddev=0.02,
-           scope="conv2d", reuse=False):
-    with tf.variable_scope(scope, reuse=reuse):
-        w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
-                            initializer=tf.contrib.layers.xavier_initializer())
-        conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding='SAME')
-        biases = tf.get_variable('biases', [output_dim], initializer=tf.constant_initializer(0.0))
-        # conv = tf.reshape(tf.nn.bias_add(conv, biases), conv.get_shape())
-        conv = tf.nn.bias_add(conv, biases)
+		   k_h=5, k_w=5, d_h=1, d_w=1, stddev=0.02,
+		   scope="conv2d", reuse=False):
+	with tf.variable_scope(scope, reuse=reuse):
+		w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
+							initializer=tf.contrib.layers.xavier_initializer())
+		conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding='SAME')
+		biases = tf.get_variable('biases', [output_dim], initializer=tf.constant_initializer(0.0))
+		# conv = tf.reshape(tf.nn.bias_add(conv, biases), conv.get_shape())
+		conv = tf.nn.bias_add(conv, biases)
 
-        return conv
+		return conv
 
 def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=False):
 	shape = input_.get_shape().as_list()
@@ -43,18 +43,18 @@ def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=
 			return tf.matmul(input_, matrix) + bias
 
 def dense_batch(x, h_size, scope, phase, reuse=False):
-    with tf.variable_scope(scope, reuse=reuse):
-        h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense')
-    with tf.variable_scope(scope):
-        h2 = tf.contrib.layers.batch_norm(h1, center=True, scale=True, is_training=phase, scope='bn_'+str(reuse))
-    return h2
+	with tf.variable_scope(scope, reuse=reuse):
+		h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense')
+	with tf.variable_scope(scope):
+		h2 = tf.contrib.layers.batch_norm(h1, center=True, scale=True, is_training=phase, scope='bn_'+str(reuse))
+	return h2
 
 def dense(x, h_size, scope, reuse=False):
-    with tf.variable_scope(scope, reuse=reuse):
-        h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense')
-        #h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.truncated_normal_initializer(stddev=0.02))
-        #h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.contrib.layers.xavier_initializer(uniform=True))
-    return h1
+	with tf.variable_scope(scope, reuse=reuse):
+		h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense')
+		#h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.truncated_normal_initializer(stddev=0.02))
+		#h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.contrib.layers.xavier_initializer(uniform=True))
+	return h1
 
 ### Mnist Classifier Class definition
 class MnistNet:
@@ -68,8 +68,8 @@ class MnistNet:
 		self.beta1 = 0.9
 		self.beta2 = 0.99
 
-		### network parameters
-		self.data_dim = [32, 32, 3] #[28, 28, 1]
+		### network parameters **cifar**
+		self.data_dim = [28, 28, 1] #[32, 32, 1]
 		self.num_class = 10
 		self.c_act = lrelu
 
@@ -112,32 +112,38 @@ class MnistNet:
 		with tf.variable_scope('c_net'):
 			### mnist classifier
 			### encoding the 28*28*1 image with conv into 4*4*256
-			'''
+			
 			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
 			h2 = act(conv2d(h1, 128, d_h=2, d_w=2, scope='conv2', reuse=reuse))
 			h3 = act(conv2d(h2, 256, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 
 			### fully connected classifier
-			flat_h3 = tf.contrib.layers.flatten(h3)
-			o = dense(flat_h3, self.num_class, scope='fco', reuse=reuse)
-			return o
-			'''
-			### encoding the 28*28*1 image with conv into 4*4*256
-			h1 = act(conv2d(tf.layers.dropout(data_layer, rate=0.2, training=train_phase), 64, d_h=1, d_w=1, scope='conv1', reuse=reuse))
-			h2 = act(conv2d(h1, 64, d_h=1, d_w=1, scope='conv2', reuse=reuse))
-			h3 = act(conv2d(h2, 128, d_h=2, d_w=2, scope='conv3', reuse=reuse))
-			#h4 = act(conv2d(h3, 128, d_h=1, d_w=1, scope='conv4', reuse=reuse))
-			#h5 = act(conv2d(h4, 128, d_h=1, d_w=1, scope='conv5', reuse=reuse))
-			h6 = tf.layers.dropout(act(conv2d(h3, 128, d_h=2, d_w=2, scope='conv6', reuse=reuse)), training=train_phase)
-			#h7 = act(conv2d(h6, 128, d_h=1, d_w=1, scope='conv7', reuse=reuse))
-			#h8 = act(conv2d(h7, 128, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv8', reuse=reuse))
-			#h9 = act(conv2d(h8, 10, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv9', reuse=reuse))
-			#o = tf.reduce_mean(h9, axis=[1,2])
-
-			### fully connected classifier
-			flat = tf.contrib.layers.flatten(h6)
+			flat = tf.contrib.layers.flatten(h3)
 			o = dense(flat, self.num_class, scope='fco', reuse=reuse)
 			return o
+			'''
+			data_mean = np.array([-0.0210397 , -0.03945005, -0.11042669])
+			data_std = np.array([0.49213453, 0.48506803, 0.52113203])
+
+			data_proc = (data_layer - data_mean) / data_std
+			data_proc = tf.layers.dropout(data_proc, rate=0.2, training=train_phase)
+
+			### encoding the 28*28*1 image with conv into 4*4*256
+			h1 = act(conv2d(data_proc, 96, d_h=1, d_w=1, scope='conv1', reuse=reuse))
+			h2 = act(conv2d(h1, 96, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv2', reuse=reuse))
+			h3 = tf.layers.dropout(act(conv2d(h2, 96, d_h=2, d_w=2, k_h=3, k_w=3, scope='conv3', reuse=reuse)), training=train_phase)
+
+			h4 = act(conv2d(h3, 192, d_h=1, d_w=1, scope='conv4', reuse=reuse))
+			h5 = act(conv2d(h4, 192, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv5', reuse=reuse))
+			h6 = tf.layers.dropout(act(conv2d(h5, 192, d_h=2, d_w=2, k_h=3, k_w=3, scope='conv6', reuse=reuse)), training=train_phase)
+
+			h7 = act(conv2d(h6, 192, d_h=1, d_w=1, k_h=3, k_w=3, scope='conv7', reuse=reuse))
+			h8 = act(conv2d(h7, 192, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv8', reuse=reuse))
+			h9 = act(conv2d(h8, 10, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv9', reuse=reuse))
+			o = tf.reduce_mean(h9, axis=[1,2])
+			'''
+			return o
+
 
 	def start_session(self):
 		self.saver = tf.train.Saver(self.c_vars, keep_checkpoint_every_n_hours=1, max_to_keep=10)

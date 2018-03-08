@@ -42,6 +42,20 @@ def compute_stats(pr, pg):
 		np.sum(pr*np.log(1e-6 + 2. * pr / (pg+pr+1e-6)), axis=1)) / 2.
 	return kl_p, kl_g, jsd
 
+def plot_analysis_bars(ax, vals, names):
+	### plot mean values bar plots
+	ind = np.arange(vals[0].shape[1])
+	w = 0.1
+	b = 0
+	for v, n in zip(vals, names):
+		mean_v = np.mean(v, axis=0)
+		std_v = np.std(v, axis=0)
+		ax.bar(ind+b*w, mean_v, width=w, label=n, align='center')
+		ax.errorbar(ind+b*w, mean_v, yerr=std_v, fmt='none', ecolor='k', capsize=5)
+		b += 1
+	ax.set_xticks(ind+(b-1)*w / 2.0)
+	ax.set_xticklabels(ind)
+
 def plot_analysis(ax, vals, name, window_size=1):
 	k = 1. * np.ones(window_size) / window_size
 	mean_vals = np.mean(vals, axis=0)
@@ -65,7 +79,7 @@ def plot_analysis(ax, vals, name, window_size=1):
 	ax.plot(np.clip(sm_mean_vals-sm_std_vals, 0., None), linestyle='--', linewidth=0.5, color=cp[0].get_color())
 
 def setup_plot_ax(fignum, x_axis, y_axis, title, yscale='linear'):
-	fig = plt.figure(fignum)
+	fig = plt.figure(fignum, figsize=(20,10))
 	ax = fig.add_subplot(1,1,1)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_xlabel(x_axis)
@@ -77,47 +91,59 @@ def setup_plot_ax(fignum, x_axis, y_axis, title, yscale='linear'):
 
 if __name__ == '__main__':
 	#true_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	true_path = 'logs_c3_cifar/mode_analysis_true.cpk'
-	#true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
+	#true_path = 'logs_c3_cifar/mode_analysis_true.cpk'
+	true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	#true_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
 	paths = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk',
-				#'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
+				'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_52/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_46/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_90/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_91/run_%d/mode_analysis_gen.cpk']
-				'logs_c3_cifar/mode_analysis_gen.cpk']
-	names = ['real']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_46/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_93/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_94/run_%d/mode_analysis_gen.cpk']
+				#'logs_c3_cifar/mode_analysis_gen.cpk']
+	names = ['real',
 				#'monet_52', 
-				#'monet_46', 
-				#'monet_90', 
-				#'monet_91']
-	#log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
-	log_path = 'plots'
+				'monet_46', 
+				'monet_93', 
+				'monet_94']
+	log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
+	#log_path = 'plots'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Probability', 'Probability over Modes', yscale='log')
 	ax_vars, fig_vars = setup_plot_ax(1, 'Modes', 'Variance', 'Average Distance over Modes')
+	pr_logs = list()
+	vars_logs = list()
 
 	### real modes plotting
 	modes_r, counts_r, vars_r, p_r = read_mode_analysis(true_path)
-	plot_analysis(ax_p, p_r, 'true')
-	plot_analysis(ax_vars, vars_r, 'true')
+	pr_logs.append(p_r)
+	vars_logs.append(vars_r)
+	#plot_analysis(ax_p, p_r, 'true')
+	#plot_analysis(ax_vars, vars_r, 'true')
 	
 	### gen modes plotting
 	for p, n in zip(paths, names):
 		modes_g, counts_g, vars_g, p_g = read_mode_analysis(p)
 		kl_p, kl_g, jsd = compute_stats(np.mean(p_r, axis=0), p_g)
-		plot_analysis(ax_p, p_g, n)
-		plot_analysis(ax_vars, vars_g, n)
+		pr_logs.append(p_g)
+		vars_logs.append(vars_g)
+		#plot_analysis(ax_p, p_g, n)
+		#plot_analysis(ax_vars, vars_g, n)
 		print 'KL(p||g) for %s: %f std %f' % (n, np.mean(kl_p), np.std(kl_p))
 		print 'KL(g||p) for %s: %f std %f' % (n, np.mean(kl_g), np.std(kl_g))
 		print 'JSD(p||g) for %s: %f std %f' % (n, np.mean(jsd), np.std(jsd))
 		print np.mean(modes_g, axis=0)
 		print modes_g
 
+	#for p, v, n in zip(pr_logs, vars_logs, ['true']+names):
+	#	plot_analysis(ax_p, p, n)
+	#	plot_analysis(ax_vars, v, n)
+	plot_analysis_bars(ax_p, pr_logs, ['true']+names)
+	plot_analysis_bars(ax_vars, vars_logs, ['true']+names)
+
 	### save figures
 	ax_p.legend(loc=0)
 	ax_vars.legend(loc=0)
-	fig_p.savefig(log_path+'/pr_modes_'+'_'.join(names)+'.png', dpi=300)
-	fig_vars.savefig(log_path+'/vars_modes_'+'_'.join(names)+'.png', dpi=300)
+	fig_p.savefig(log_path+'/b_pr_modes_'+'_'.join(names)+'.png', dpi=300)
+	fig_vars.savefig(log_path+'/b_vars_modes_'+'_'.join(names)+'.png', dpi=300)

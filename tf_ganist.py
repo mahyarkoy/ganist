@@ -72,20 +72,24 @@ class Ganist:
 		self.d_lr = 2e-4
 		self.d_beta1 = 0.5
 		self.d_beta2 = 0.5
+		self.pg_lr = 1e-3
+		self.pg_beta1 = 0.5
+		self.pg_beta2 = 0.5
 
 		### network parameters **g_num** **mt**
 		### >>> dataset sensitive: data_dim
 		self.z_dim = 100 #256
 		self.man_dim = 0
-		self.g_num = 1
+		self.g_num = 10
 		self.z_range = 1.0
-		self.data_dim = [32, 32, 3] #[28, 28, 1]
+		self.data_dim = [28, 28, 1] #[32, 32, 1]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.rg_loss_weight = 0.0
 		self.rec_penalty_weight = 0.0
-		self.en_loss_weight = 0.0
+		self.en_loss_weight = 1.0
 		self.rl_lr = 0.99
+		self.pg_base_lr = 1 - 1e-4
 		self.rl_bias = 0.0
 		self.rl_counter = 1
 		self.g_locks = np.linspace(0.001, 1., num=self.g_num)
@@ -154,9 +158,9 @@ class Ganist:
 			self.rg_grad_norm_output = tf.norm(rg_grad_flat, axis=1)
 
 			### generated encoder loss given z_input has generator ids **g_num**
-			self.g_en_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+			self.g_en_loss = tf.nn.softmax_cross_entropy_with_logits(
 				labels=tf.one_hot(tf.reshape(self.z_input, [-1]), self.g_num, dtype=tf_dtype), 
-				logits=self.g_en_logits))
+				logits=self.g_en_logits)
 
 			### real encoder loss given z_input has generator ids, max entropy of real images **g_num**
 			self.r_en_loss = -tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
@@ -171,7 +175,7 @@ class Ganist:
 			self.d_loss_mean = tf.reduce_mean(
 				self.d_r_loss + self.d_g_loss + self.rg_loss_weight * self.d_rg_loss \
 				+ self.gp_loss_weight * gp_loss, axis=None)
-			self.d_loss_total = self.d_loss_mean + 0.* self.en_loss_weight * (self.r_en_loss + self.g_en_loss)
+			self.d_loss_total = self.d_loss_mean
 
 			### build g loss
 			if self.g_loss_type == 'log':
@@ -200,7 +204,7 @@ class Ganist:
 
 			### g loss combination **g_num**
 			self.g_loss_mean += self.mm_loss_weight * mm_loss - self.rec_penalty_weight * rec_penalty
-			self.g_loss_total = self.g_loss_mean + self.en_loss_weight * self.g_en_loss
+			self.g_loss_total = self.g_loss_mean + self.en_loss_weight * tf.reduce_mean(self.g_en_loss)
 
 			### collect params
 			self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
@@ -234,16 +238,37 @@ class Ganist:
 				self.d_opt = tf.train.AdamOptimizer(
 					self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(
 					self.d_loss_total, var_list=self.d_vars)
-				#self.e_opt = tf.train.AdamOptimizer(
-				#	self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(
-				#	self.r_en_loss, var_list=self.e_vars)
 
 			### summaries **g_num**
 			g_loss_sum = tf.summary.scalar("g_loss", self.g_loss_mean)
 			d_loss_sum = tf.summary.scalar("d_loss", self.d_loss_mean)
-			g_en_loss_sum = tf.summary.scalar("g_en_loss", self.g_en_loss)
-			r_en_loss_sum = tf.summary.scalar("r_en_loss", self.r_en_loss)
-			self.summary = tf.summary.merge([g_loss_sum, d_loss_sum, g_en_loss_sum, r_en_loss_sum])
+			self.summary = tf.summary.merge([g_loss_sum, d_loss_sum])
+
+			### Policy gradient updates
+			self.pg_var = tf.get_variable('pg_var', dtype=tf_dtype,
+				initializer=self.g_rl_vals)
+			self.pg_base = tf.get_variable('pg_base', dtype=tf_dtype,
+				initializer=0.0)
+			self.pg_var_flat = tf.reshape(self.pg_var, [1, -1])
+			
+			print '>>> pg_var shape: ', self.sess.run(tf.shape(self.pg_var))
+			log_soft_policy = tf.nn.softmax_cross_entropy_with_logits(
+				labels=tf.one_hot(tf.reshape(self.z_input, [-1]), self.g_num, dtype=tf_dtype), 
+				logits=tf.tile(self.pg_var_flat, tf.shape(tf.reshape(self.z_input, [-1, 1]))))
+			g_entropy_loss = tf.nn.softmax_cross_entropy_with_logits(
+				labels=1.0 * tf.ones_like(self.pg_var_flat) / self.g_num, 
+				logits=self.pg_var_flat)
+			pg_loss = self.g_loss + self.en_loss_weight * self.g_en_loss
+			pg_loss_total = tf.reduce_mean(
+				-log_soft_policy * (pg_loss - self.pg_base) + \
+				self.en_loss_weight * g_entropy_loss)
+			self.pg_opt = tf.train.AdamOptimizer(
+					self.pg_lr, beta1=self.pg_beta1, beta2=self.pg_beta2).minimize(
+					pg_loss_total, var_list=[self.pg_var])
+			with tf.control_dependencies([self.pg_opt]):
+				self.pg_base_opt = tf.assign(self.pg_base, 
+					self.pg_base_lr*self.pg_base + (1-self.pg_base_lr) * tf.reduce_mean(pg_loss))
+
 
 	def build_gen_mt(self, im_data, z, act, train_phase):
 		with tf.variable_scope('g_net'):
@@ -272,17 +297,17 @@ class Ganist:
 					im_size = self.data_dim[0]
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(dense(zi, 4*4*64, scope='fcz'))
-					h1 = tf.reshape(z_fc, [-1, 4, 4, 64])
+					z_fc = act(dense(zi, 4*4*32, scope='fcz'))
+					h1 = tf.reshape(z_fc, [-1, 4, 4, 32])
 
 					### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
 					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
 					#h2 = tf.maximum(tf.minimum(conv2d(h1_us, 64, scope='conv1'), 1.0), -1.0)
-					h2 = act(conv2d(h1_us, 32, scope='conv1'))
+					h2 = act(conv2d(h1_us, 16, scope='conv1'))
 
 					h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
 					#h3 = tf.maximum(tf.minimum(conv2d(h2_us, 32, scope='conv2'), 1.0), -1.0)
-					h3 = act(conv2d(h2_us, 16, scope='conv2'))
+					h3 = act(conv2d(h2_us, 8, scope='conv2'))
 				#for gi in range(self.g_num):
 					#with tf.variable_scope('gnum_%d' % gi):
 					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
@@ -302,12 +327,12 @@ class Ganist:
 		with tf.variable_scope('d_net'):
 			### encoding the 28*28*3 image with conv into 3*3*256
 			h1 = act(conv2d(data_layer, 32, d_h=2, d_w=2, scope='conv1', reuse=reuse))
-			h2 = act(conv2d(h1, 32, d_h=2, d_w=2, scope='conv2', reuse=reuse))
-			h3 = act(conv2d(h2, 32, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+			h2 = act(conv2d(h1, 64, d_h=2, d_w=2, scope='conv2', reuse=reuse))
+			#h3 = act(conv2d(h2, 128, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 			#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
 
 			### fully connected discriminator
-			flat = tf.contrib.layers.flatten(h3)
+			flat = tf.contrib.layers.flatten(h2)
 			o = dense(flat, 1, scope='fco', reuse=reuse)
 			return o, h2
 
@@ -325,7 +350,7 @@ class Ganist:
 				return o
 
 	def start_session(self):
-		self.saver = tf.train.Saver(self.g_vars+self.d_vars, 
+		self.saver = tf.train.Saver(self.g_vars+self.d_vars+[self.pg_var], 
 			keep_checkpoint_every_n_hours=5, max_to_keep=5)
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
@@ -403,19 +428,16 @@ class Ganist:
 		if not gen_update:
 			res_list = [self.g_layer, self.summary, self.d_opt, self.g_loss]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
-			#self.sess.run(self.e_opt, feed_dict=feed_dict)
-			#self.rl_bias += (1-self.rl_lr) * np.mean(res_list[3][:,0] - self.rl_bias)
-			#self.g_rl_vals[z_data] += (1-self.rl_lr) * (res_list[3][:,0] - self.rl_bias) \
-			#	* (1 - self.g_rl_vals[z_data] / np.sum(np.exp(self.g_rl_vals)))
-			#print '>>> r_logits shape:', res_list[3].shape
 		else:
-			res_list = [self.g_layer, self.summary, self.g_opt, self.g_loss, self.g_grad_norm]
+			res_list = [self.g_layer, self.summary, self.g_opt,
+			 self.g_loss, self.pg_base_opt]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
+			self.g_rl_vals = self.sess.run(self.pg_var_flat, feed_dict={})[0,:]
 			### RL value updates
-			self.g_rl_vals[z_data] += (1-self.rl_lr) * \
-				(-res_list[3][:,0] - self.g_rl_vals[z_data])
-			self.g_rl_vals += 1e-3
-			self.rl_counter += 1
+			#self.g_rl_vals[z_data] += (1-self.rl_lr) * \
+			#	(-res_list[3][:,0] - self.g_rl_vals[z_data])
+			#self.g_rl_vals += 1e-3
+			#self.rl_counter += 1
 		#print '>>> r_logits shape:', res_list[3].shape
 		### return summary and g_layer
 		return res_list[1], res_list[0]
