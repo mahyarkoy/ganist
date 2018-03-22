@@ -16,6 +16,7 @@ import tensorflow as tf
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.cm as mat_cm
 import os
 from progressbar import ETA, Bar, Percentage, ProgressBar
 import argparse
@@ -89,7 +90,7 @@ def im_process(im_data, im_size=28):
 	#im_data_re = np.zeros((im_data.shape[0], im_size, im_size, 1))
 	#for i in range(im_data.shape[0]):
 	#	im_data_re[i, ...] = resize(im_data[i, ...], (im_size, im_size), preserve_range=True)
-	im_data_re = im_data
+	im_data_re = np.array(im_data)
 
 	### rescale
 	im_data_re = im_data_re * 2.0 - 1.0
@@ -146,19 +147,20 @@ def get_stack_mnist_legacy(im_data):
 	return im_data_stacked
 
 def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear', itrs=None):
-	plt.figure(fignum, figsize=(8, 6))
-	plt.clf()
+	fig, ax = plt.subplots(figsize=(8, 6))
+	ax.clear()
 	if itrs is None:
-		plt.plot(vals, color=color)
+		ax.plot(vals, color=color)	
 	else:
-		plt.plot(itrs, vals, color=color)
-	plt.grid(True, which='both', linestyle='dotted')
-	plt.title(name)
-	plt.xlabel('Iterations')
-	plt.ylabel('Values')
+		ax.plot(itrs, vals, color=color)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_title(name)
+	ax.set_xlabel('Iterations')
+	ax.set_ylabel('Values')
 	if ytype=='log':
-		plt.yscale('log')
-	plt.savefig(save_path)
+		ax.set_yscale('log')
+	fig.savefig(save_path, dpi=300)
+	plt.close(fig)
 
 def plot_time_mat(mat, mat_names, fignum, save_path, ytype=None, itrs=None):
 	for n in range(mat.shape[1]):
@@ -167,61 +169,95 @@ def plot_time_mat(mat, mat_names, fignum, save_path, ytype=None, itrs=None):
 			ytype = 'log' if 'param' in fig_name else 'linear'
 		plot_time_series(fig_name, mat[:,n], fignum, save_path+'/'+fig_name+'.png', ytype=ytype, itrs=itrs)
 
-def gset_block_draw(ganist, sample_size, path, separate_channels=False):
-	im_data = np.zeros([ganist.g_num, sample_size]+ganist.data_dim)
+'''
+Samples sample_size images from each ganist generator, draws with color.
+im_data must have shape (imb, imh, imw, imc) with values in [-1,1]
+'''
+def gset_block_draw(ganist, sample_size, path, en_color=True):
+	im_draw = np.zeros([ganist.g_num, sample_size]+ganist.data_dim)
 	im_size = ganist.data_dim[0]
 	for g in range(ganist.g_num):
 		z_data = g * np.ones(sample_size, dtype=np.int32)
-		im_data[g, ...] = sample_ganist(ganist, sample_size, z_data=z_data)
-	im_draw = im_data.reshape([ganist.g_num, im_size*sample_size, im_size, -1])
-	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
-	im_draw = (im_draw + 1.0) / 2.0
-	### plots
-	fig = plt.figure(0)
-	fig.clf()
-	if not separate_channels or im_draw.shape[-1] != 3:
-		ax = fig.add_subplot(1, 1, 1)
-		if im_draw.shape[-1] == 1:
-			ims = ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
-		else:
-			ims = ax.imshow(im_draw)
-		fig.colorbar(ims)
-		ax.set_axis_off()
-		fig.savefig(path, dpi=300)
+		im_draw[g, ...] = sample_ganist(ganist, sample_size, z_data=z_data)
+	#im_draw = (im_draw + 1.0) / 2.0
+	if en_color:
+		en_block_draw(ganist, im_draw, path)
 	else:
-		im_tmp = np.zeros(im_draw.shape)
-		ax = fig.add_subplot(1, 3, 1)
-		im_tmp[..., 0] = im_draw[..., 0]
-		ax.set_axis_off()
-		ax.imshow(im_tmp)
-
-		ax = fig.add_subplot(1, 3, 2)
-		im_tmp[...] = 0.0
-		im_tmp[..., 1] = im_draw[..., 1]
-		ax.set_axis_off()
-		ax.imshow(im_tmp)
-
-		ax = fig.add_subplot(1, 3, 3)
-		im_tmp[...] = 0.0
-		im_tmp[..., 2] = im_draw[..., 2]
-		ax.set_axis_off()
-		ax.imshow(im_tmp)
-
-		fig.subplots_adjust(wspace=0, hspace=0)
-		fig.savefig(path, dpi=300)
-
+		block_draw(im_draw, path)
 
 '''
-Draws a draw_size*draw_size block image by randomly selecting from im_data.
-Assumes im_data range of (-1,1) and shape (N, d, d, c).
+Draws sample_size**2 randomly selected images from im_data.
+If im_labels is provided: selects sample_size images for each im_label and puts in columns.
+If ganist is provided: classifies selected images and adds color border.
+im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
+'''
+def im_block_draw(im_data, sample_size, path, im_labels=None, ganist=None):
+	imb, imh, imw, imc = im_data.shape
+	if im_labels is not None:
+		max_label = im_labels.max()
+		im_draw = np.zeros([max_label+1, sample_size, imh, imw, imc])
+		### select sample_size images from each label
+		for g in range(max_label+1):
+			im_draw[g, ...] = im_data[im_labels == g, ...][:sample_size, ...]
+	else:
+		draw_ids = np.random.choice(imb, size=sample_size**2, replace=False)
+		im_draw = im_data[draw_ids, ...].reshape([sample_size, sample_size, imh, imw, imc])
+	
+	#im_draw = (im_draw + 1.0) / 2.0
+	if ganist is not None:
+		en_block_draw(ganist, im_draw, path)
+	else:
+		block_draw(im_draw, path)
+
+'''
+Classifies im_data with ganist e_net, draws with color borders.
+im_data must have shape (cols, rows, imh, imw, imc) with values in [0,1]
+'''
+def en_block_draw(ganist, im_data, path, max_label=None):
+	cols, rows, imh, imw, imc = im_data.shape
+	max_label = ganist.g_num-1 if max_label is None else max_label
+	im_draw_flat = im_data.reshape([-1]+ganist.data_dim)
+	en_labels = np.argmax(eval_ganist_en(ganist, im_draw_flat), axis=1)
+	im_draw_color = im_color_borders(im_draw_flat, en_labels, max_label=max_label)
+	block_draw(im_draw_color.reshape([cols, rows, imh, imw, 3]), path)
+
+'''
+Adds a color border to im_data corresponding to its im_label.
+im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
+'''
+def im_color_borders(im_data, im_labels, max_label=None, color_map='tab20'):
+	fh = fw = 2
+	imb, imh, imw, imc = im_data.shape
+	max_label = im_labels.max() if max_label is None else max_label
+	if imc == 1:
+		im_data_t = np.tile(im_data, (1, 1, 1, 3))
+	else:
+		im_data_t = np.array(im_data)
+	im_labels_norm = 1. * im_labels.reshape([-1]) / max_label
+	### pick rgb color for each label: (imb, 3) in [-1,1]
+	cmap = mat_cm.get_cmap(color_map)
+	rgb_colors = cmap(im_labels_norm)[:, :3] * 2. - 1.
+	rgb_colors_t = np.tile(rgb_colors.reshape((imb, 1, 1, 3)), (1, imh, imw, 1))
+
+	### create mask
+	box_mask = np.ones((imh, imw))
+	box_mask[fh+1:imh-fh, fw+1:imw-fw] = 0.
+	box_mask_t = np.tile(box_mask.reshape((1, imh, imw, 1)), (imb, 1, 1, 3))
+	box_mask_inv = np.abs(box_mask_t - 1.)
+
+	### apply mask
+	im_data_border = im_data_t * box_mask_inv + rgb_colors_t * box_mask_t
+	return im_data_border
+
+'''
+im_data should be a (columns, rows, imh, imw, imc).
+im_data values should be in [0, 1].
 If c is not 3 then draws first channel only.
 '''
-def im_block_draw(im_data, draw_size, path, separate_channels=False):
-	sample_size = im_data.shape[0]
-	im_size = im_data.shape[1]
-	### choses images and puts them into a block shape
-	draw_ids = np.random.choice(sample_size, size=draw_size**2, replace=False)
-	im_draw = im_data[draw_ids, ...].reshape([draw_size, im_size*draw_size, im_size, -1])
+def block_draw(im_data, path, separate_channels=False):
+	cols, rows, imh, imw, imc = im_data.shape
+	### block shape
+	im_draw = im_data.reshape([cols, imh*rows, imw, imc])
 	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
 	im_draw = (im_draw + 1.0) / 2.0
 	### plots
@@ -234,7 +270,7 @@ def im_block_draw(im_data, draw_size, path, separate_channels=False):
 		else:
 			ims = ax.imshow(im_draw)
 		ax.set_axis_off()
-		fig.colorbar(ims)
+		#fig.colorbar(ims)
 		fig.savefig(path, dpi=300)
 	else:
 		im_tmp = np.zeros(im_draw.shape)
@@ -282,6 +318,8 @@ def train_ganist(ganist, im_data, labels=None):
 	norms_logs = list()
 	itrs_logs = list()
 	rl_vals_logs = list()
+	rl_pvals_logs = list()
+	en_acc_logs = list()
 
 	### training inits
 	d_itr = 0
@@ -296,7 +334,8 @@ def train_ganist(ganist, im_data, labels=None):
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
 		### >>> dataset sensitive: stack_size
-		train_dataset, train_labs = get_stack_mnist(im_data, labels=labels, stack_size=mnist_stack_size)
+		train_dataset, train_labs = get_stack_mnist(im_data, 
+			labels=labels, stack_size=mnist_stack_size)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
 
@@ -312,18 +351,45 @@ def train_ganist(ganist, im_data, labels=None):
 			while fetch_batch is False:
 				### evaluate energy distance between real and gen distributions
 				if itr_total % eval_step == 0:
-					draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 else None
+					draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 \
+						else None
 					e_dist, e_norm, net_stats = eval_ganist(ganist, train_dataset, draw_path)
 					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
 					stats_logs.append(net_stats)
 					### log norms every epoch
 					d_sample_size = 100
-					_, grad_norms, en_logits = run_ganist_disc(ganist, 
+					_, grad_norms = run_ganist_disc(ganist, 
 						train_dataset[0:d_sample_size, ...], batch_size=256)
 					norms_logs.append([np.max(grad_norms), np.mean(grad_norms), np.std(grad_norms)])
 					itrs_logs.append(itr_total)
+
+					### log rl vals and pvals **g_num**
 					rl_vals_logs.append(list(ganist.g_rl_vals))
+					rl_pvals_logs.append(list(ganist.g_rl_pvals))
+					#z_pr = np.exp(ganist.pg_temp * ganist.g_rl_pvals)
+					#z_pr = z_pr / np.sum(z_pr)
+					#rl_pvals_logs.append(list(z_pr))
+
+					### en_accuracy plots **g_num**
+					acc_array = np.zeros(ganist.g_num)
+					sample_size = 1000
+					for g in range(ganist.g_num):
+						z = g * np.ones(sample_size)
+						z = z.astype(np.int32)
+						g_samples = sample_ganist(ganist, sample_size, z_data=z)
+						acc_array[g] = eval_en_acc(ganist, g_samples, z)
+					en_acc_logs.append(list(acc_array))
+
+					### draw real samples en classified **g_num**
+					d_sample_size = 1000
+					#im_true_color = im_color_borders(train_dataset[:d_sample_size], 
+					#	train_labs[:d_sample_size], max_label=9)
+					#im_block_draw(im_true_color, 10, draw_path+'_t.png', 
+					#	im_labels=train_labs[:d_sample_size])
+					im_block_draw(train_dataset[:d_sample_size], 10, draw_path+'_t.png', 
+						im_labels=train_labs[:d_sample_size], ganist=ganist)
+
 					### en_preds
 					'''
 					en_preds = np.argmax(en_logits, axis=1)
@@ -365,42 +431,75 @@ def train_ganist(ganist, im_data, labels=None):
 		### save network every epoch
 		ganist.save(log_path_snap+'/model_%d_%d.h5' % (g_itr, itr_total))
 
-		### plot ganist evaluation plot every epoch
+		### plot ganist evaluation plot every epoch **g_num**
 		if len(eval_logs) < 2:
 			continue
 		eval_logs_mat = np.array(eval_logs)
 		stats_logs_mat = np.array(stats_logs)
 		norms_logs_mat = np.array(norms_logs)
 		rl_vals_logs_mat = np.array(rl_vals_logs)
+		rl_pvals_logs_mat = np.array(rl_pvals_logs)
+		en_acc_logs_mat = np.array(en_acc_logs)
+
 		eval_logs_names = ['energy_distance', 'energy_distance_norm']
 		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 
-							'big_vars_ratio', 'vars_count']
+							'big_vars_ratio']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path, itrs=itrs_logs)
 		plot_time_mat(stats_logs_mat, stats_logs_names, 1, log_path, itrs=itrs_logs)
+		
 		### plot norms
-		plt.figure(0, figsize=(8, 6))
-		plt.clf()
-		plt.plot(itrs_logs, norms_logs_mat[:,0], color='r', label='max_norm')
-		plt.plot(itrs_logs, norms_logs_mat[:,1], color='b', label='mean_norm')
-		plt.plot(itrs_logs, norms_logs_mat[:,1]+norms_logs_mat[:,2], color='b', linestyle='--')
-		plt.plot(itrs_logs, norms_logs_mat[:,1]-norms_logs_mat[:,2], color='b', linestyle='--')
-		plt.grid(True, which='both', linestyle='dotted')
-		plt.title('Norm Grads')
-		plt.xlabel('Iterations')
-		plt.ylabel('Values')
-		plt.legend(loc=0)
-		plt.savefig(log_path+'/norm_grads.png')
+		fig, ax = plt.subplots(figsize=(8, 6))
+		ax.clear()
+		ax.plot(itrs_logs, norms_logs_mat[:,0], color='r', label='max_norm')
+		ax.plot(itrs_logs, norms_logs_mat[:,1], color='b', label='mean_norm')
+		ax.plot(itrs_logs, norms_logs_mat[:,1]+norms_logs_mat[:,2], color='b', linestyle='--')
+		ax.plot(itrs_logs, norms_logs_mat[:,1]-norms_logs_mat[:,2], color='b', linestyle='--')
+		ax.grid(True, which='both', linestyle='dotted')
+		ax.set_title('Norm Grads')
+		ax.set_xlabel('Iterations')
+		ax.set_ylabel('Values')
+		ax.legend(loc=0)
+		fig.savefig(log_path+'/norm_grads.png', dpi=300)
+		plt.close(fig)
+		
 		### plot rl_vals **g_num**
-		plt.figure(0, figsize=(8, 6))
-		plt.clf()
+		fig, ax = plt.subplots(figsize=(8, 6))
+		ax.clear()
 		for g in range(ganist.g_num):
-			plt.plot(itrs_logs, rl_vals_logs_mat[:, g], label='g_%d' % g)
-		plt.grid(True, which='both', linestyle='dotted')
-		plt.title('RL Returns')
-		plt.xlabel('Iterations')
-		plt.ylabel('Values')
-		plt.legend(loc=0)
-		plt.savefig(log_path+'/rl_returns.png')
+			ax.plot(itrs_logs, rl_vals_logs_mat[:, g], label='g_%d' % g)
+		ax.grid(True, which='both', linestyle='dotted')
+		ax.set_title('RL Q Values')
+		ax.set_xlabel('Iterations')
+		ax.set_ylabel('Values')
+		ax.legend(loc=0)
+		fig.savefig(log_path+'/rl_q_vals.png', dpi=300)
+		plt.close(fig)
+		
+		### plot rl_pvals **g_num**
+		fig, ax = plt.subplots(figsize=(8, 6))
+		ax.clear()
+		for g in range(ganist.g_num):
+			ax.plot(itrs_logs, rl_pvals_logs_mat[:, g], label='g_%d' % g)
+		ax.grid(True, which='both', linestyle='dotted')
+		ax.set_title('RL Policy')
+		ax.set_xlabel('Iterations')
+		ax.set_ylabel('Values')
+		ax.legend(loc=0)
+		fig.savefig(log_path+'/rl_policy.png', dpi=300)
+		plt.close(fig)
+
+		### plot en_accs **g_num**
+		fig, ax = plt.subplots(figsize=(8, 6))
+		ax.clear()
+		for g in range(ganist.g_num):
+			ax.plot(itrs_logs, en_acc_logs_mat[:, g], label='g_%d' % g)
+		ax.grid(True, which='both', linestyle='dotted')
+		ax.set_title('Encoder Accuracy')
+		ax.set_xlabel('Iterations')
+		ax.set_ylabel('Values')
+		ax.legend(loc=0)
+		fig.savefig(log_path+'/encoder_acc.png', dpi=300)
+		plt.close(fig)
 
 	### save norm_logs
 	with open(log_path+'/norm_grads.cpk', 'wb+') as fs:
@@ -477,16 +576,18 @@ def train_vae(vae, im_data):
 '''
 Sample sample_size data points from ganist.
 '''
-def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, z_data=None, z_im=None):
+def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, 
+	z_data=None, zi_data=None, z_im=None):
 	sampler = sampler if sampler is not None else ganist.step
 	g_samples = np.zeros([sample_size] + ganist.data_dim)
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
 		batch_len = g_samples[batch_start:batch_end, ...].shape[0]
 		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
+		batch_zi = zi_data[batch_start:batch_end, ...] if zi_data is not None else None
 		batch_im = z_im[batch_start:batch_end, ...] if z_im is not None else None
 		g_samples[batch_start:batch_end, ...] = \
-			sampler(batch_im, batch_len, gen_only=True, z_data=batch_z)
+			sampler(batch_im, batch_len, gen_only=True, z_data=batch_z, zi_data=batch_zi)
 	return g_samples
 
 '''
@@ -497,16 +598,35 @@ def run_ganist_disc(ganist, im_data, sampler=None, batch_size=64, z_data=None):
 	sample_size = im_data.shape[0]
 	logits = np.zeros(sample_size)
 	grad_norms = np.zeros(sample_size)
-	en_logits = np.zeros((sample_size, ganist.g_num))
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
 		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
 		batch_im = im_data[batch_start:batch_end, ...]
-		batch_logits, batch_grad_norms, batch_en_logits = sampler(batch_im, None, dis_only=True, z_data=batch_z)
+		batch_logits, batch_grad_norms = sampler(batch_im, None, dis_only=True, z_data=batch_z)
 		logits[batch_start:batch_end] = batch_logits
 		grad_norms[batch_start:batch_end] = batch_grad_norms
-		en_logits[batch_start:batch_end, ...] = batch_en_logits
-	return logits, grad_norms, en_logits
+	return logits, grad_norms
+
+'''
+Evaluate encoder logits on the given dataset.
+'''
+def eval_ganist_en(ganist, im_data, batch_size=64):
+	sample_size = im_data.shape[0]
+	en_logits = np.zeros([sample_size, ganist.g_num])
+	for batch_start in range(0, sample_size, batch_size):
+		batch_end = batch_start + batch_size
+		batch_im = im_data[batch_start:batch_end, ...]
+		en_logits[batch_start:batch_end, ...] = \
+			ganist.step(batch_im, None, en_only=True)
+	return en_logits
+
+'''
+Evaluate encoder accuracy on the given dataset.
+'''
+def eval_en_acc(ganist, im_data, im_label, batch_size=64):
+	en_logits = eval_ganist_en(ganist, im_data, batch_size)
+	acc = np.mean((np.argmax(en_logits, axis=1) - im_label) == 0)
+	return acc
 
 '''
 Returns the energy distance of a trained GANist, and draws block images of GAN samples
@@ -544,12 +664,12 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 		draw_samples = np.concatenate([g_samples, gr_samples, gr_flip], axis=3)
 		im_block_draw(draw_samples, draw_size, draw_path)
 		'''
-		im_block_draw(g_samples, draw_size, draw_path+'.png')
-		gset_block_draw(ganist, 10, draw_path+'_gset.png')
+		### **g_num**
+		im_block_draw(g_samples, draw_size, draw_path+'.png', ganist=ganist)
+		gset_block_draw(ganist, 10, draw_path+'_gset.png', en_color=True)
 
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
-	print '>>> rl_vals:', ganist.g_rl_vals
 
 	return 2*rg_score - rr_score - gg_score, rg_score, net_stats
 
@@ -681,7 +801,7 @@ def gset_sample_draw(ganist, block_size):
 	for g in range(ganist.g_num):
 		z_data = g * np.ones(sample_size, dtype=np.int32)
 		samples = sample_ganist(ganist, sample_size, z_data=z_data)
-		im_block_draw(samples, block_size, log_path_draw+'/g_%d_manifold' % g)
+		im_block_draw(samples, block_size, log_path_draw+'/g_%d_manifold' % g, ganist=ganist)
 
 def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 	### dataset definition
@@ -836,11 +956,14 @@ if __name__ == '__main__':
 	### create a ganist instance
 	ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create a vaeganist instance
-	vae = vae_ganist.VAEGanist(sess, log_path_sum_vae)
+	#vae = vae_ganist.VAEGanist(sess, log_path_sum_vae)
 	### init variables
 	sess.run(tf.global_variables_initializer())
 	### save network initially
 	ganist.save(log_path_snap+'/model_0_0.h5')
+	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
+		print >>fs, '>>> g_vars: %d --- d_vars: %d --- e_vars: %d' \
+			% (ganist.g_vars_count, ganist.d_vars_count, ganist.e_vars_count)
 
 	'''
 	CLASSIFIER SETUP SECTION

@@ -50,6 +50,7 @@ def plot_analysis_bars(ax, vals, names):
 	b = 0
 	cmap = matcm.get_cmap('tab10')
 	c = [0., 0.1, 0.2, 0.3, 0.4]
+	c = [a*0.1 for a in range(10)] if len(c) < len(names) else c 
 	for v, n in zip(vals, names):
 		mean_v = np.mean(v, axis=0)
 		std_v = np.std(v, axis=0)
@@ -82,7 +83,7 @@ def plot_analysis(ax, vals, name, window_size=1):
 	ax.plot(np.clip(sm_mean_vals-sm_std_vals, 0., None), linestyle='--', linewidth=0.5, color=cp[0].get_color())
 
 def setup_plot_ax(fignum, x_axis, y_axis, title, yscale='linear'):
-	fig = plt.figure(fignum, figsize=(7,5))
+	fig = plt.figure(fignum, figsize=(10,5))
 	ax = fig.add_subplot(1,1,1)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_xlabel(x_axis)
@@ -100,16 +101,16 @@ if __name__ == '__main__':
 	paths = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk',
 				'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_98/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_sisley_2/run_%d/mode_analysis_gen.cpk',
 				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_90/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_90/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_107/run_%d/mode_analysis_gen.cpk']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_116/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_117/run_%d/mode_analysis_gen.cpk']
 				#'logs_c3_cifar/mode_analysis_gen.cpk']
 	names = ['Real',
-				#'monet_95', 
-				'monet_98', 
+				'sisley_2', 
 				'monet_90', 
-				'monet_107']
+				'monet_116', 
+				'monet_117']
 	log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
 	#log_path = 'plots'
 
