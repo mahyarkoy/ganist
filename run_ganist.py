@@ -47,6 +47,11 @@ import tf_ganist
 import mnist_net
 import vae_ganist
 
+### global colormap set
+global_cmap = mat_cm.get_cmap('tab20')
+global_color_locs = np.arange(20) / 20.
+global_color_set = global_cmap(global_color_locs)
+
 ### init setup
 ### >>> dataset sensitive: stack_size
 mnist_stack_size = 1
@@ -225,7 +230,7 @@ def en_block_draw(ganist, im_data, path, max_label=None):
 Adds a color border to im_data corresponding to its im_label.
 im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
 '''
-def im_color_borders(im_data, im_labels, max_label=None, color_map='tab20'):
+def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
 	fh = fw = 2
 	imb, imh, imw, imc = im_data.shape
 	max_label = im_labels.max() if max_label is None else max_label
@@ -235,8 +240,11 @@ def im_color_borders(im_data, im_labels, max_label=None, color_map='tab20'):
 		im_data_t = np.array(im_data)
 	im_labels_norm = 1. * im_labels.reshape([-1]) / max_label
 	### pick rgb color for each label: (imb, 3) in [-1,1]
-	cmap = mat_cm.get_cmap(color_map)
-	rgb_colors = cmap(im_labels_norm)[:, :3] * 2. - 1.
+	if color_map is None:
+		rgb_colors = global_color_set[im_labels, ...][:, :3] * 2. - 1.
+	else:
+		cmap = mat_cm.get_cmap(color_map)
+		rgb_colors = cmap(im_labels_norm)[:, :3] * 2. - 1.
 	rgb_colors_t = np.tile(rgb_colors.reshape((imb, 1, 1, 3)), (1, imh, imw, 1))
 
 	### create mask
@@ -466,7 +474,7 @@ def train_ganist(ganist, im_data, labels=None):
 		fig, ax = plt.subplots(figsize=(8, 6))
 		ax.clear()
 		for g in range(ganist.g_num):
-			ax.plot(itrs_logs, rl_vals_logs_mat[:, g], label='g_%d' % g)
+			ax.plot(itrs_logs, rl_vals_logs_mat[:, g], label='g_%d' % g, c=global_color_set[g])
 		ax.grid(True, which='both', linestyle='dotted')
 		ax.set_title('RL Q Values')
 		ax.set_xlabel('Iterations')
@@ -479,7 +487,7 @@ def train_ganist(ganist, im_data, labels=None):
 		fig, ax = plt.subplots(figsize=(8, 6))
 		ax.clear()
 		for g in range(ganist.g_num):
-			ax.plot(itrs_logs, rl_pvals_logs_mat[:, g], label='g_%d' % g)
+			ax.plot(itrs_logs, rl_pvals_logs_mat[:, g], label='g_%d' % g, c=global_color_set[g])
 		ax.grid(True, which='both', linestyle='dotted')
 		ax.set_title('RL Policy')
 		ax.set_xlabel('Iterations')
@@ -492,7 +500,7 @@ def train_ganist(ganist, im_data, labels=None):
 		fig, ax = plt.subplots(figsize=(8, 6))
 		ax.clear()
 		for g in range(ganist.g_num):
-			ax.plot(itrs_logs, en_acc_logs_mat[:, g], label='g_%d' % g)
+			ax.plot(itrs_logs, en_acc_logs_mat[:, g], label='g_%d' % g, c=global_color_set[g])
 		ax.grid(True, which='both', linestyle='dotted')
 		ax.set_title('Encoder Accuracy')
 		ax.set_xlabel('Iterations')
@@ -504,6 +512,10 @@ def train_ganist(ganist, im_data, labels=None):
 	### save norm_logs
 	with open(log_path+'/norm_grads.cpk', 'wb+') as fs:
 		pk.dump(norms_logs_mat, fs)
+
+	### save pval_logs
+	with open(log_path+'/rl_pvals.cpk', 'wb+') as fs:
+		pk.dump(rl_pvals_logs_mat, fs)
 
 '''
 Train VAE Ganist

@@ -101,28 +101,30 @@ if __name__ == '__main__':
 	paths = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk',
 				'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_sisley_2/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_90/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_116/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_117/run_%d/mode_analysis_gen.cpk']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_125/run_%d/mode_analysis_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_52/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127/run_%d/mode_analysis_gen.cpk']
 				#'logs_c3_cifar/mode_analysis_gen.cpk']
 	names = ['Real',
-				'sisley_2', 
-				'monet_90', 
-				'monet_116', 
-				'monet_117']
+				#'sisley_2', 
+				#'monet_121', 
+				'monet_126', 
+				#'monet_98',
+				'monet_127']
 	log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
 	#log_path = 'plots'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Probability', 'Probability over Modes', yscale='log')
-	ax_vars, fig_vars = setup_plot_ax(1, 'Modes', 'Variance', 'Average Distance over Modes')
+	ax_vars, fig_vars = setup_plot_ax(1, 'Modes', 'MSD', 'Average Distance over Modes')
 	pr_logs = list()
 	vars_logs = list()
 
-	### real modes plotting
+	### true modes plotting
 	modes_r, counts_r, vars_r, p_r = read_mode_analysis(true_path)
-	pr_logs.append(p_r)
-	vars_logs.append(vars_r)
+	#pr_logs.append(p_r)
+	#vars_logs.append(vars_r)
+	
 	#plot_analysis(ax_p, p_r, 'true')
 	#plot_analysis(ax_vars, vars_r, 'true')
 	
@@ -143,8 +145,10 @@ if __name__ == '__main__':
 	#for p, v, n in zip(pr_logs, vars_logs, ['true']+names):
 	#	plot_analysis(ax_p, p, n)
 	#	plot_analysis(ax_vars, v, n)
-	plot_analysis_bars(ax_p, pr_logs, ['True']+names)
-	plot_analysis_bars(ax_vars, vars_logs, ['True']+names)
+	#plot_analysis_bars(ax_p, pr_logs, ['True']+names)
+	#plot_analysis_bars(ax_vars, vars_logs, ['True']+names)
+	plot_analysis_bars(ax_p, pr_logs, names)
+	plot_analysis_bars(ax_vars, vars_logs, names)
 
 	### save figures
 	ax_p.legend(loc=0)

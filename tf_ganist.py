@@ -83,7 +83,7 @@ class Ganist:
 		### >>> dataset sensitive: data_dim
 		self.z_dim = 100 #256
 		self.man_dim = 0
-		self.g_num = 15
+		self.g_num = 20
 		self.z_range = 1.0
 		self.data_dim = [28, 28, 1] #[32, 32, 1]
 		self.mm_loss_weight = 0.0
@@ -369,11 +369,11 @@ class Ganist:
 			### encoding the 28*28*3 image with conv into 3*3*256
 			h1 = act(conv2d(data_layer, 32, d_h=2, d_w=2, scope='conv1', reuse=reuse))
 			h2 = act(conv2d(h1, 64, d_h=2, d_w=2, scope='conv2', reuse=reuse))
-			#h3 = act(bn(conv2d(h2, 128, d_h=2, d_w=2, scope='conv3', reuse=reuse), reuse=reuse, scope='bc3'))
+			h3 = act(conv2d(h2, 128, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 			#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
 
 			### fully connected discriminator
-			flat = tf.contrib.layers.flatten(h2)
+			flat = tf.contrib.layers.flatten(h3)
 			o = dense(flat, 1, scope='fco', reuse=reuse)
 			return o, flat
 
