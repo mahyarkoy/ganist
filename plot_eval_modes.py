@@ -4,12 +4,14 @@ import matplotlib.cm as matcm
 import cPickle as pk
 import os
 
-def read_mode_analysis(pathname):
+def read_mode_analysis(pathname, sample_quality=False):
 	modes_list = list()
 	counts_list = list()
 	vars_list = list()
 	p_list = list()
 	paths = list()
+	high_conf_list = list()
+
 	for i in range(10):
 		try:
 			p = pathname % i
@@ -21,6 +23,13 @@ def read_mode_analysis(pathname):
 			continue
 		paths.append(p)
 
+	if sample_quality is True:
+		for p in paths:
+			with open(p, 'rb') as fs:
+				th_set, high_conf = pk.load(fs)
+				high_conf_list.append(high_conf)
+		return th_set, np.array(high_conf_list)
+
 	for p in paths:
 		with open(p, 'rb') as fs:
 			mode_num, mode_count, mode_vars = pk.load(fs)
@@ -30,6 +39,7 @@ def read_mode_analysis(pathname):
 			counts_list.append(mode_count)
 			vars_list.append(mode_vars)
 			p_list.append(mode_p)
+
 	return np.array(modes_list), np.array(counts_list), np.array(vars_list), np.array(p_list)
 
 '''
@@ -42,6 +52,19 @@ def compute_stats(pr, pg):
 	jsd = (np.sum(pg*np.log(1e-6 + 2. * pg / (pg+pr+1e-6)), axis=1) + \
 		np.sum(pr*np.log(1e-6 + 2. * pr / (pg+pr+1e-6)), axis=1)) / 2.
 	return kl_p, kl_g, jsd
+
+def plot_quality(ax, inds, vals, names):
+	b = 0
+	cmap = matcm.get_cmap('tab10')
+	c = [0., 0.1, 0.2, 0.3, 0.4]
+	c = [a*0.1 for a in range(10)] if len(c) < len(names) else c
+	for v, n in zip(vals, names):
+		mean_v = np.mean(v, axis=0)
+		std_v = np.std(v, axis=0)
+		ax.plot(inds, mean_v, c=cmap(c[b]), label=n)
+		ax.plot(inds, mean_v+std_v, linestyle='--', linewidth=0.5, c=cmap(c[b]))
+		ax.plot(inds, mean_v-std_v, linestyle='--', linewidth=0.5, c=cmap(c[b]))
+		b += 1
 
 def plot_analysis_bars(ax, vals, names):
 	### plot mean values bar plots
@@ -82,8 +105,8 @@ def plot_analysis(ax, vals, name, window_size=1):
 	ax.plot(sm_mean_vals+sm_std_vals, linestyle='--', linewidth=0.5, color=cp[0].get_color())
 	ax.plot(np.clip(sm_mean_vals-sm_std_vals, 0., None), linestyle='--', linewidth=0.5, color=cp[0].get_color())
 
-def setup_plot_ax(fignum, x_axis, y_axis, title, yscale='linear'):
-	fig = plt.figure(fignum, figsize=(10,5))
+def setup_plot_ax(fignum, x_axis, y_axis, title, yscale='linear', figsize=(10,5)):
+	fig = plt.figure(fignum, figsize=figsize)
 	ax = fig.add_subplot(1,1,1)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_xlabel(x_axis)
@@ -99,26 +122,38 @@ if __name__ == '__main__':
 	true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	#true_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
 	paths = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk',
-				'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
+				#'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_k4/run_%d/mode_analysis_real.cpk',
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_k4/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_125/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_52/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127/run_%d/mode_analysis_gen.cpk']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_k4/run_%d/mode_analysis_gen.cpk']
 				#'logs_c3_cifar/mode_analysis_gen.cpk']
-	names = ['Real',
+	
+	names = ['Real_k4',
 				#'sisley_2', 
-				#'monet_121', 
-				'monet_126', 
+				#'monet_12', 
+				'monet_126_k4', 
 				#'monet_98',
-				'monet_127']
+				'monet_127_k4']
+	
+	sq_names = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_c7/run_%d/sample_quality_real.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_c7/run_%d/sample_quality_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_c7/run_%d/sample_quality_gen.cpk']
+
 	log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
 	#log_path = 'plots'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Probability', 'Probability over Modes', yscale='log')
 	ax_vars, fig_vars = setup_plot_ax(1, 'Modes', 'MSD', 'Average Distance over Modes')
+	ax_sq, fig_sq = setup_plot_ax(2, 'Confidence', 'Sample Ratio', 'Sample Quality', figsize=(8,6))
 	pr_logs = list()
 	vars_logs = list()
+	sq_logs = list()
 
 	### true modes plotting
 	modes_r, counts_r, vars_r, p_r = read_mode_analysis(true_path)
@@ -129,7 +164,7 @@ if __name__ == '__main__':
 	#plot_analysis(ax_vars, vars_r, 'true')
 	
 	### gen modes plotting
-	for p, n in zip(paths, names):
+	for p, n, sqn in zip(paths, names, sq_names):
 		modes_g, counts_g, vars_g, p_g = read_mode_analysis(p)
 		kl_p, kl_g, jsd = compute_stats(np.mean(p_r, axis=0), p_g)
 		pr_logs.append(p_g)
@@ -142,6 +177,9 @@ if __name__ == '__main__':
 		print np.mean(modes_g, axis=0)
 		print modes_g
 
+		#inds, high_conf = read_mode_analysis(sqn, sample_quality = True)
+		#sq_logs.append(high_conf)
+
 	#for p, v, n in zip(pr_logs, vars_logs, ['true']+names):
 	#	plot_analysis(ax_p, p, n)
 	#	plot_analysis(ax_vars, v, n)
@@ -149,9 +187,12 @@ if __name__ == '__main__':
 	#plot_analysis_bars(ax_vars, vars_logs, ['True']+names)
 	plot_analysis_bars(ax_p, pr_logs, names)
 	plot_analysis_bars(ax_vars, vars_logs, names)
+	#plot_quality(ax_sq, inds, sq_logs, names)
 
 	### save figures
 	ax_p.legend(loc=0)
 	ax_vars.legend(loc=0)
+	#ax_sq.legend(loc=0)
 	fig_p.savefig(log_path+'/pr_modes_'+'_'.join(names)+'.png', dpi=300)
 	fig_vars.savefig(log_path+'/vars_modes_'+'_'.join(names)+'.png', dpi=300)
+	#fig_sq.savefig(log_path+'/sample_quality_'+'_'.join(names)+'.png', dpi=300)

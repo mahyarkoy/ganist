@@ -786,8 +786,51 @@ def eval_mode_var(im_data, n_neighbors, n_jobs=12):
 	### calculate variance
 	d_tri = np.tril(d_mat)
 	count = np.sum(d_tri > 0)
+	print '>>> Mode zero distance counts: ', 2. * count / (d_mat.shape[0]**2 - d_mat.shape[0])
 	d_var = 2.0 * np.sum(d_tri ** 2) / count
 	return d_var
+
+'''
+Calculate and plot the percentage of samples classified with high confidence
+'''
+def eval_sample_quality(mnet, im_data, pathname):
+	batch_size = 64
+	th_size = 100
+	data_size = im_data.shape[0]
+	channels = im_data.shape[-1]
+
+	### classify images into modes
+	threshold_list = np.arange(th_size + 1) * 1. / th_size
+	high_conf = np.zeros(th_size+1)
+	for i, th in enumerate(threshold_list):
+		isnan_sum = 0.
+		for batch_start in range(0, data_size, batch_size):
+			batch_end = batch_start + batch_size
+			batch_len = batch_size if batch_end < data_size else data_size - batch_start
+			preds = np.zeros(batch_len)
+			### channels predictions (nan if less than th)
+			for ch in range(channels):
+				batch_data = im_data[batch_start:batch_end, ..., ch][..., np.newaxis]
+				preds_pr = mnet.step(batch_data, pred_only=True)
+				preds_id = np.argmax(preds_pr, axis=1)
+				preds[np.max(preds_pr, axis=1) < th] = np.nan
+				preds += 10**ch * preds_id
+			isnan_sum += np.sum(np.isnan(preds))
+		high_conf[i] = 1. - 1. * isnan_sum / data_size
+
+	### plot sample quality ratio **g_num**
+	fig, ax = plt.subplots(figsize=(8, 6))
+	ax.clear()
+	ax.plot(threshold_list, high_conf)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_title('Sample Quality')
+	ax.set_xlabel('Confidence')
+	ax.set_ylabel('Sample Ratio')
+	fig.savefig(pathname+'.png', dpi=300)
+	plt.close(fig)
+	### save pval_logs
+	with open(pathname+'.cpk', 'wb+') as fs:
+		pk.dump([threshold_list, high_conf], fs)
 
 '''
 Draw manifold samples
@@ -910,7 +953,7 @@ if __name__ == '__main__':
 	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
-	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_85/run_%d/snapshots/model_83333_500000.h5'
+	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
 	sample_size = 10000
 	#sample_size = 350000
@@ -1061,8 +1104,9 @@ if __name__ == '__main__':
 	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
 	#	log_path+'/mode_analysis_true.cpk', labels=r_labs)
 	### mode eval real data
+	#eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
 	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-	#	log_path+'/mode_analysis_real_c8.cpk')
+	#	log_path+'/mode_analysis_real.cpk')
 
 	### OR load mode eval real data
 	with open(stack_mnist_mode_path, 'rb') as fs:
@@ -1114,6 +1158,7 @@ if __name__ == '__main__':
 	
 	### mode eval gen data
 	### >>> dataset sensitive: draw_list
+	eval_sample_quality(mnet, g_samples, log_path+'/sample_quality_gen')
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
 		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
 	pg = 1.0 * mode_count / np.sum(mode_count)
