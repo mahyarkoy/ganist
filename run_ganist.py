@@ -191,6 +191,35 @@ def gset_block_draw(ganist, sample_size, path, en_color=True):
 		block_draw(im_draw, path)
 
 '''
+Similar to gset_block_draw, except only draw high probability generators
+'''
+def gset_block_draw_top(ganist, sample_size, path, pr_th=0.05, en_color=False, g_color=True):
+	g_pr = np.exp(ganist.pg_temp * ganist.g_rl_pvals)
+	g_pr = g_pr / np.sum(g_pr)
+	top_g_count = np.sum(g_pr > pr_th)
+	print g_pr
+	im_draw = np.zeros([top_g_count, sample_size]+ganist.data_dim)
+	z_data = np.zeros([top_g_count, sample_size], dtype=np.int32)
+	im_size = ganist.data_dim[0]
+	i = 0
+	for g in range(ganist.g_num):
+		if g_pr[g] <= pr_th:
+			continue
+		z_data[i, ...] = g * np.ones(sample_size, dtype=np.int32)
+		im_draw[i, ...] = sample_ganist(ganist, sample_size, z_data=z_data[i, ...])
+		i += 1
+	#im_draw = (im_draw + 1.0) / 2.0
+	if g_color is True:
+		im_draw_flat = im_draw.reshape([-1]+ganist.data_dim)
+		z_data_flat = z_data.reshape([-1])
+		im_draw_color = im_color_borders(im_draw_flat, z_data_flat, max_label=ganist.g_num-1)
+		im_draw = im_draw_color.reshape([top_g_count, sample_size]+ganist.data_dim[:-1]+[3])
+	if en_color is True:
+		en_block_draw(ganist, im_draw, path)
+	else:
+		block_draw(im_draw, path)
+
+'''
 Draws sample_size**2 randomly selected images from im_data.
 If im_labels is provided: selects sample_size images for each im_label and puts in columns.
 If ganist is provided: classifies selected images and adds color border.
@@ -953,7 +982,7 @@ if __name__ == '__main__':
 	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
-	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/snapshots/model_83333_500000.h5'
+	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_127/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
 	sample_size = 10000
 	#sample_size = 350000
@@ -1047,6 +1076,7 @@ if __name__ == '__main__':
 	#ganist.load(ganist_path % run_seed)
 	#ganist.load(ganist_path)
 	gset_sample_draw(ganist, 10)
+	gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png')
 	#sys.exit(0)
 
 	### draw samples from each component of manifold

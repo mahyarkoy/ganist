@@ -123,27 +123,27 @@ if __name__ == '__main__':
 	#true_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
 	paths = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk',
 				#'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_k4/run_%d/mode_analysis_real.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_real_mnist/run_%d/mode_analysis_real.cpk',
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_k4/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_sq/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_125/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_52/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_k4/run_%d/mode_analysis_gen.cpk']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_sq/run_%d/mode_analysis_gen.cpk']
 				#'logs_c3_cifar/mode_analysis_gen.cpk']
 	
-	names = ['Real_k4',
+	names = ['Real',
 				#'sisley_2', 
 				#'monet_12', 
-				'monet_126_k4', 
+				'DMWGAN-PL', 
 				#'monet_98',
-				'monet_127_k4']
+				'WGAN-GP']
 	
-	sq_names = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_c7/run_%d/sample_quality_real.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_c7/run_%d/sample_quality_gen.cpk',
+	sq_names = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_real_mnist/run_%d/sample_quality_real.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_sq/run_%d/sample_quality_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_c7/run_%d/sample_quality_gen.cpk']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_sq/run_%d/sample_quality_gen.cpk']
 
 	log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
 	#log_path = 'plots'
@@ -177,8 +177,8 @@ if __name__ == '__main__':
 		print np.mean(modes_g, axis=0)
 		print modes_g
 
-		#inds, high_conf = read_mode_analysis(sqn, sample_quality = True)
-		#sq_logs.append(high_conf)
+		inds, high_conf = read_mode_analysis(sqn, sample_quality = True)
+		sq_logs.append(high_conf)
 
 	#for p, v, n in zip(pr_logs, vars_logs, ['true']+names):
 	#	plot_analysis(ax_p, p, n)
@@ -187,12 +187,12 @@ if __name__ == '__main__':
 	#plot_analysis_bars(ax_vars, vars_logs, ['True']+names)
 	plot_analysis_bars(ax_p, pr_logs, names)
 	plot_analysis_bars(ax_vars, vars_logs, names)
-	#plot_quality(ax_sq, inds, sq_logs, names)
+	plot_quality(ax_sq, inds, sq_logs, names)
 
 	### save figures
 	ax_p.legend(loc=0)
 	ax_vars.legend(loc=0)
-	#ax_sq.legend(loc=0)
+	ax_sq.legend(loc=0)
 	fig_p.savefig(log_path+'/pr_modes_'+'_'.join(names)+'.png', dpi=300)
 	fig_vars.savefig(log_path+'/vars_modes_'+'_'.join(names)+'.png', dpi=300)
-	#fig_sq.savefig(log_path+'/sample_quality_'+'_'.join(names)+'.png', dpi=300)
+	fig_sq.savefig(log_path+'/sample_quality_'+'_'.join(names)+'.png', dpi=300)
