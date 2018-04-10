@@ -69,7 +69,7 @@ class MnistNet:
 		self.beta2 = 0.99
 
 		### network parameters **cifar**
-		self.data_dim = [28, 28, 1] #[32, 32, 1]
+		self.data_dim = [32, 32, 3]
 		self.num_class = 10
 		self.c_act = lrelu
 
@@ -111,6 +111,7 @@ class MnistNet:
 	def build_classifier(self, data_layer, act, train_phase, reuse=False):
 		with tf.variable_scope('c_net'):
 			### mnist classifier
+			'''
 			### encoding the 28*28*1 image with conv into 4*4*256
 			
 			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
@@ -122,6 +123,7 @@ class MnistNet:
 			o = dense(flat, self.num_class, scope='fco', reuse=reuse)
 			return o
 			'''
+			### cifar classifier
 			data_mean = np.array([-0.0210397 , -0.03945005, -0.11042669])
 			data_std = np.array([0.49213453, 0.48506803, 0.52113203])
 
@@ -141,9 +143,7 @@ class MnistNet:
 			h8 = act(conv2d(h7, 192, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv8', reuse=reuse))
 			h9 = act(conv2d(h8, 10, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv9', reuse=reuse))
 			o = tf.reduce_mean(h9, axis=[1,2])
-			'''
 			return o
-
 
 	def start_session(self):
 		self.saver = tf.train.Saver(self.c_vars, keep_checkpoint_every_n_hours=1, max_to_keep=10)

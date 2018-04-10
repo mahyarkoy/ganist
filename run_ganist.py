@@ -136,21 +136,6 @@ def get_stack_mnist(im_data, labels=None, stack_size=3):
 	
 	return im_data_stacked, labs_stacked
 
-def get_stack_mnist_legacy(im_data):
-	### copy channels
-	im_data_r = np.copy(im_data)
-	im_data_g = np.copy(im_data)
-	im_data_b = np.copy(im_data)
-
-	### shuffle
-	np.random.shuffle(im_data_r)
-	np.random.shuffle(im_data_g)
-	np.random.shuffle(im_data_b)
-
-	### stack shuffled channels
-	im_data_stacked = np.concatenate((im_data_r, im_data_g, im_data_b), axis=3)
-	return im_data_stacked
-
 def plot_time_series(name, vals, fignum, save_path, color='b', ytype='linear', itrs=None):
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
@@ -734,8 +719,8 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	data_size = im_data.shape[0]
 	channels = im_data.shape[-1]
 	### **cifar**
-	class_size = 10**channels
-	#class_size = 10
+	#class_size = 10**channels
+	class_size = 10
 	knn = 6 * channels
 	im_class_ids = dict((i, list()) for i in range(class_size))
 	print '>>> Mode Eval Started'
@@ -750,7 +735,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 			batch_len = batch_size if batch_end < data_size else data_size - batch_start
 			preds = np.zeros(batch_len)
 			### channels predictions (nan if less than pr_threshold)
-			
+			'''
 			for ch in range(channels):
 				batch_data = im_data[batch_start:batch_end, ..., ch][..., np.newaxis]
 				preds_pr = mnet.step(batch_data, pred_only=True)
@@ -764,7 +749,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 			preds_id = np.argmax(preds_pr, axis=1)
 			preds[np.max(preds_pr, axis=1) < pr_threshold] = np.nan
 			preds += preds_id
-			'''
+			
 			### put each image id into predicted class list
 			for i, c in enumerate(preds):
 				if not np.isnan(c):
@@ -836,13 +821,22 @@ def eval_sample_quality(mnet, im_data, pathname):
 			batch_end = batch_start + batch_size
 			batch_len = batch_size if batch_end < data_size else data_size - batch_start
 			preds = np.zeros(batch_len)
-			### channels predictions (nan if less than th)
+			### mnist channels predictions (nan if less than th)
+			'''
 			for ch in range(channels):
 				batch_data = im_data[batch_start:batch_end, ..., ch][..., np.newaxis]
 				preds_pr = mnet.step(batch_data, pred_only=True)
 				preds_id = np.argmax(preds_pr, axis=1)
 				preds[np.max(preds_pr, axis=1) < th] = np.nan
 				preds += 10**ch * preds_id
+			'''
+			### cifar prediction **cifar**
+			batch_data = im_data[batch_start:batch_end, ...]
+			preds_pr = mnet.step(batch_data, pred_only=True)
+			preds_id = np.argmax(preds_pr, axis=1)
+			preds[np.max(preds_pr, axis=1) < th] = np.nan
+			preds += preds_id
+
 			isnan_sum += np.sum(np.isnan(preds))
 		high_conf[i] = 1. - 1. * isnan_sum / data_size
 
@@ -963,8 +957,8 @@ if __name__ == '__main__':
 	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
 	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
 	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
-	class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	#class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
+	#class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
+	class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
 	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_with_pvals_saving/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
 	sample_size = 10000
@@ -974,7 +968,7 @@ if __name__ == '__main__':
 	DATASET LOADING AND DRAWING
 	'''
 	### mnist dataset
-	
+	'''
 	train_data, val_data, test_data = read_mnist(data_path)
 	train_labs = train_data[1]
 	train_imgs = im_process(train_data[0])
@@ -984,9 +978,9 @@ if __name__ == '__main__':
 	test_imgs = im_process(test_data[0])
 	all_labs = np.concatenate([train_labs, val_labs, test_labs], axis=0)
 	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
-
-	### cifar dataset **cifar**
 	'''
+	### cifar dataset **cifar**
+	
 	cifar_batch_path= '/media/evl/Public/Mahyar/cifar_10/data_batch_%d'
 	cifar_test_path= '/media/evl/Public/Mahyar/cifar_10/test_batch'
 	cifar_data_list = list()
@@ -1002,14 +996,13 @@ if __name__ == '__main__':
 	all_imgs = np.concatenate(cifar_data_list+[cifar_test_data], axis=0)
 	test_labs = val_labs = cifar_test_labs
 	test_imgs = val_imgs = cifar_test_data
-	'''
+	
 	### draw true stacked mnist images
 	### >>> dataset sensitive
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
 	print all_imgs_stack.shape
 	print all_labs_stack.shape
-		
-	#all_imgs_stack = get_stack_mnist_legacy(train_imgs)
+	
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
 	
 	'''
@@ -1111,16 +1104,17 @@ if __name__ == '__main__':
 	#with open(stack_mnist_path, 'rb') as fs:
 	#	r_samples, r_labs = pk.load(fs)
 	### mode eval true data
-	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
-	#	log_path+'/mode_analysis_true.cpk', labels=r_labs)
+	eval_sample_quality(mnet, test_imgs, log_path+'/sample_quality_test')
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
+		log_path+'/mode_analysis_true.cpk', labels=r_labs)
 	### mode eval real data
-	#eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
-	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-	#	log_path+'/mode_analysis_real.cpk')
+	eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
+		log_path+'/mode_analysis_real.cpk')
 
 	### OR load mode eval real data
-	with open(stack_mnist_mode_path, 'rb') as fs:
-		mode_num, mode_count, mode_vars = pk.load(fs)
+	#with open(stack_mnist_mode_path, 'rb') as fs:
+	#	mode_num, mode_count, mode_vars = pk.load(fs)
 
 	pr = 1.0 * mode_count / np.sum(mode_count)
 	print ">>> real_mode_num: ", mode_num

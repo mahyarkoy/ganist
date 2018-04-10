@@ -85,7 +85,7 @@ class Ganist:
 		self.man_dim = 0
 		self.g_num = 20
 		self.z_range = 1.0
-		self.data_dim = [28, 28, 1] #[32, 32, 1]
+		self.data_dim = [32, 32, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.rg_loss_weight = 0.0
@@ -200,7 +200,7 @@ class Ganist:
 			self.r_en_h = -tf.reduce_mean(tf.reduce_sum(tf.nn.softmax(self.r_en_logits) * tf.nn.log_softmax(self.r_en_logits), axis=1))
 			r_en_marg_pr = tf.reduce_mean(tf.nn.softmax(self.r_en_logits), axis=0)
 			self.r_en_marg_hlb = -tf.reduce_sum(r_en_marg_pr * tf.log(r_en_marg_pr + 1e-8))
-			print 'e_en_logits_shape: ', self.r_en_logits.shape
+			print 'r_en_logits_shape: ', self.r_en_logits.shape
 
 			### discounter
 			self.rl_counter = tf.get_variable('rl_counter', dtype=tf_dtype,
