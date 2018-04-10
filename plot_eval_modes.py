@@ -4,6 +4,11 @@ import matplotlib.cm as matcm
 import cPickle as pk
 import os
 
+### global colormap set
+global_cmap = matcm.get_cmap('tab20')
+global_color_locs = np.arange(20) / 20.
+global_color_set = global_cmap(global_color_locs)
+
 def read_mode_analysis(pathname, sample_quality=False):
 	modes_list = list()
 	counts_list = list()
@@ -125,25 +130,25 @@ if __name__ == '__main__':
 				#'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
 				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_real_mnist/run_%d/mode_analysis_real.cpk',
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_sq/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_128/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_125/run_%d/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_52/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_sq/run_%d/mode_analysis_gen.cpk']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_129/run_%d/mode_analysis_gen.cpk']
 				#'logs_c3_cifar/mode_analysis_gen.cpk']
 	
 	names = ['Real',
 				#'sisley_2', 
 				#'monet_12', 
-				'DMWGAN-PL', 
+				'DMGAN-PL', 
 				#'monet_98',
-				'WGAN-GP']
+				'GAN-GP']
 	
 	sq_names = ['/media/evl/Public/Mahyar/ganist_logs/logs_monet_real_mnist/run_%d/sample_quality_real.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_sq/run_%d/sample_quality_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_128/run_%d/sample_quality_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_127_sq/run_%d/sample_quality_gen.cpk']
+				'/media/evl/Public/Mahyar/ganist_logs/logs_monet_129/run_%d/sample_quality_gen.cpk']
 
 	log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
 	#log_path = 'plots'
@@ -193,6 +198,36 @@ if __name__ == '__main__':
 	ax_p.legend(loc=0)
 	ax_vars.legend(loc=0)
 	ax_sq.legend(loc=0)
-	fig_p.savefig(log_path+'/pr_modes_'+'_'.join(names)+'.png', dpi=300)
-	fig_vars.savefig(log_path+'/vars_modes_'+'_'.join(names)+'.png', dpi=300)
-	fig_sq.savefig(log_path+'/sample_quality_'+'_'.join(names)+'.png', dpi=300)
+	#fig_p.savefig(log_path+'/pr_modes_'+'_'.join(names)+'.png', dpi=300)
+	#fig_vars.savefig(log_path+'/vars_modes_'+'_'.join(names)+'.png', dpi=300)
+	#fig_sq.savefig(log_path+'/sample_quality_'+'_'.join(names)+'.png', dpi=300)
+	fig_p.savefig(log_path+'/pr_modes_'+'_'.join(names)+'.pdf')
+	fig_vars.savefig(log_path+'/vars_modes_'+'_'.join(names)+'.pdf')
+	fig_sq.savefig(log_path+'/sample_quality_'+'_'.join(names)+'.pdf')
+
+	### pvals plot
+	### plot rl_pvals **g_num**
+	pval_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_with_pvals_saving/run_%d/rl_pvals.cpk' % 4
+	with open(pval_path, 'rb') as fs:
+		pvals_mat = pk.load(fs)
+
+	pr_g = np.exp(pvals_mat)
+	pr_g = pr_g / (np.sum(pr_g, axis=1).reshape([-1, 1]))
+	pvals_mat = pr_g
+
+	fig, ax = plt.subplots(figsize=(8, 6))
+	ax.clear()
+	#print pvals_mat[:,13]
+	itrs_logs = np.arange(pvals_mat.shape[0]) * 1000
+	for g in range(pvals_mat.shape[-1]):
+		#g = 13
+		ax.plot(itrs_logs, pvals_mat[:, g], label='g_%d' % g, c=global_color_set[g])
+	#ax.plot(itrs_logs, pvals_mat[:, 13], label='g_%d' % g, c=global_color_set[13])
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_title('RL Policy')
+	ax.set_xlabel('Iterations')
+	ax.set_ylabel('Probability')
+	#ax.legend(loc=0)
+	#fig.savefig(log_path+'/rl_policy.png', dpi=300)
+	fig.savefig(log_path+'/rl_policy.pdf')
+	plt.close(fig)

@@ -197,7 +197,6 @@ def gset_block_draw_top(ganist, sample_size, path, pr_th=0.05, en_color=False, g
 	g_pr = np.exp(ganist.pg_temp * ganist.g_rl_pvals)
 	g_pr = g_pr / np.sum(g_pr)
 	top_g_count = np.sum(g_pr > pr_th)
-	print g_pr
 	im_draw = np.zeros([top_g_count, sample_size]+ganist.data_dim)
 	z_data = np.zeros([top_g_count, sample_size], dtype=np.int32)
 	im_size = ganist.data_dim[0]
@@ -544,7 +543,7 @@ def train_ganist(ganist, im_data, labels=None):
 
 	### save pval_logs
 	with open(log_path+'/rl_pvals.cpk', 'wb+') as fs:
-		pk.dump(rl_pvals_logs_mat, fs)
+		pk.dump([itrs_logs, rl_pvals_logs_mat], fs)
 
 '''
 Train VAE Ganist
@@ -862,22 +861,6 @@ def eval_sample_quality(mnet, im_data, pathname):
 		pk.dump([threshold_list, high_conf], fs)
 
 '''
-Draw manifold samples
-'''
-def man_sample_draw(ganist, block_size):
-	sample_size = block_size ** 2
-	z_data = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
-		size=[sample_size, ganist.z_dim-ganist.man_dim])
-	#z_data = np.random.normal(loc=0.0, scale=1.0, size=(batch_size, self.z_dim))
-	for m in range(ganist.man_dim):
-		### select manifold of each random point (1 hot)
-		z_man = np.zeros((sample_size, ganist.man_dim))
-		z_man[:, m] = 1.
-		z_aug = np.concatenate([z_data, z_man], axis=1)
-		samples = sample_ganist(ganist, sample_size, z_data=z_aug)
-		im_block_draw(samples, block_size, log_path_draw+'/man_gen_%d' % m)
-
-'''
 Draw gan specific manifold samples **g_num**
 '''
 def gset_sample_draw(ganist, block_size):
@@ -982,7 +965,7 @@ if __name__ == '__main__':
 	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
-	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_127/run_%d/snapshots/model_83333_500000.h5'
+	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_with_pvals_saving/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
 	sample_size = 10000
 	#sample_size = 350000
@@ -1074,13 +1057,10 @@ if __name__ == '__main__':
 
 	### load ganist **g_num**
 	#ganist.load(ganist_path % run_seed)
-	#ganist.load(ganist_path)
+	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	gset_sample_draw(ganist, 10)
 	gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png')
 	#sys.exit(0)
-
-	### draw samples from each component of manifold
-	#man_sample_draw(ganist, 10)
 
 	'''
 	VAE GANIST SETUP SECTION
