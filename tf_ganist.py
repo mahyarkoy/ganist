@@ -350,10 +350,10 @@ class Ganist:
 					h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//4, im_size//4], name='us2')
 					h3 = act(conv2d(h2_us, 64, scope='conv2'))
 
-					h3_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us3')
+					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size//2, im_size//2], name='us3')
 					h4 = act(conv2d(h3_us, 32, scope='conv3'))
 				
-					h4_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us4')
+					h4_us = tf.image.resize_nearest_neighbor(h4, [im_size, im_size], name='us4')
 					h5 = conv2d(h4_us, self.data_dim[-1], scope='conv4')
 					
 					### output activation to bring data values in (-1,1)

@@ -123,7 +123,7 @@ def parse_celeba(celeba_path, save_path=None):
 
 	### read train data
 	im_data = np.zeros((batch_size, im_size, im_size, 3))
-	counter = 32
+	counter = 0
 	for b in range(0, im_num_train, batch_size):
 		print '>>> celeba reading batch: ', b
 		batch_len = min(batch_size, im_num_train-b)
@@ -168,6 +168,42 @@ def load_celeba(pathname, shuffle=True):
 	with open(pathname, 'rb') as fs:
 		im_data = pk.load(fs)
 	np.random.shuffle(im_data)
+	return im_data
+
+def read_celeba(pathname, part_num, part_type):
+	im_num_train = 162770
+	im_num_val = 182637
+	im_num_test = 202599
+	batch_size = 10000
+	im_size = 128
+	im_name = '%06d.jpg'
+
+	if part_type == 0:
+		b = 0
+		im_num = im_num_train
+	elif part_type == 1:
+		b = im_num_train
+		im_num = im_num_val
+	elif part_type == 2:
+		b = im_num_val
+		im_num = im_num_test
+	else:
+		raise ValueError('>>> read_celeba part_type %d is undefined.' % part_type)
+
+	max_part = int(np.ceil((im_num - b) / batch_size))
+	part_num = part_num % max_part
+	b += part_num*batch_size
+	batch_len = min(batch_size, im_num-b)
+	im_data = np.zeros((batch_len, im_size, im_size, 3))
+
+	print 'Reading Celeba %d_batch_%d' % (part_type, part_num)
+	widgets = ["Celeba", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=batch_len, widgets=widgets)
+	pbar.start()
+
+	for i in range(batch_len):
+		pbar.update(i)
+		im_data[i, ...] = celeba_imread(celeba_path+'/'+im_name % (i+b+1), im_size)
 	return im_data
 
 '''
@@ -379,7 +415,7 @@ def block_draw(im_data, path, separate_channels=False):
 '''
 Train Ganist
 '''
-def train_ganist(ganist, im_paths, labels=None):
+def train_ganist(ganist, im_path, labels=None):
 	### training configs
 	max_itr_total = 5e5
 	d_updates = 5
@@ -409,14 +445,19 @@ def train_ganist(ganist, im_paths, labels=None):
 	widgets = ["Ganist", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=max_itr_total, widgets=widgets)
 	pbar.start()
+	part_num = 0
 
 	while itr_total < max_itr_total:
 		### get a rgb stacked mnist dataset
 		### >>> dataset sensitive: stack_size
 		#train_dataset, train_labs = get_stack_mnist(im_data, 
 		#	labels=labels, stack_size=mnist_stack_size)
-		train_dataset = load_celeba(im_paths[epoch%len(im_paths)])
+		#train_dataset = load_celeba(im_paths[epoch%len(im_paths)])
+		if epoch % 10 == 0:
+			train_dataset = read_celeba(im_path, part_num, part_type=0)
+			part_num += 1
 		train_size = train_dataset.shape[0]
+		np.random.shuffle(train_dataset)
 		epoch += 1
 		print ">>> Epoch %d started..." % epoch
 
@@ -1069,7 +1110,7 @@ if __name__ == '__main__':
 	### draw true stacked mnist images
 	### >>> dataset sensitive
 	#all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
-	train_imgs = load_celeba(celeba_train_paths[0])
+	train_imgs = read_celeba(celeba_path, 0, part_type=0)
 	im_block_draw(train_imgs, 10, log_path_draw+'/true_samples.png')
 
 	#sys.exit(0)
@@ -1115,7 +1156,7 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, celeba_train_paths)
+	train_ganist(ganist, celeba_path)
 
 	### load ganist **g_num**
 	#ganist.load(ganist_path % run_seed)
