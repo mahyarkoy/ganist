@@ -373,10 +373,10 @@ class Ganist:
 			h1 = act(conv2d(data_layer, 32, d_h=2, d_w=2, scope='conv1', reuse=reuse))
 			h2 = act(conv2d(h1, 64, d_h=2, d_w=2, scope='conv2', reuse=reuse))
 			h3 = act(conv2d(h2, 128, d_h=2, d_w=2, scope='conv3', reuse=reuse))
-			#h4 = act(conv2d(h3, 256, d_h=2, d_w=2, scope='conv4', reuse=reuse))
+			h4 = act(conv2d(h3, 256, d_h=2, d_w=2, scope='conv4', reuse=reuse))
 
 			### fully connected discriminator
-			flat = tf.contrib.layers.flatten(h3)
+			flat = tf.contrib.layers.flatten(h4)
 			o = dense(flat, 1, scope='fco', reuse=reuse)
 			return o, flat
 
@@ -386,7 +386,7 @@ class Ganist:
 			with tf.variable_scope('encoder'):
 				### encoding the data_layer into number of generators
 				flat = hidden_layer
-				flat = act(bn(dense(flat, 128, scope='fc', reuse=reuse), 
+				flat = act(bn(dense(flat, 256, scope='fc', reuse=reuse), 
 					reuse=reuse, scope='bf1', is_training=train_phase))
 				o = dense(flat, self.g_num, scope='fco', reuse=reuse)
 				return o

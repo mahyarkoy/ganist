@@ -28,6 +28,7 @@ import skimage.io as skio
 from sklearn.neighbors import NearestNeighbors, kneighbors_graph
 from sklearn.utils.graph import graph_shortest_path
 import sys
+import scipy
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
@@ -170,7 +171,8 @@ def load_celeba(pathname, shuffle=True):
 	np.random.shuffle(im_data)
 	return im_data
 
-def read_celeba(pathname, part_num, part_type):
+def read_celeba(part_num, part_type):
+	celeba_path = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba'
 	im_num_train = 162770
 	im_num_val = 182637
 	im_num_test = 202599
@@ -348,7 +350,7 @@ def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
 		im_data_t = np.tile(im_data, (1, 1, 1, 3))
 	else:
 		im_data_t = np.array(im_data)
-	im_labels_norm = 1. * im_labels.reshape([-1]) / max_label
+	im_labels_norm = 1. * im_labels.reshape([-1]) / (max_label+1)
 	### pick rgb color for each label: (imb, 3) in [-1,1]
 	if color_map is None:
 		rgb_colors = global_color_set[im_labels, ...][:, :3] * 2. - 1.
@@ -454,7 +456,7 @@ def train_ganist(ganist, im_path, labels=None):
 		#	labels=labels, stack_size=mnist_stack_size)
 		#train_dataset = load_celeba(im_paths[epoch%len(im_paths)])
 		if epoch % 10 == 0:
-			train_dataset = read_celeba(im_path, part_num, part_type=0)
+			train_dataset = read_celeba(part_num, part_type=0)
 			part_num += 1
 		train_size = train_dataset.shape[0]
 		np.random.shuffle(train_dataset)
@@ -472,12 +474,13 @@ def train_ganist(ganist, im_path, labels=None):
 			fetch_batch = False
 			while fetch_batch is False:
 				### evaluate energy distance between real and gen distributions
-				if itr_total % eval_step == 0:
+				if itr_total % eval_step == 0 or itr_total == max_itr_total - 1:
 					draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 \
 						else None
-					e_dist, e_norm, net_stats = eval_ganist(ganist, train_dataset, draw_path)
+					e_dist, fid_dist, net_stats = eval_ganist(ganist, train_dataset, draw_path)
 					e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
-					eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
+					#eval_logs.append([e_dist, e_dist/np.sqrt(2.0*e_norm)])
+					eval_logs.append([e_dist, fid_dist])
 					stats_logs.append(net_stats)
 					### log norms every epoch
 					d_sample_size = 100
@@ -563,7 +566,7 @@ def train_ganist(ganist, im_path, labels=None):
 		rl_pvals_logs_mat = np.array(rl_pvals_logs)
 		en_acc_logs_mat = np.array(en_acc_logs)
 
-		eval_logs_names = ['energy_distance', 'energy_distance_norm']
+		eval_logs_names = ['fid_dist', 'fid_dist']
 		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 
 							'big_vars_ratio']
 		plot_time_mat(eval_logs_mat, eval_logs_names, 1, log_path, itrs=itrs_logs)
@@ -630,6 +633,10 @@ def train_ganist(ganist, im_path, labels=None):
 	### save pval_logs
 	with open(log_path+'/rl_pvals.cpk', 'wb+') as fs:
 		pk.dump([itrs_logs, rl_pvals_logs_mat], fs)
+
+	### save eval_logs
+	with open(log_path+'/eval_logs.cpk', 'wb+') as fs:
+		pk.dump([itrs_logs, eval_logs_mat], fs)
 
 '''
 Train VAE Ganist
@@ -717,6 +724,49 @@ def sample_ganist(ganist, sample_size, sampler=None, batch_size=64,
 	return g_samples
 
 '''
+Calculate FID score between two set of image Inception features.
+Shape (N, 2048)
+'''
+def compute_fid(feat1, feat2):
+	num = feat1.shape[0]
+	m1 = np.mean(feat1, axis=0)
+	m2 = np.mean(feat2, axis=0)
+	cov1 = (feat1 - m1).T.dot(feat1 - m1) / (num - 1.)
+	cov2 = (feat2 - m2).T.dot(feat2 - m2) / (num - 1.)
+	csqrt = scipy.linalg.sqrtm(cov1.dot(cov2))
+	fid2 = np.sum(np.square(m1 - m2)) + np.trace(cov1 + cov2 - 2.*csqrt)
+	return np.sqrt(fid2)
+
+'''
+Extract inception final pool features from pretrained inception v3 model on imagenet
+'''
+def extract_inception_feat(sess, feat_layer, im_layer, im_data):
+	data_size = im_data.shape[0]
+	batch_size = 32
+	im_feat = np.zeros((data_size, 2048))
+	### forward on inception v3
+	widgets = ["InceptionV3", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=data_size, widgets=widgets)
+	pbar.start()
+	for batch_start in range(0, data_size, batch_size):
+		pbar.update(batch_start)
+		batch_end = batch_start + batch_size
+		pe = sess.run(feat_layer, {im_layer: im_data[batch_start:batch_end, ...]})
+		im_feat[batch_start:batch_end, ...] = pe.reshape((-1, 2048))
+	return im_feat
+
+'''
+Evaluate fid on data
+'''
+def eval_fid(sess, im_r, im_g):
+	### extract real images (at least data_size)
+	feat_r = extract_inception_feat(sess, inception_feat_layer, inception_im_layer, im_r)
+	### extract fake images
+	feat_g = extract_inception_feat(sess, inception_feat_layer, inception_im_layer, im_g)
+	### compute fid
+	return compute_fid(feat_r, feat_g)
+
+'''
 Run discriminator of ganist on the given im_data, return logits and gradient norms. **g_num**
 '''
 def run_ganist_disc(ganist, im_data, sampler=None, batch_size=64, z_data=None):
@@ -759,23 +809,28 @@ Returns the energy distance of a trained GANist, and draws block images of GAN s
 '''
 def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	### sample and batch size
-	sample_size = 1024
+	sample_size = 10000
 	batch_size = 64
 	draw_size = 10
 	sampler = sampler if sampler is not None else ganist.step
 	
 	### collect real and gen samples **mt**
-	r_samples = im_data[0:sample_size, ...].reshape((sample_size, -1))
+	#r_samples = im_data[0:sample_size, ...].reshape((sample_size, -1))
+	#g_samples = sample_ganist(ganist, sample_size, sampler=sampler,
+	#	z_im=im_data[-sample_size:, ...]).reshape((sample_size, -1))
+	r_samples = im_data[0:sample_size, ...]
 	g_samples = sample_ganist(ganist, sample_size, sampler=sampler,
-		z_im=im_data[-sample_size:, ...]).reshape((sample_size, -1))
+		z_im=im_data[-sample_size:, ...])
 	
 	### calculate energy distance
+	'''
 	rr_score = np.mean(np.sqrt(np.sum(np.square( \
 		r_samples[0:sample_size//2, ...] - r_samples[sample_size//2:, ...]), axis=1)))
 	gg_score = np.mean(np.sqrt(np.sum(np.square( \
 		g_samples[0:sample_size//2, ...] - g_samples[sample_size//2:, ...]), axis=1)))
 	rg_score = np.mean(np.sqrt(np.sum(np.square( \
 		r_samples[0:sample_size//2, ...] - g_samples[0:sample_size//2, ...]), axis=1)))
+	'''
 
 	### draw block image of gen samples
 	if draw_path is not None:
@@ -797,7 +852,11 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
 
-	return 2*rg_score - rr_score - gg_score, rg_score, net_stats
+	### fid
+	fid = eval_fid(ganist.sess, r_samples, g_samples)
+
+	return fid, fid, net_stats
+	#return 2*rg_score - rr_score - gg_score, rg_score, net_stats
 
 '''
 Runs eval_modes and store the results in pathname
@@ -1110,7 +1169,7 @@ if __name__ == '__main__':
 	### draw true stacked mnist images
 	### >>> dataset sensitive
 	#all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
-	train_imgs = read_celeba(celeba_path, 0, part_type=0)
+	train_imgs = read_celeba(0, part_type=0)
 	im_block_draw(train_imgs, 10, log_path_draw+'/true_samples.png')
 
 	#sys.exit(0)
@@ -1118,7 +1177,7 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.4)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.49)
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
 	### create mnist classifier
@@ -1150,6 +1209,37 @@ if __name__ == '__main__':
 	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
 	#print ">>> test loss: ", test_loss
 	#print ">>> test accuracy: ", test_acc
+
+	'''
+	INCEPTION SETUP
+	'''
+	inception_dir = '/media/evl/Public/Mahyar/Data/models/research/slim'
+	ckpt_path = '/media/evl/Public/Mahyar/Data/inception_v3_model/kaggle/inception_v3.ckpt'
+	sys.path.insert(0, inception_dir)
+
+	#from inception.slim import slim
+	import nets.inception_v3 as inception
+	from nets.inception_v3 import inception_v3_arg_scope
+
+	### images should be N*299*299*3 of values (-1,1)
+	images_pl = tf.placeholder(tf_ganist.tf_dtype, [None, ganist.data_dim[0], ganist.data_dim[1], 3], name='input_proc_images')
+	images_pl_re = tf.image.resize_bilinear(images_pl, [299, 299], align_corners=False)
+
+	### build model
+	with tf.contrib.slim.arg_scope(inception_v3_arg_scope()):
+		logits, endpoints = inception.inception_v3(images_pl_re, is_training=False, num_classes=1001)
+	
+	### load trained model
+	variables_to_restore = tf.contrib.slim.get_variables_to_restore(include=['InceptionV3'])
+	saver = tf.train.Saver(variables_to_restore)
+	saver.restore(sess, ckpt_path)
+
+	inception_im_layer = images_pl
+	inception_feat_layer = endpoints['AvgPool_1a']
+
+	#fid_test = eval_fid(sess, train_imgs, read_celeba(0, part_type=2))
+	#print '>>> FID TEST: ', fid_test
+	del train_imgs
 
 	'''
 	GAN SETUP SECTION
