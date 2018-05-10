@@ -85,7 +85,7 @@ class Ganist:
 		self.man_dim = 0
 		self.g_num = 1
 		self.z_range = 1.0
-		self.data_dim = [128, 128, 3]
+		self.data_dim = [64, 64, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.rg_loss_weight = 0.0
@@ -343,21 +343,18 @@ class Ganist:
 					z_fc = act(dense(zi, 8*8*256, scope='fcz'))
 					h1 = tf.reshape(z_fc, [-1, 8, 8, 256])
 
-					### decoding 8*8*256 code with upsampling and conv hidden layers into 128*128*3
-					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//8, im_size//8], name='us1')
+					### decoding 8*8*256 code with upsampling and conv hidden layers into 64*64*3
+					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
 					h2 = act(conv2d(h1_us, 128, scope='conv1'))
 
-					h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//4, im_size//4], name='us2')
+					h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
 					h3 = act(conv2d(h2_us, 64, scope='conv2'))
-
-					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size//2, im_size//2], name='us3')
-					h4 = act(conv2d(h3_us, 32, scope='conv3'))
 				
-					h4_us = tf.image.resize_nearest_neighbor(h4, [im_size, im_size], name='us4')
-					h5 = conv2d(h4_us, self.data_dim[-1], scope='conv4')
+					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
+					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
 					
 					### output activation to bring data values in (-1,1)
-					ol.append(tf.tanh(h5))
+					ol.append(tf.tanh(h4))
 
 			z_1_hot = tf.reshape(tf.one_hot(z, self.g_num, dtype=tf_dtype), [-1, self.g_num, 1, 1, 1])
 			z_map = tf.tile(z_1_hot, [1, 1]+self.data_dim)
@@ -369,14 +366,13 @@ class Ganist:
 	def build_dis(self, data_layer, act, train_phase, reuse=False):
 		with tf.variable_scope('d_net'):
 			bn = tf.contrib.layers.batch_norm
-			### encoding the 128*128*3 image with conv into 8*8*256
-			h1 = act(conv2d(data_layer, 32, d_h=2, d_w=2, scope='conv1', reuse=reuse))
-			h2 = act(conv2d(h1, 64, d_h=2, d_w=2, scope='conv2', reuse=reuse))
-			h3 = act(conv2d(h2, 128, d_h=2, d_w=2, scope='conv3', reuse=reuse))
-			h4 = act(conv2d(h3, 256, d_h=2, d_w=2, scope='conv4', reuse=reuse))
+			### encoding the 64*64*3 image with conv into 8*8*256
+			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
+			h2 = act(conv2d(h1, 128, d_h=2, d_w=2, scope='conv2', reuse=reuse))
+			h3 = act(conv2d(h2, 256, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 
 			### fully connected discriminator
-			flat = tf.contrib.layers.flatten(h4)
+			flat = tf.contrib.layers.flatten(h3)
 			o = dense(flat, 1, scope='fco', reuse=reuse)
 			return o, flat
 

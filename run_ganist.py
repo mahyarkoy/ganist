@@ -111,54 +111,6 @@ def read_cifar(cifar_path):
 	data_proc = data / 128.0 - 1.0
 	return np.transpose(data_proc, axes=(0,2,3,1)), labs
 
-'''
-Reads celeba images and stores cpickle batches
-'''
-def parse_celeba(celeba_path, save_path=None):
-	im_num = 202599
-	im_num_train = 162770
-	im_num_val = 182637
-	batch_size = 5000
-	im_size = 128
-	im_name = '%06d.jpg'
-
-	### read train data
-	im_data = np.zeros((batch_size, im_size, im_size, 3))
-	counter = 0
-	for b in range(0, im_num_train, batch_size):
-		print '>>> celeba reading batch: ', b
-		batch_len = min(batch_size, im_num_train-b)
-		for i in range(batch_len):
-			im_data[i, ...] = celeba_imread(celeba_path+'/'+im_name % (i+b+1), im_size)
-		with open(save_path+'/imgs_train_%d.cpk' % counter, 'wb+') as fs:
-			pk.dump(im_data[:batch_len, ...], fs)
-		counter += 1
-	print '>>> i+b+1: ', i+b+1
-
-	### read validation data
-	counter = 0
-	for b in range(im_num_train, im_num_val, batch_size):
-		print '>>> celeba val reading batch: ', b
-		batch_len = min(batch_size, im_num_val-b)
-		for i in range(batch_len):
-			im_data[i, ...] = celeba_imread(celeba_path+'/'+im_name % (i+b+1), im_size)
-		with open(save_path+'/imgs_val_%d.cpk' % counter, 'wb+') as fs:
-			pk.dump(im_data[:batch_len, ...], fs)
-		counter += 1
-	print '>>> i+b+1: ', i+b+1
-
-	### read test data
-	counter = 0
-	for b in range(im_num_val, im_num, batch_size):
-		print '>>> celeba test reading batch: ', b
-		batch_len = min(batch_size, im_num-b)
-		for i in range(batch_len):
-			im_data[i, ...] = celeba_imread(celeba_path+'/'+im_name % (i+b+1), im_size)
-		with open(save_path+'/imgs_test_%d.cpk' % counter, 'wb+') as fs:
-			pk.dump(im_data[:batch_len, ...], fs)
-		counter += 1
-	print '>>> i+b+1: ', i+b+1
-
 def celeba_imread(im_path, im_size):
 	im = skio.imread(im_path)
 	im_sq = im[20:-20, :, :]
@@ -176,8 +128,8 @@ def read_celeba(part_num, part_type):
 	im_num_train = 162770
 	im_num_val = 182637
 	im_num_test = 202599
-	batch_size = 10000
-	im_size = 128
+	batch_size = 20000
+	im_size = 64
 	im_name = '%06d.jpg'
 
 	if part_type == 0:
@@ -193,7 +145,8 @@ def read_celeba(part_num, part_type):
 		raise ValueError('>>> read_celeba part_type %d is undefined.' % part_type)
 
 	max_part = int(np.ceil((im_num - b) / batch_size))
-	part_num = part_num % max_part
+	part_num = part_num % (max_part - 1)
+
 	b += part_num*batch_size
 	batch_len = min(batch_size, im_num-b)
 	im_data = np.zeros((batch_len, im_size, im_size, 3))
@@ -343,7 +296,7 @@ Adds a color border to im_data corresponding to its im_label.
 im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
 '''
 def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
-	fh = fw = 10
+	fh = fw = 5
 	imb, imh, imw, imc = im_data.shape
 	max_label = im_labels.max() if max_label is None else max_label
 	if imc == 1:
@@ -742,7 +695,7 @@ Extract inception final pool features from pretrained inception v3 model on imag
 '''
 def extract_inception_feat(sess, feat_layer, im_layer, im_data):
 	data_size = im_data.shape[0]
-	batch_size = 32
+	batch_size = 64
 	im_feat = np.zeros((data_size, 2048))
 	### forward on inception v3
 	widgets = ["InceptionV3", Percentage(), Bar(), ETA()]
@@ -1177,7 +1130,7 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.49)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
 	### create mnist classifier
