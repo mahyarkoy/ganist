@@ -83,14 +83,14 @@ class Ganist:
 		### >>> dataset sensitive: data_dim
 		self.z_dim = 100 #256
 		self.man_dim = 0
-		self.g_num = 20
+		self.g_num = 1
 		self.z_range = 1.0
 		self.data_dim = [32, 32, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.rg_loss_weight = 0.0
 		self.rec_penalty_weight = 0.0
-		self.en_loss_weight = 1.0
+		self.en_loss_weight = 0.0
 		self.rl_lr = 0.99
 		self.pg_q_lr = 0.01
 		self.rl_bias = 0.0
@@ -340,15 +340,15 @@ class Ganist:
 					im_size = self.data_dim[0]
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(dense(zi, 4*4*128//4, scope='fcz'))
-					h1 = tf.reshape(z_fc, [-1, 4, 4, 128//4])
+					z_fc = act(dense(zi, 4*4*128, scope='fcz'))
+					h1 = tf.reshape(z_fc, [-1, 4, 4, 128])
 
 					### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
 					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
-					h2 = act(conv2d(h1_us, 64//4, scope='conv1'))
+					h2 = act(conv2d(h1_us, 64, scope='conv1'))
 
 					h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
-					h3 = act(conv2d(h2_us, 32//4, scope='conv2'))
+					h3 = act(conv2d(h2_us, 32, scope='conv2'))
 				
 					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
 					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
@@ -436,11 +436,11 @@ class Ganist:
 		self.g_rl_vals, self.g_rl_pvals = self.sess.run((self.pg_q, self.pg_var), feed_dict={})
 		if z_data is None:
 			#g_th = min(1 + self.rl_counter // 1000, self.g_num)
-			g_th = self.g_num
-			z_pr = np.exp(self.pg_temp * self.g_rl_pvals[:g_th])
-			z_pr = z_pr / np.sum(z_pr)
-			z_data = np.random.choice(g_th, size=batch_size, p=z_pr)
-			#z_data = np.random.randint(low=0, high=self.g_num, size=batch_size)
+			#g_th = self.g_num
+			#z_pr = np.exp(self.pg_temp * self.g_rl_pvals[:g_th])
+			#z_pr = z_pr / np.sum(z_pr)
+			#z_data = np.random.choice(g_th, size=batch_size, p=z_pr)
+			z_data = np.random.randint(low=0, high=self.g_num, size=batch_size)
 		
 		### z_data for manifold transform **mt**
 		'''
