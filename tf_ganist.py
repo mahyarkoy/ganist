@@ -340,15 +340,15 @@ class Ganist:
 					im_size = self.data_dim[0]
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(dense(zi, 4*4*128, scope='fcz'))
-					h1 = tf.reshape(z_fc, [-1, 4, 4, 128])
+					z_fc = act(dense(zi, 4*4*128*4, scope='fcz'))
+					h1 = tf.reshape(z_fc, [-1, 4, 4, 128*4])
 
 					### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
 					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
-					h2 = act(conv2d(h1_us, 64, scope='conv1'))
+					h2 = act(conv2d(h1_us, 64*4, scope='conv1'))
 
 					h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
-					h3 = act(conv2d(h2_us, 32, scope='conv2'))
+					h3 = act(conv2d(h2_us, 32*4, scope='conv2'))
 				
 					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
 					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
@@ -367,9 +367,9 @@ class Ganist:
 		with tf.variable_scope('d_net'):
 			bn = tf.contrib.layers.batch_norm
 			### encoding the 28*28*3 image with conv into 3*3*256
-			h1 = act(conv2d(data_layer, 32, d_h=2, d_w=2, scope='conv1', reuse=reuse))
-			h2 = act(conv2d(h1, 64, d_h=2, d_w=2, scope='conv2', reuse=reuse))
-			h3 = act(conv2d(h2, 128, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+			h1 = act(conv2d(data_layer, 32*4, d_h=2, d_w=2, scope='conv1', reuse=reuse))
+			h2 = act(conv2d(h1, 64*4, d_h=2, d_w=2, scope='conv2', reuse=reuse))
+			h3 = act(conv2d(h2, 128*4, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 			#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
 
 			### fully connected discriminator
@@ -383,7 +383,7 @@ class Ganist:
 			with tf.variable_scope('encoder'):
 				### encoding the data_layer into number of generators
 				flat = hidden_layer
-				flat = act(bn(dense(flat, 128, scope='fc', reuse=reuse), 
+				flat = act(bn(dense(flat, 128*4, scope='fc', reuse=reuse), 
 					reuse=reuse, scope='bf1', is_training=train_phase))
 				o = dense(flat, self.g_num, scope='fco', reuse=reuse)
 				return o
