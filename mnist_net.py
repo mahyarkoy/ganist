@@ -69,7 +69,7 @@ class MnistNet:
 		self.beta2 = 0.99
 
 		### network parameters **cifar**
-		self.data_dim = [32, 32, 3]
+		self.data_dim = [64, 64, 3]
 		self.num_class = 10
 		self.c_act = lrelu
 
@@ -123,9 +123,9 @@ class MnistNet:
 			o = dense(flat, self.num_class, scope='fco', reuse=reuse)
 			return o
 			'''
-			### cifar classifier
-			data_mean = np.array([-0.0210397 , -0.03945005, -0.11042669])
-			data_std = np.array([0.49213453, 0.48506803, 0.52113203])
+			### stl10 classifier
+			data_mean = np.array([-0.11010932, -0.1238524 , -0.18991554])
+			data_std = np.array([0.50755951, 0.50013678, 0.53002203])
 
 			data_proc = (data_layer - data_mean) / data_std
 			data_proc = tf.layers.dropout(data_proc, rate=0.2, training=train_phase)

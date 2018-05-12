@@ -85,7 +85,7 @@ class Ganist:
 		self.man_dim = 0
 		self.g_num = 1
 		self.z_range = 1.0
-		self.data_dim = [32, 32, 3]
+		self.data_dim = [64, 64, 3]
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.rg_loss_weight = 0.0
@@ -340,8 +340,8 @@ class Ganist:
 					im_size = self.data_dim[0]
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(dense(zi, 4*4*128*4, scope='fcz'))
-					h1 = tf.reshape(z_fc, [-1, 4, 4, 128*4])
+					z_fc = act(dense(zi, 8*8*128*4, scope='fcz'))
+					h1 = tf.reshape(z_fc, [-1, 8, 8, 128*4])
 
 					### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
 					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')

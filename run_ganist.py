@@ -110,6 +110,24 @@ def read_cifar(cifar_path):
 	data_proc = data / 128.0 - 1.0
 	return np.transpose(data_proc, axes=(0,2,3,1)), labs
 
+def read_stl(stl_data_path, stl_lab_path, im_size=64):
+	with open(stl_data_path, 'rb') as f:
+		# read whole file in uint8 chunks
+		everything = np.fromfile(f, dtype=np.uint8)
+		im_data = np.reshape(everything, (-1, 3, 96, 96))
+		im_data = np.transpose(im_data, (0, 3, 2, 1))
+
+		### resize
+		im_data_re = np.zeros((im_data.shape[0], im_size, im_size, 3))
+		for i in range(im_data.shape[0]):
+			im_data_re[i, ...] = resize(im_data[i, ...], (im_size, im_size), preserve_range=True)
+		im_data_re = im_data_re / 128.0 - 1.0
+
+	with open(stl_lab_path, 'rb') as f:
+		labels = np.fromfile(f, dtype=np.uint8) - 1
+
+	return im_data_re, labels
+
 '''
 Stacks images randomly on RGB channels, im_data shape must be (N, d, d, 1).
 '''
@@ -245,7 +263,7 @@ Adds a color border to im_data corresponding to its im_label.
 im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
 '''
 def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
-	fh = fw = 2
+	fh = fw = 4
 	imb, imh, imw, imc = im_data.shape
 	max_label = im_labels.max() if max_label is None else max_label
 	if imc == 1:
@@ -1031,7 +1049,7 @@ if __name__ == '__main__':
 	all_imgs = np.concatenate([train_imgs, val_imgs, test_imgs], axis=0)
 	'''
 	### cifar dataset **cifar**
-	
+	'''
 	cifar_batch_path= '/media/evl/Public/Mahyar/cifar_10/data_batch_%d'
 	cifar_test_path= '/media/evl/Public/Mahyar/cifar_10/test_batch'
 	cifar_data_list = list()
@@ -1047,13 +1065,26 @@ if __name__ == '__main__':
 	all_imgs = np.concatenate(cifar_data_list+[cifar_test_data], axis=0)
 	test_labs = val_labs = cifar_test_labs
 	test_imgs = val_imgs = cifar_test_data
-	
+	'''
+
+	###stl10 dataset
+	stl_data_path_train = '/media/evl/Public/Mahyar/Data/stl10_binary/train_X.bin'
+	stl_lab_path_train = '/media/evl/Public/Mahyar/Data/stl10_binary/train_y.bin'
+	stl_data_path_test = '/media/evl/Public/Mahyar/Data/stl10_binary/test_X.bin'
+	stl_lab_path_test = '/media/evl/Public/Mahyar/Data/stl10_binary/test_y.bin'
+	train_imgs, train_labs = read_stl(stl_data_path_train, stl_lab_path_train)
+	test_imgs, test_labs = read_stl(stl_data_path_test, stl_lab_path_test)
+	val_labs = test_labs
+	val_imgs = test_imgs
+	all_labs = np.concatenate([train_labs, test_labs], axis=0)
+	all_imgs = np.concatenate([train_imgs, test_imgs], axis=0)
+
 	### draw true stacked mnist images
 	### >>> dataset sensitive
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
 	print all_imgs_stack.shape
 	print all_labs_stack.shape
-	
+
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
 	
 	'''
@@ -1103,9 +1134,8 @@ if __name__ == '__main__':
 	inception_im_layer = images_pl
 	inception_feat_layer = endpoints['AvgPool_1a']
 
-	#fid_test = eval_fid(sess, train_imgs[:10000], test_imgs[:10000])
+	#fid_test = eval_fid(sess, train_imgs[:5000], test_imgs[:5000])
 	#print '>>> FID TEST: ', fid_test
-	#del train_imgs
 
 	'''
 	CLASSIFIER SETUP SECTION
@@ -1116,12 +1146,12 @@ if __name__ == '__main__':
 	#print ">>> validation accuracy: ", val_acc
 
 	### load mnist classifier
-	mnet.load(class_net_path)
+	#mnet.load(class_net_path)
 
 	### test mnist classifier
-	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
-	print ">>> test loss: ", test_loss
-	print ">>> test accuracy: ", test_acc
+	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
+	#print ">>> test loss: ", test_loss
+	#print ">>> test accuracy: ", test_acc
 
 	'''
 	GAN SETUP SECTION
@@ -1186,22 +1216,22 @@ if __name__ == '__main__':
 	#with open(stack_mnist_path, 'rb') as fs:
 	#	r_samples, r_labs = pk.load(fs)
 	### mode eval true data
-	eval_sample_quality(mnet, test_imgs, log_path+'/sample_quality_test')
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
-		log_path+'/mode_analysis_true.cpk', labels=r_labs)
+	#eval_sample_quality(mnet, test_imgs[:sample_size, ...], log_path+'/sample_quality_test')
+	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
+	#	log_path+'/mode_analysis_true.cpk', labels=r_labs)
 	### mode eval real data
-	eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-		log_path+'/mode_analysis_real.cpk')
+	#eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
+	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
+	#	log_path+'/mode_analysis_real.cpk')
 
 	### OR load mode eval real data
 	#with open(stack_mnist_mode_path, 'rb') as fs:
 	#	mode_num, mode_count, mode_vars = pk.load(fs)
 
-	pr = 1.0 * mode_count / np.sum(mode_count)
-	print ">>> real_mode_num: ", mode_num
-	print ">>> real_mode_count_std: ", np.std(mode_count)
-	print ">>> real_mode_var ", np.mean(mode_vars)
+	#pr = 1.0 * mode_count / np.sum(mode_count)
+	#print ">>> real_mode_num: ", mode_num
+	#print ">>> real_mode_count_std: ", np.std(mode_count)
+	#print ">>> real_mode_var ", np.mean(mode_vars)
 
 	'''
 	VAE DATA EVAL
@@ -1235,6 +1265,7 @@ if __name__ == '__main__':
 	'''
 	GAN DATA EVAL
 	'''
+	'''
 	gan_model = ganist#vae
 	sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
@@ -1260,6 +1291,6 @@ if __name__ == '__main__':
 	print ">>> KL(g||p): ", kl_g
 	print ">>> KL(p||g): ", kl_p
 	print ">>> JSD(g||p): ", jsd
-	
+	'''
 	sess.close()
 
