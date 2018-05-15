@@ -983,7 +983,7 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 	itrs_logs = list()
 
 	### training configs
-	max_itr_total = 1e5
+	max_itr_total = 5e5
 	batch_size = 64
 	eval_step = 100
 
@@ -1123,6 +1123,7 @@ if __name__ == '__main__':
 	'''
 
 	### lsun dataset
+	'''
 	data_size_train = 20000
 	data_size_val = 300
 	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
@@ -1149,6 +1150,39 @@ if __name__ == '__main__':
 	val_labs = np.concatenate([0 * np.ones(data_size_val, dtype=np.int32),
 								1 * np.ones(data_size_val, dtype=np.int32), 
 								2 * np.ones(data_size_val, dtype=np.int32)], axis=0)
+	test_imgs = val_imgs
+	test_labs = val_labs
+	all_labs = np.concatenate([train_labs, test_labs], axis=0)
+	all_imgs = np.concatenate([train_imgs, test_imgs], axis=0)
+
+	print '>>> lsun train mean: ', np.mean(train_imgs, axis=(0,1,2))
+	print '>>> lsun train std: ', np.std(train_imgs, axis=(0,1,2))
+	'''
+	### celeba lsun
+
+	data_size_train = 20000
+	data_size_val = 300
+	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
+	lsun_bed_path_val = '/media/evl/Public/Mahyar/Data/lsun/bedroom_val_imgs'
+	lsun_bridge_path_train = '/media/evl/Public/Mahyar/Data/lsun/bridge_train_imgs'
+	lsun_bridge_path_val = '/media/evl/Public/Mahyar/Data/lsun/bridge_val_imgs'
+	lsun_church_path_train = '/media/evl/Public/Mahyar/Data/lsun/church_outdoor_train_imgs'
+	lsun_church_path_val = '/media/evl/Public/Mahyar/Data/lsun/church_outdoor_val_imgs'
+	celeba_train = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba'
+	celeba_val = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba_val'
+	
+	train_imgs_bed = read_lsun(lsun_bed_path_train, data_size_train)
+	val_imgs_bed = read_lsun(lsun_bed_path_val, data_size_val)
+
+	train_imgs_celeba = read_lsun(celeba_train, data_size_train)
+	val_imgs_celeba = read_lsun(celeba_val, data_size_val)
+
+	train_imgs = np.concatenate([train_imgs_bed, train_imgs_celeba], axis=0)
+	train_labs = np.concatenate([0 * np.ones(data_size_train, dtype=np.int32),
+								1 * np.ones(data_size_train, dtype=np.int32)], axis=0)
+	val_imgs = np.concatenate([val_imgs_bed, val_imgs_celeba], axis=0)
+	val_labs = np.concatenate([0 * np.ones(data_size_val, dtype=np.int32),
+								1 * np.ones(data_size_val, dtype=np.int32)], axis=0)
 	test_imgs = val_imgs
 	test_labs = val_labs
 	all_labs = np.concatenate([train_labs, test_labs], axis=0)
@@ -1219,9 +1253,9 @@ if __name__ == '__main__':
 	CLASSIFIER SETUP SECTION
 	'''
 	### train mnist classifier
-	val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
-	print ">>> validation loss: ", val_loss
-	print ">>> validation accuracy: ", val_acc
+	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
+	#print ">>> validation loss: ", val_loss
+	#print ">>> validation accuracy: ", val_acc
 
 	### load mnist classifier
 	#mnet.load(class_net_path)
@@ -1242,7 +1276,7 @@ if __name__ == '__main__':
 	#ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	gset_sample_draw(ganist, 10)
-	gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png')
+	gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png', pr_th=0.99 / ganist.g_num)
 	#sys.exit(0)
 
 	'''
