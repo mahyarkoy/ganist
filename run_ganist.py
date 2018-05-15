@@ -28,6 +28,9 @@ from sklearn.neighbors import NearestNeighbors, kneighbors_graph
 from sklearn.utils.graph import graph_shortest_path
 import sys
 import scipy
+import skimage.io as skio
+import glob
+from PIL import Image
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
@@ -101,6 +104,44 @@ def im_process(im_data, im_size=28):
 	### rescale
 	im_data_re = im_data_re * 2.0 - 1.0
 	return im_data_re
+
+def read_image(im_path, im_size):
+	im = Image.open(im_path)
+	w, h = im.size
+	im_cut = min(w, h)
+	left = (w - im_cut) //2
+	top = (h - im_cut) //2
+	right = (w + im_cut) //2
+	bottom = (h + im_cut) //2
+	im_sq = im.crop((left, top, right, bottom))
+	im_re_pil = im_sq.resize((im_size, im_size), Image.BILINEAR)
+	im_re = np.array(im_re_pil.getdata()).reshape((im_size, im_size, 3))
+	im.close()
+	'''
+	im = skio.imread(im_path)
+	h, w, c = im.shape
+	wc = w //2
+	hc = h //2
+	im_cut = min(wc, hc)
+	im_sq = im[hc-im_cut:hc+im_cut, wc-im_cut:wc+im_cut, :]
+	im_re = resize(im_sq, (im_size, im_size), preserve_range=True, anti_aliasing=True)
+	'''
+	return im_re / 128.0 - 1.0
+
+def read_lsun(lsun_path, data_size, im_size=32):
+	im_data = np.zeros((data_size, im_size, im_size, 3))
+	i = 0
+	print '>>> Reading LSUN from: '+lsun_path
+	widgets = ["LSUN", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=data_size, widgets=widgets)
+	pbar.start()
+	for fn in glob.glob(lsun_path+'/*.jpg'):
+		pbar.update(i)
+		im_data[i, ...] = read_image(fn, im_size)
+		i += 1
+		if i == data_size:
+			break
+	return im_data
 
 def read_cifar(cifar_path):
 	with open(cifar_path, 'rb') as fs:
@@ -263,7 +304,7 @@ Adds a color border to im_data corresponding to its im_label.
 im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
 '''
 def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
-	fh = fw = 4
+	fh = fw = 2
 	imb, imh, imw, imc = im_data.shape
 	max_label = im_labels.max() if max_label is None else max_label
 	if imc == 1:
@@ -1068,6 +1109,7 @@ if __name__ == '__main__':
 	'''
 
 	###stl10 dataset
+	'''
 	stl_data_path_train = '/media/evl/Public/Mahyar/Data/stl10_binary/train_X.bin'
 	stl_lab_path_train = '/media/evl/Public/Mahyar/Data/stl10_binary/train_y.bin'
 	stl_data_path_test = '/media/evl/Public/Mahyar/Data/stl10_binary/test_X.bin'
@@ -1078,6 +1120,42 @@ if __name__ == '__main__':
 	val_imgs = test_imgs
 	all_labs = np.concatenate([train_labs, test_labs], axis=0)
 	all_imgs = np.concatenate([train_imgs, test_imgs], axis=0)
+	'''
+
+	### lsun dataset
+	data_size_train = 20000
+	data_size_val = 300
+	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
+	lsun_bed_path_val = '/media/evl/Public/Mahyar/Data/lsun/bedroom_val_imgs'
+	lsun_bridge_path_train = '/media/evl/Public/Mahyar/Data/lsun/bridge_train_imgs'
+	lsun_bridge_path_val = '/media/evl/Public/Mahyar/Data/lsun/bridge_val_imgs'
+	lsun_church_path_train = '/media/evl/Public/Mahyar/Data/lsun/church_outdoor_train_imgs'
+	lsun_church_path_val = '/media/evl/Public/Mahyar/Data/lsun/church_outdoor_val_imgs'
+	
+	train_imgs_bed = read_lsun(lsun_bed_path_train, data_size_train)
+	val_imgs_bed = read_lsun(lsun_bed_path_val, data_size_val)
+
+	train_imgs_bridge = read_lsun(lsun_bridge_path_train, data_size_train)
+	val_imgs_bridge = read_lsun(lsun_bridge_path_val, data_size_val)
+
+	train_imgs_church = read_lsun(lsun_church_path_train, data_size_train)
+	val_imgs_church = read_lsun(lsun_church_path_val, data_size_val)
+
+	train_imgs = np.concatenate([train_imgs_bed, train_imgs_bridge, train_imgs_church], axis=0)
+	train_labs = np.concatenate([0 * np.ones(data_size_train, dtype=np.int32),
+								1 * np.ones(data_size_train, dtype=np.int32), 
+								2 * np.ones(data_size_train, dtype=np.int32)], axis=0)
+	val_imgs = np.concatenate([val_imgs_bed, val_imgs_bridge, val_imgs_church], axis=0)
+	val_labs = np.concatenate([0 * np.ones(data_size_val, dtype=np.int32),
+								1 * np.ones(data_size_val, dtype=np.int32), 
+								2 * np.ones(data_size_val, dtype=np.int32)], axis=0)
+	test_imgs = val_imgs
+	test_labs = val_labs
+	all_labs = np.concatenate([train_labs, test_labs], axis=0)
+	all_imgs = np.concatenate([train_imgs, test_imgs], axis=0)
+
+	print '>>> lsun train mean: ', np.mean(train_imgs, axis=(0,1,2))
+	print '>>> lsun train std: ', np.std(train_imgs, axis=(0,1,2))
 
 	### draw true stacked mnist images
 	### >>> dataset sensitive
@@ -1141,9 +1219,9 @@ if __name__ == '__main__':
 	CLASSIFIER SETUP SECTION
 	'''
 	### train mnist classifier
-	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
-	#print ">>> validation loss: ", val_loss
-	#print ">>> validation accuracy: ", val_acc
+	val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
+	print ">>> validation loss: ", val_loss
+	print ">>> validation accuracy: ", val_acc
 
 	### load mnist classifier
 	#mnet.load(class_net_path)
@@ -1158,7 +1236,7 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, all_imgs, all_labs)
+	train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist **g_num**
 	#ganist.load(ganist_path % run_seed)
