@@ -699,7 +699,8 @@ Extract inception final pool features from pretrained inception v3 model on imag
 def extract_inception_feat(sess, feat_layer, im_layer, im_data):
 	data_size = im_data.shape[0]
 	batch_size = 64
-	im_feat = np.zeros((data_size, 2048))
+	feat_size = feat_layer.get_shape().as_list()[-1]
+	im_feat = np.zeros((data_size, feat_size))
 	### forward on inception v3
 	widgets = ["InceptionV3", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=data_size, widgets=widgets)
@@ -708,7 +709,7 @@ def extract_inception_feat(sess, feat_layer, im_layer, im_data):
 		pbar.update(batch_start)
 		batch_end = batch_start + batch_size
 		pe = sess.run(feat_layer, {im_layer: im_data[batch_start:batch_end, ...]})
-		im_feat[batch_start:batch_end, ...] = pe.reshape((-1, 2048))
+		im_feat[batch_start:batch_end, ...] = pe.reshape((-1, feat_size))
 	return im_feat
 
 '''
@@ -830,7 +831,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	channels = im_data.shape[-1]
 	### **cifar**
 	#class_size = 10**channels
-	class_size = 10
+	class_size = 2
 	knn = 6 * channels
 	im_class_ids = dict((i, list()) for i in range(class_size))
 	print '>>> Mode Eval Started'
@@ -890,6 +891,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 		pbar.update(c)
 		mode_count[c] = len(l)
 		mode_vars[c] = eval_mode_var(im_data[l, ...], knn) if len(l) > knn else 0.0
+	print '>>> mode count: ', mode_count
 	return np.sum(mode_count > mode_threshold), mode_count, mode_vars
 
 '''
@@ -910,7 +912,8 @@ def eval_mode_var(im_data, n_neighbors, n_jobs=12):
 	d_tri = np.tril(d_mat)
 	count = np.sum(d_tri > 0)
 	print '>>> Mode zero distance counts: ', 2. * count / (d_mat.shape[0]**2 - d_mat.shape[0])
-	d_var = 2.0 * np.sum(d_tri ** 2) / count
+	#d_var = 2.0 * np.sum(d_tri ** 2) / count
+	d_var = 2.0 * np.sum(d_tri ** 2) / max_size
 	return d_var
 
 '''
@@ -923,32 +926,20 @@ def eval_sample_quality(mnet, im_data, pathname):
 	channels = im_data.shape[-1]
 
 	### classify images into modes
+	preds_pr = np.zeros((data_size, mnet.num_class))
+	for batch_start in range(0, data_size, batch_size):
+		batch_end = batch_start + batch_size
+		batch_len = batch_size if batch_end < data_size else data_size - batch_start
+		### cifar prediction **cifar**
+		batch_data = im_data[batch_start:batch_end, ...]
+		preds_pr[batch_start:batch_end, ...] = mnet.step(batch_data, pred_only=True)
+	
+	### compute percentage of high threshold samples
 	threshold_list = np.arange(th_size + 1) * 1. / th_size
 	high_conf = np.zeros(th_size+1)
 	for i, th in enumerate(threshold_list):
-		isnan_sum = 0.
-		for batch_start in range(0, data_size, batch_size):
-			batch_end = batch_start + batch_size
-			batch_len = batch_size if batch_end < data_size else data_size - batch_start
-			preds = np.zeros(batch_len)
-			### mnist channels predictions (nan if less than th)
-			'''
-			for ch in range(channels):
-				batch_data = im_data[batch_start:batch_end, ..., ch][..., np.newaxis]
-				preds_pr = mnet.step(batch_data, pred_only=True)
-				preds_id = np.argmax(preds_pr, axis=1)
-				preds[np.max(preds_pr, axis=1) < th] = np.nan
-				preds += 10**ch * preds_id
-			'''
-			### cifar prediction **cifar**
-			batch_data = im_data[batch_start:batch_end, ...]
-			preds_pr = mnet.step(batch_data, pred_only=True)
-			preds_id = np.argmax(preds_pr, axis=1)
-			preds[np.max(preds_pr, axis=1) < th] = np.nan
-			preds += preds_id
-
-			isnan_sum += np.sum(np.isnan(preds))
-		high_conf[i] = 1. - 1. * isnan_sum / data_size
+		lower_sum = np.sum(np.max(preds_pr, axis=1) < th)
+		high_conf[i] = 1. - 1. * lower_sum / data_size
 
 	### plot sample quality ratio **g_num**
 	fig, ax = plt.subplots(figsize=(8, 6))
@@ -1068,8 +1059,11 @@ if __name__ == '__main__':
 	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
 	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	#class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	class_net_path = '/media/evl/Public/Mahyar/Data/cifar_classifier/snapshots/model_100000.h5'
-	#ganist_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_with_pvals_saving/run_%d/snapshots/model_83333_500000.h5'
+	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier/snapshots/model_18750.h5'
+	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier_single/snapshots/model_11250.h5'
+	class_net_path = '/media/evl/Public/Mahyar/Data/cl_mnist_classifier/snapshots/model_54375.h5'
+	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/logs_0/run_%d/snapshots/model_83333_500000.h5'
+	#ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl_temp/logs_cl_wgan/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
 	sample_size = 10000
 	#sample_size = 350000
@@ -1205,10 +1199,10 @@ if __name__ == '__main__':
 	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
-	### create mnist classifier
-	mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### create a ganist instance
 	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	### create mnist classifier
+	mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### create a vaeganist instance
 	#vae = vae_ganist.VAEGanist(sess, log_path_sum_vae)
 	### init variables
@@ -1246,9 +1240,14 @@ if __name__ == '__main__':
 	inception_im_layer = images_pl
 	inception_feat_layer = endpoints['AvgPool_1a']
 
-	#fid_test = eval_fid(sess, train_imgs[:5000], test_imgs[:5000])
+	#fid_test = eval_fid(sess, train_imgs[:5000], train_imgs[5000:10000])
 	#print '>>> FID TEST: ', fid_test
-
+	'''
+	inception_im_layer = mnet.im_input
+	inception_feat_layer = mnet.last_conv
+	#fid_test = eval_fid(sess, train_imgs[:5000], train_imgs[5000:10000])
+	#print '>>> FID TEST: ', fid_test
+	'''
 	'''
 	CLASSIFIER SETUP SECTION
 	'''
@@ -1256,24 +1255,24 @@ if __name__ == '__main__':
 	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
 	#print ">>> validation loss: ", val_loss
 	#print ">>> validation accuracy: ", val_acc
-
+	#sys.exit(0)
 	### load mnist classifier
-	#mnet.load(class_net_path)
+	mnet.load(class_net_path)
 
 	### test mnist classifier
-	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
-	#print ">>> test loss: ", test_loss
-	#print ">>> test accuracy: ", test_acc
+	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
+	print ">>> test loss: ", test_loss
+	print ">>> test accuracy: ", test_acc
 
 	'''
 	GAN SETUP SECTION
 	'''
 
 	### train ganist
-	train_ganist(ganist, train_imgs, train_labs)
+	#train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist **g_num**
-	#ganist.load(ganist_path % run_seed)
+	ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	gset_sample_draw(ganist, 10)
 	gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png', pr_th=0.99 / ganist.g_num)
@@ -1328,22 +1327,22 @@ if __name__ == '__main__':
 	#with open(stack_mnist_path, 'rb') as fs:
 	#	r_samples, r_labs = pk.load(fs)
 	### mode eval true data
-	#eval_sample_quality(mnet, test_imgs[:sample_size, ...], log_path+'/sample_quality_test')
+	#eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_test')
 	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
 	#	log_path+'/mode_analysis_true.cpk', labels=r_labs)
 	### mode eval real data
-	#eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
-	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-	#	log_path+'/mode_analysis_real.cpk')
+	eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
+	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
+		log_path+'/mode_analysis_real.cpk')
 
 	### OR load mode eval real data
 	#with open(stack_mnist_mode_path, 'rb') as fs:
 	#	mode_num, mode_count, mode_vars = pk.load(fs)
 
-	#pr = 1.0 * mode_count / np.sum(mode_count)
-	#print ">>> real_mode_num: ", mode_num
-	#print ">>> real_mode_count_std: ", np.std(mode_count)
-	#print ">>> real_mode_var ", np.mean(mode_vars)
+	pr = 1.0 * mode_count / np.sum(mode_count)
+	print ">>> real_mode_num: ", mode_num
+	print ">>> real_mode_count_std: ", np.std(mode_count)
+	print ">>> real_mode_var ", np.mean(mode_vars)
 
 	'''
 	VAE DATA EVAL
@@ -1377,7 +1376,6 @@ if __name__ == '__main__':
 	'''
 	GAN DATA EVAL
 	'''
-	'''
 	gan_model = ganist#vae
 	sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
@@ -1403,6 +1401,14 @@ if __name__ == '__main__':
 	print ">>> KL(g||p): ", kl_g
 	print ">>> KL(p||g): ", kl_p
 	print ">>> JSD(g||p): ", jsd
-	'''
+
+	### FID scores
+	#fid_r = eval_fid(sess, train_imgs[:sample_size], train_imgs[sample_size:2*sample_size])
+	fid_r = -1
+	fid_g = eval_fid(sess, g_samples, train_imgs[:sample_size])
+	with open(log_path+'/fid_log.txt', 'w+') as fs:
+		print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
+			% (fid_g, fid_r)
+
 	sess.close()
 

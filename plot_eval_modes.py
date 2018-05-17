@@ -126,36 +126,39 @@ if __name__ == '__main__':
 	true_path = 'logs_cifar_mdwgan/mode_analysis_true.cpk'
 	#true_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
 	#true_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_18/run_%d/mode_analysis_real.cpk'
-	paths = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_14_c8/run_%d/mode_analysis_real.cpk',
+	paths = ['/media/evl/Public/Mahyar/ganist_lsun_logs/logs_0_eval/run_%d/mode_analysis_real.cpk',
 				#'/media/evl/Public/Mahyar/mode_analysis_mnist_70k_c8.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_real_mnist/run_%d/mode_analysis_real.cpk',
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_128/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_125/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_52/run_%d/mode_analysis_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_129/run_%d/mode_analysis_gen.cpk']
-				'logs_cifar_mdwgan/mode_analysis_real.cpk',
-				'logs_cifar_mdwgan/mode_analysis_true.cpk']
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/logs_3_eval/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/logs_2_eval/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/logs_1_eval/run_%d/mode_analysis_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/logs_0_eval/run_%d/mode_analysis_gen.cpk']
+				#'logs_cifar_mdwgan/mode_analysis_real.cpk',
+				#'logs_cifar_mdwgan/mode_analysis_true.cpk']
 	
-	names = ['cReal',
-				'cTrue']
-				#'sisley_2', 
+	names = ['Real',
+			'DMWGAN-PL',
+			'DMWGAN',
+			'MIXGAN',
+			'WGAN']
 				#'monet_12', 
 				#'DMGAN-PL', 
 				#'monet_98',
 				#'GAN-GP']
 	
-	sq_names = [#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_real_mnist/run_%d/sample_quality_real.cpk',
+	sq_names = ['/media/evl/Public/Mahyar/ganist_lsun_logs/logs_0_eval/run_%d/sample_quality_real.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_128/run_%d/sample_quality_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_126/run_%d/sample_quality_gen.cpk',
-				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_129/run_%d/sample_quality_gen.cpk',
-				'logs_cifar_mdwgan/sample_quality_real.cpk',
-				'logs_cifar_mdwgan/sample_quality_test.cpk']
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/logs_3_eval/run_%d/sample_quality_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/logs_2_eval/run_%d/sample_quality_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/logs_1_eval/run_%d/sample_quality_gen.cpk',
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/logs_0_eval/run_%d/sample_quality_gen.cpk',]
+				#'logs_cifar_mdwgan/sample_quality_real.cpk',
+				#'logs_cifar_mdwgan/sample_quality_test.cpk']
 
 	#log_path = '/media/evl/Public/Mahyar/ganist_logs/plots'
-	log_path = 'plots'
+	log_path = 'cl_plots'
 
 	ax_p, fig_p = setup_plot_ax(0, 'Modes', 'Probability', 'Probability over Modes', yscale='log')
 	ax_vars, fig_vars = setup_plot_ax(1, 'Modes', 'MSD', 'Average Distance over Modes')
@@ -165,7 +168,8 @@ if __name__ == '__main__':
 	sq_logs = list()
 
 	### true modes plotting
-	modes_r, counts_r, vars_r, p_r = read_mode_analysis(true_path)
+	#modes_r, counts_r, vars_r, p_r = read_mode_analysis(true_path)
+	p_r = np.array([0.5, 0.5])
 	#pr_logs.append(p_r)
 	#vars_logs.append(vars_r)
 	
@@ -211,9 +215,9 @@ if __name__ == '__main__':
 
 	### pvals plot
 	### plot rl_pvals **g_num**
-	pval_path = '/media/evl/Public/Mahyar/ganist_logs/logs_monet_126_with_pvals_saving/run_%d/rl_pvals.cpk' % 4
+	pval_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl_temp/logs_cl_dmwgan_gset5_pl999/run_%d/rl_pvals.cpk' % 0
 	with open(pval_path, 'rb') as fs:
-		pvals_mat = pk.load(fs)
+		itrs_logs, pvals_mat = pk.load(fs)
 
 	pr_g = np.exp(pvals_mat)
 	pr_g = pr_g / (np.sum(pr_g, axis=1).reshape([-1, 1]))
@@ -222,7 +226,7 @@ if __name__ == '__main__':
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
 	#print pvals_mat[:,13]
-	itrs_logs = np.arange(pvals_mat.shape[0]) * 1000
+	#itrs_logs = np.arange(pvals_mat.shape[0]) * 10000
 	for g in range(pvals_mat.shape[-1]):
 		#g = 13
 		ax.plot(itrs_logs, pvals_mat[:, g], label='g_%d' % g, c=global_color_set[g])

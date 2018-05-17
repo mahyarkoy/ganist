@@ -70,7 +70,7 @@ class MnistNet:
 
 		### network parameters **cifar**
 		self.data_dim = [32, 32, 3]
-		self.num_class = 10
+		self.num_class = 2
 		self.c_act = lrelu
 
 		### init graph and session
@@ -111,7 +111,7 @@ class MnistNet:
 	def build_classifier(self, data_layer, act, train_phase, reuse=False):
 		with tf.variable_scope('c_net'):
 			### mnist classifier
-			'''
+			
 			### encoding the 28*28*1 image with conv into 4*4*256
 			
 			h1 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv1', reuse=reuse))
@@ -121,11 +121,13 @@ class MnistNet:
 			### fully connected classifier
 			flat = tf.contrib.layers.flatten(h3)
 			o = dense(flat, self.num_class, scope='fco', reuse=reuse)
+			self.last_conv = flat
 			return o
+			
+			### cl64 classifier
 			'''
-			### stl10 classifier
-			data_mean = np.array([0.02357885,  0.00179423, -0.03345924])
-			data_std = np.array([0.49072505, 0.48719805, 0.54432311])
+			data_mean = np.array([0.09096477, -0.05778709, -0.15707522])
+			data_std = np.array([0.54853607, 0.53830726, 0.54810407])
 
 			data_proc = (data_layer - data_mean) / data_std
 			data_proc = tf.layers.dropout(data_proc, rate=0.2, training=train_phase)
@@ -144,6 +146,7 @@ class MnistNet:
 			h9 = act(conv2d(h8, 10, d_h=1, d_w=1, k_h=1, k_w=1, scope='conv9', reuse=reuse))
 			o = tf.reduce_mean(h9, axis=[1,2])
 			return o
+			'''
 
 	def start_session(self):
 		self.saver = tf.train.Saver(self.c_vars, keep_checkpoint_every_n_hours=1, max_to_keep=10)
