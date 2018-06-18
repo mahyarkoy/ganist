@@ -128,7 +128,7 @@ def read_image(im_path, im_size):
 	'''
 	return im_re / 128.0 - 1.0
 
-def read_lsun(lsun_path, data_size, im_size=32):
+def read_lsun(lsun_path, data_size, im_size=64):
 	im_data = np.zeros((data_size, im_size, im_size, 3))
 	i = 0
 	print '>>> Reading LSUN from: '+lsun_path
@@ -223,14 +223,18 @@ def plot_time_mat(mat, mat_names, fignum, save_path, ytype=None, itrs=None):
 Samples sample_size images from each ganist generator, draws with color.
 im_data must have shape (imb, imh, imw, imc) with values in [-1,1]
 '''
-def gset_block_draw(ganist, sample_size, path, en_color=True):
+def gset_block_draw(ganist, sample_size, path, en_color=True, border=False):
 	im_draw = np.zeros([ganist.g_num, sample_size]+ganist.data_dim)
+	z_data = np.zeros(ganist.g_num*sample_size, dtype=np.int32)
 	im_size = ganist.data_dim[0]
 	for g in range(ganist.g_num):
-		z_data = g * np.ones(sample_size, dtype=np.int32)
-		im_draw[g, ...] = sample_ganist(ganist, sample_size, z_data=z_data)
+		z_data[g*sample_size:(g+1)*sample_size] = g * np.ones(sample_size, dtype=np.int32)
+		im_draw[g, ...] = sample_ganist(ganist, sample_size, z_data=z_data[g*sample_size:(g+1)*sample_size])
 	#im_draw = (im_draw + 1.0) / 2.0
-	if en_color:
+	if border:
+		im_draw = im_color_borders(im_draw.reshape([-1]+ganist.data_dim), z_data)
+		im_block_draw(im_draw, sample_size, path, z_data)
+	elif en_color:
 		en_block_draw(ganist, im_draw, path)
 	else:
 		block_draw(im_draw, path)
@@ -269,7 +273,7 @@ If im_labels is provided: selects sample_size images for each im_label and puts 
 If ganist is provided: classifies selected images and adds color border.
 im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
 '''
-def im_block_draw(im_data, sample_size, path, im_labels=None, ganist=None):
+def im_block_draw(im_data, sample_size, path, im_labels=None, ganist=None, border=False):
 	imb, imh, imw, imc = im_data.shape
 	if im_labels is not None:
 		max_label = im_labels.max()
@@ -284,6 +288,8 @@ def im_block_draw(im_data, sample_size, path, im_labels=None, ganist=None):
 	#im_draw = (im_draw + 1.0) / 2.0
 	if ganist is not None:
 		en_block_draw(ganist, im_draw, path)
+	elif border:
+		block_draw(im_draw, path, border=True)
 	else:
 		block_draw(im_draw, path)
 
@@ -335,10 +341,16 @@ im_data should be a (columns, rows, imh, imw, imc).
 im_data values should be in [0, 1].
 If c is not 3 then draws first channel only.
 '''
-def block_draw(im_data, path, separate_channels=False):
+def block_draw(im_data, path, separate_channels=False, border=False):
 	cols, rows, imh, imw, imc = im_data.shape
+	### border
+	if border:
+		im_draw = im_color_borders(im_data.reshape((-1, imh, imw, imc)), np.zeros(cols*rows, dtype=np.int32), color_map='hot')
+		im_draw = im_draw.reshape((cols, rows, imh, imw, imc))
+	else:
+		im_draw = im_data
 	### block shape
-	im_draw = im_data.reshape([cols, imh*rows, imw, imc])
+	im_draw = im_draw.reshape([cols, imh*rows, imw, imc])
 	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
 	im_draw = (im_draw + 1.0) / 2.0
 	### plots
@@ -1062,10 +1074,10 @@ if __name__ == '__main__':
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier/snapshots/model_18750.h5'
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier_single/snapshots/model_11250.h5'
 	class_net_path = '/media/evl/Public/Mahyar/Data/cl_mnist_classifier/snapshots/model_54375.h5'
-	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/logs_0/run_%d/snapshots/model_83333_500000.h5'
+	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_temp/logs_0/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl_temp/logs_cl_wgan/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
-	sample_size = 10000
+	sample_size = 1000
 	#sample_size = 350000
 
 	'''
@@ -1154,7 +1166,7 @@ if __name__ == '__main__':
 	'''
 	### celeba lsun
 
-	data_size_train = 20000
+	data_size_train = 1000
 	data_size_val = 300
 	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
 	lsun_bed_path_val = '/media/evl/Public/Mahyar/Data/lsun/bedroom_val_imgs'
@@ -1202,7 +1214,7 @@ if __name__ == '__main__':
 	### create a ganist instance
 	ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
-	mnet = mnist_net.MnistNet(sess, c_log_path_sum)
+	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### create a vaeganist instance
 	#vae = vae_ganist.VAEGanist(sess, log_path_sum_vae)
 	### init variables
@@ -1215,6 +1227,7 @@ if __name__ == '__main__':
 
 	'''
 	INCEPTION SETUP
+	'''
 	'''
 	inception_dir = '/media/evl/Public/Mahyar/Data/models/research/slim'
 	ckpt_path = '/media/evl/Public/Mahyar/Data/inception_v3_model/kaggle/inception_v3.ckpt'
@@ -1243,6 +1256,7 @@ if __name__ == '__main__':
 	#fid_test = eval_fid(sess, train_imgs[:5000], train_imgs[5000:10000])
 	#print '>>> FID TEST: ', fid_test
 	'''
+	'''
 	inception_im_layer = mnet.im_input
 	inception_feat_layer = mnet.last_conv
 	#fid_test = eval_fid(sess, train_imgs[:5000], train_imgs[5000:10000])
@@ -1257,12 +1271,12 @@ if __name__ == '__main__':
 	#print ">>> validation accuracy: ", val_acc
 	#sys.exit(0)
 	### load mnist classifier
-	mnet.load(class_net_path)
+	#mnet.load(class_net_path)
 
 	### test mnist classifier
-	test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
-	print ">>> test loss: ", test_loss
-	print ">>> test accuracy: ", test_acc
+	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
+	#print ">>> test loss: ", test_loss
+	#print ">>> test accuracy: ", test_acc
 
 	'''
 	GAN SETUP SECTION
@@ -1274,7 +1288,8 @@ if __name__ == '__main__':
 	### load ganist **g_num**
 	ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
-	gset_sample_draw(ganist, 10)
+	#gset_sample_draw(ganist, 10)
+	gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
 	gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png', pr_th=0.99 / ganist.g_num)
 	#sys.exit(0)
 
@@ -1331,18 +1346,18 @@ if __name__ == '__main__':
 	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
 	#	log_path+'/mode_analysis_true.cpk', labels=r_labs)
 	### mode eval real data
-	eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-		log_path+'/mode_analysis_real.cpk')
+	#eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
+	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
+	#	log_path+'/mode_analysis_real.cpk')
 
 	### OR load mode eval real data
 	#with open(stack_mnist_mode_path, 'rb') as fs:
 	#	mode_num, mode_count, mode_vars = pk.load(fs)
 
-	pr = 1.0 * mode_count / np.sum(mode_count)
-	print ">>> real_mode_num: ", mode_num
-	print ">>> real_mode_count_std: ", np.std(mode_count)
-	print ">>> real_mode_var ", np.mean(mode_vars)
+	#pr = 1.0 * mode_count / np.sum(mode_count)
+	#print ">>> real_mode_num: ", mode_num
+	#print ">>> real_mode_count_std: ", np.std(mode_count)
+	#print ">>> real_mode_var ", np.mean(mode_vars)
 
 	'''
 	VAE DATA EVAL
@@ -1381,10 +1396,14 @@ if __name__ == '__main__':
 	### sample gen data and draw **mt**
 	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler,
 		z_im=r_samples[0:sample_size, ...])
-	im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
-	
+	#im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
+	im_block_draw(r_samples, 5, log_path_draw+'/real_samples.png', border=True)
+	im_block_draw(g_samples, 5, log_path_draw+'/gen_samples.png', border=True)
+	#sys.exit(0)
+
 	### mode eval gen data
 	### >>> dataset sensitive: draw_list
+	'''
 	eval_sample_quality(mnet, g_samples, log_path+'/sample_quality_gen')
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
 		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
@@ -1411,4 +1430,5 @@ if __name__ == '__main__':
 			% (fid_g, fid_r)
 
 	sess.close()
+	'''
 
