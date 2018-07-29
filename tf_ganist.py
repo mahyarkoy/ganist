@@ -32,6 +32,27 @@ def conv2d(input_, output_dim,
 
 		return conv
 
+def deconv2d(input_, output_shape,
+			k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02,
+			scope="deconv2d", with_w=False):
+	with tf.variable_scope(scope):
+		# filter : [height, width, output_channels, in_channels]
+		w = tf.get_variable('w', [k_h, k_w, output_shape[-1], input_.get_shape()[-1]],
+							initializer=tf.contrib.layers.xavier_initializer())
+
+		
+		deconv = tf.nn.conv2d_transpose(input_, w, output_shape=output_shape,
+										strides=[1, d_h, d_w, 1])
+
+		biases = tf.get_variable('biases', [output_shape[-1]], initializer=tf.constant_initializer(0.0))
+		# deconv = tf.reshape(tf.nn.bias_add(deconv, biases), deconv.get_shape())
+		deconv = tf.nn.bias_add(deconv, biases)
+
+		if with_w:
+			return deconv, w, biases
+		else:
+			return deconv
+
 def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=False):
 	shape = input_.get_shape().as_list()
 	with tf.variable_scope(scope or "Linear"):
@@ -333,17 +354,26 @@ class Ganist:
 		with tf.variable_scope('g_net'):
 			for gi in range(self.g_num):
 				with tf.variable_scope('gnum_%d' % gi):
+					im_size = self.data_dim[0]
+					batch_size = tf.shape(z)[0]
+
 					### **g_num**
-					zi = tf.random_uniform([tf.shape(z)[0], self.z_dim], 
+					zi = tf.random_uniform([batch_size, self.z_dim], 
 						minval=-self.z_range, maxval=self.z_range, dtype=tf_dtype)
 					bn = tf.contrib.layers.batch_norm
-					im_size = self.data_dim[0]
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(dense(zi, 8*8*128*4, scope='fcz'))
+					z_fc = act(bn(dense(zi, 8*8*128*4, scope='fcz')))
 					h1 = tf.reshape(z_fc, [-1, 8, 8, 128*4])
 
-					### decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
+					### deconv version
+					h2 = act(bn(deconv2d(h1, [batch_size, im_size//4, im_size//4, 64*4], scope='conv1')))
+					h3 = act(bn(deconv2d(h2, [batch_size, im_size//2, im_size//2, 32*4], scope='conv2')))
+					h4 = act(bn(deconv2d(h3, [batch_size, im_size, im_size, self.data_dim[-1]], scope='conv3')))
+					ol.append(tf.tanh(h4))
+
+					### us version: decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
+					'''
 					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
 					h2 = act(conv2d(h1_us, 64*4, scope='conv1'))
 
@@ -353,8 +383,8 @@ class Ganist:
 					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
 					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
 					
-					### output activation to bring data values in (-1,1)
 					ol.append(tf.tanh(h4))
+					'''
 
 			z_1_hot = tf.reshape(tf.one_hot(z, self.g_num, dtype=tf_dtype), [-1, self.g_num, 1, 1, 1])
 			z_map = tf.tile(z_1_hot, [1, 1]+self.data_dim)
