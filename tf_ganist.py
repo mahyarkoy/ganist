@@ -369,7 +369,7 @@ class Ganist:
 					### deconv version
 					h2 = act(bn(deconv2d(h1, [batch_size, im_size//4, im_size//4, 64*4], scope='conv1')))
 					h3 = act(bn(deconv2d(h2, [batch_size, im_size//2, im_size//2, 32*4], scope='conv2')))
-					h4 = act(bn(deconv2d(h3, [batch_size, im_size, im_size, self.data_dim[-1]], scope='conv3')))
+					h4 = deconv2d(h3, [batch_size, im_size, im_size, self.data_dim[-1]], scope='conv3')
 					ol.append(tf.tanh(h4))
 
 					### us version: decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3

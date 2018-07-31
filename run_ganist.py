@@ -33,7 +33,7 @@ import glob
 from PIL import Image
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
+os.environ["CUDA_VISIBLE_DEVICES"] = "2" # "0, 1" for multiple
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
