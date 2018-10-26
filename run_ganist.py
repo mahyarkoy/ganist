@@ -1082,10 +1082,10 @@ if __name__ == '__main__':
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier/snapshots/model_18750.h5'
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier_single/snapshots/model_11250.h5'
 	class_net_path = '/media/evl/Public/Mahyar/Data/cl_mnist_classifier/snapshots/model_54375.h5'
-	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_temp/logs_0/run_%d/snapshots/model_83333_500000.h5'
+	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/logs_cl64_wgan/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl_temp/logs_cl_wgan/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
-	sample_size = 5000
+	sample_size = 10000
 	#sample_size = 350000
 
 	'''
@@ -1185,15 +1185,15 @@ if __name__ == '__main__':
 	celeba_train = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba'
 	celeba_val = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba_val'
 	
-	#train_imgs_bed = read_lsun(lsun_bed_path_train, data_size_train)
-	#val_imgs_bed = read_lsun(lsun_bed_path_val, data_size_val)
+	train_imgs_bed = read_lsun(lsun_bed_path_train, data_size_train)
+	val_imgs_bed = read_lsun(lsun_bed_path_val, data_size_val)
 
 	train_imgs_celeba = read_lsun(celeba_train, data_size_train)
 	val_imgs_celeba = read_lsun(celeba_val, data_size_val)
 
-	#train_imgs = np.concatenate([train_imgs_bed, train_imgs_celeba], axis=0)
-	#train_labs = np.concatenate([0 * np.ones(data_size_train, dtype=np.int32),
-	#							1 * np.ones(data_size_train, dtype=np.int32)], axis=0)
+	train_imgs = np.concatenate([train_imgs_bed, train_imgs_celeba], axis=0)
+	train_labs = np.concatenate([0 * np.ones(data_size_train, dtype=np.int32),
+								1 * np.ones(data_size_train, dtype=np.int32)], axis=0)
 	#val_imgs = np.concatenate([val_imgs_bed, val_imgs_celeba], axis=0)
 	#val_labs = np.concatenate([0 * np.ones(data_size_val, dtype=np.int32),
 	#							1 * np.ones(data_size_val, dtype=np.int32)], axis=0)
@@ -1211,8 +1211,8 @@ if __name__ == '__main__':
 	#print all_imgs_stack.shape
 	#print all_labs_stack.shape
 
-	train_imgs = all_imgs = train_imgs_celeba
-	train_labs = all_labs = None
+	all_imgs = train_imgs
+	all_labs = train_labs = None
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
 	
@@ -1293,10 +1293,10 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, train_imgs, train_labs)
+	#train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist **g_num**
-	#ganist.load(ganist_path % run_seed)
+	ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	#gset_sample_draw(ganist, 10)
 	gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
@@ -1321,7 +1321,7 @@ if __name__ == '__main__':
 	'''
 	REAL DATASET CREATE OR LOAD AND EVAL
 	'''
-	r_samples = all_imgs
+	r_samples = all_imgs_stack
 	### create stack mnist dataset of all_imgs_size*factor
 	'''
 	factor = sample_size // all_imgs_stack.shape[0]
@@ -1436,9 +1436,9 @@ if __name__ == '__main__':
 	'''
 
 	### FID scores
-	#fid_r = eval_fid(sess, train_imgs[:sample_size], train_imgs[sample_size:2*sample_size])
+	#fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
 	fid_r = -1
-	fid_g = eval_fid(sess, g_samples, train_imgs[:sample_size])
+	fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
 	with open(log_path+'/fid_log.txt', 'w+') as fs:
 		print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
 			% (fid_g, fid_r)
