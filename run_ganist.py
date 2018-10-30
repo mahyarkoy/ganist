@@ -1281,7 +1281,7 @@ if __name__ == '__main__':
 	#print ">>> validation accuracy: ", val_acc
 	#sys.exit(0)
 	### load mnist classifier
-	#mnet.load(class_net_path)
+	mnet.load(class_net_path)
 
 	### test mnist classifier
 	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
@@ -1416,7 +1416,6 @@ if __name__ == '__main__':
 
 	### mode eval gen data
 	### >>> dataset sensitive: draw_list
-	'''
 	eval_sample_quality(mnet, g_samples, log_path+'/sample_quality_gen')
 	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
 		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
@@ -1426,22 +1425,21 @@ if __name__ == '__main__':
 	print ">>> gen_mode_var: ", np.mean(mode_vars)
 
 	### KL and JSD computation
-	kl_g = np.sum(pg*np.log(1e-6 + pg / (pr+1e-6)))
-	kl_p = np.sum(pr*np.log(1e-6 + pr / (pg+1e-6)))
-	jsd = (np.sum(pg*np.log(1e-6 + 2 * pg / (pg+pr+1e-6))) + \
-	np.sum(pr*np.log(1e-6 + 2 * pr / (pg+pr+1e-6)))) / 2.0
-	print ">>> KL(g||p): ", kl_g
-	print ">>> KL(p||g): ", kl_p
-	print ">>> JSD(g||p): ", jsd
-	'''
+	#kl_g = np.sum(pg*np.log(1e-6 + pg / (pr+1e-6)))
+	#kl_p = np.sum(pr*np.log(1e-6 + pr / (pg+1e-6)))
+	#jsd = (np.sum(pg*np.log(1e-6 + 2 * pg / (pg+pr+1e-6))) + \
+	#np.sum(pr*np.log(1e-6 + 2 * pr / (pg+pr+1e-6)))) / 2.0
+	#print ">>> KL(g||p): ", kl_g
+	#print ">>> KL(p||g): ", kl_p
+	#print ">>> JSD(g||p): ", jsd
 
 	### FID scores
 	#fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
-	fid_r = -1
-	fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
-	with open(log_path+'/fid_log.txt', 'w+') as fs:
-		print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
-			% (fid_g, fid_r)
+	#fid_r = -1
+	#fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
+	#with open(log_path+'/fid_log.txt', 'w+') as fs:
+	#	print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
+	#		% (fid_g, fid_r)
 
 	sess.close()
 

@@ -132,17 +132,19 @@ if __name__ == '__main__':
 				#'/media/evl/Public/Mahyar/vae_logs/logs_2/run_%d/vae/mode_analysis_gen.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_128/run_%d/mode_analysis_gen.cpk',
 				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_3_eval/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_2_eval/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_1_eval/run_%d/mode_analysis_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_0_eval/run_%d/mode_analysis_gen.cpk']
+				##'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_2_eval/run_%d/mode_analysis_gen.cpk',
+				##'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_1_eval/run_%d/mode_analysis_gen.cpk',
+				##'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_0_eval/run_%d/mode_analysis_gen.cpk'
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_temp/logs_cl64_dmwganpl_mi0_run1_modes/mode_analysis_gen.cpk']
 				#'logs_cifar_mdwgan/mode_analysis_real.cpk',
 				#'logs_cifar_mdwgan/mode_analysis_true.cpk']
 	
 	names = ['Real',
 			'DMWGAN-PL',
-			'DMWGAN',
-			'MIXGAN',
-			'WGAN-GP']
+			#'DMWGAN',
+			#'MIXGAN',
+			#'WGAN-GP'
+			'DMWGAN-PL-MI0']
 				#'monet_12', 
 				#'DMGAN-PL', 
 				#'monet_98',
@@ -151,9 +153,10 @@ if __name__ == '__main__':
 	sq_names = ['/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_0_eval/run_%d/sample_quality_real.cpk',
 				#'/media/evl/Public/Mahyar/ganist_logs/logs_monet_128/run_%d/sample_quality_gen.cpk',
 				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_3_eval/run_%d/sample_quality_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_2_eval/run_%d/sample_quality_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_1_eval/run_%d/sample_quality_gen.cpk',
-				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_0_eval/run_%d/sample_quality_gen.cpk']
+				#'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_2_eval/run_%d/sample_quality_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_1_eval/run_%d/sample_quality_gen.cpk',
+				#'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_0_eval/run_%d/sample_quality_gen.cpk'
+				'/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_temp/logs_cl64_dmwganpl_mi0_run1_modes/sample_quality_gen.cpk']
 				#'logs_cifar_mdwgan/sample_quality_real.cpk',
 				#'logs_cifar_mdwgan/sample_quality_test.cpk']
 
@@ -215,6 +218,7 @@ if __name__ == '__main__':
 
 	### pvals plot
 	### plot rl_pvals **g_num**
+	'''
 	pval_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl64_final/logs_3/run_%d/rl_pvals.cpk' % 1
 	with open(pval_path, 'rb') as fs:
 		itrs_logs, pvals_mat = pk.load(fs)
@@ -239,3 +243,4 @@ if __name__ == '__main__':
 	#fig.savefig(log_path+'/rl_policy.png', dpi=300)
 	fig.savefig(log_path+'/rl_policy.pdf')
 	plt.close(fig)
+	'''
