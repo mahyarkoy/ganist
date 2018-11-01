@@ -18,40 +18,77 @@ def lrelu(x, leak=0.1, name="lrelu"):
 		return f1 * x + f2 * abs(x)
 
 def conv2d(input_, output_dim,
-		   k_h=5, k_w=5, d_h=1, d_w=1, stddev=0.02,
-		   scope="conv2d", reuse=False, padding='SAME'):
+		   k_h=5, k_w=5, d_h=1, d_w=1, k_init=tf.contrib.layers.xavier_initializer(),
+		   scope=None, reuse=False, 
+		   padding='same', use_bias=True, trainable=True):
+	
+	conv = tf.layers.conv2d(
+		input_, output_dim, [k_h, k_w], strides=[d_h, d_w], 
+		padding=padding, use_bias=use_bias, 
+		kernel_initializer=k_init, name=scope, reuse=reuse, trainable=trainable)
+
+	return conv
+
+def conv2d_tr(input_, output_dim,
+		   k_h=5, k_w=5, d_h=1, d_w=1, k_init=tf.contrib.layers.xavier_initializer(),
+		   scope=None, reuse=False, 
+		   padding='same', use_bias=True, trainable=True):
+    
+    conv_tr = tf.layers.conv2d_transpose(
+            input_, output_dim, [k_h, k_w], strides=[d_h, d_w], 
+            padding=padding, use_bias=use_bias, 
+            kernel_initializer=k_init, name=scope, reuse=reuse, trainable=trainable)
+    
+    return conv_tr
+
+'''
+Group ResNext.
+filter_dim: internal bottle neck filter dim.
+group_dim: each group conv output dim (must be a factor of filter size).
+input_: shape (b, h, w, c)
+'''
+def resnext(input_, output_dim, filter_dim, scope, train_phase,
+			op_type='same', bn=True, act=lrelu, group_dim=4, project_input=False, reuse=False):
 	with tf.variable_scope(scope, reuse=reuse):
-		w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
-							initializer=tf.contrib.layers.xavier_initializer())
-		#w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
-		#                    initializer=tf.truncated_normal_initializer(stddev=stddev))
-		conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding=padding)
-		biases = tf.get_variable('biases', [output_dim], initializer=tf.constant_initializer(0.0))
-		# conv = tf.reshape(tf.nn.bias_add(conv, biases), conv.get_shape())
-		conv = tf.nn.bias_add(conv, biases)
-
-		return conv
-
-def deconv2d(input_, output_shape,
-			k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02,
-			scope="deconv2d", with_w=False):
-	with tf.variable_scope(scope):
-		# filter : [height, width, output_channels, in_channels]
-		w = tf.get_variable('w', [k_h, k_w, output_shape[-1], input_.get_shape()[-1]],
-							initializer=tf.contrib.layers.xavier_initializer())
-
 		
-		deconv = tf.nn.conv2d_transpose(input_, w, output_shape=output_shape,
-										strides=[1, d_h, d_w, 1])
+		def bn_id(x, training=True):
+			return x
+		bn = bn_id if bn is False else tf.layers.batch_normalization
+		#bn = tf.contrib.layers.batch_norm
+		imh = tf.shape(input_)[1]
+		imw = tf.shape(input_)[2]
 
-		biases = tf.get_variable('biases', [output_shape[-1]], initializer=tf.constant_initializer(0.0))
-		# deconv = tf.reshape(tf.nn.bias_add(deconv, biases), deconv.get_shape())
-		deconv = tf.nn.bias_add(deconv, biases)
-
-		if with_w:
-			return deconv, w, biases
+		if input_.get_shape().as_list()[3] != output_dim or project_input is True:
+			shortcut = conv2d(input_, output_dim, k_h=1, k_w=1)
 		else:
-			return deconv
+			shortcut = input_
+
+		if op_type == 'down':
+			conv_op = conv2d
+			conv_dh = conv_dw = 2
+			shortcut = tf.nn.pool(shortcut, [5, 5], "AVG", "SAME", strides=[conv_dh, conv_dw])
+		elif op_type == 'up':
+			conv_op = conv2d_tr
+			conv_dh = conv_dw = 2
+			shortcut = tf.image.resize_nearest_neighbor(shortcut, [imh*2, imw*2])
+		elif op_type == 'same':
+			conv_op = conv2d
+			conv_dh = conv_dw = 1
+			shortcut = shortcut
+
+		### reduce to bottleneck size
+		hd = act(bn(conv2d(input_, filter_dim, k_h=1, k_w=1), training=train_phase))
+		
+		### apply group conv
+		hg = list()
+		for i in range(0, filter_dim, group_dim):
+			hg.append(act(bn(conv_op(hd[:, :, :, i:i+group_dim], group_dim, d_h=conv_dh, d_w=conv_dw), training=train_phase)))
+
+		### concat and bring to output_dim size
+		hg_concat = tf.concat(hg, axis=3)
+		output = conv2d(hg_concat, output_dim, k_h=1, k_w=1)
+		return act(bn(output + shortcut, training=train_phase))
+
 
 def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=False):
 	shape = input_.get_shape().as_list()
@@ -78,6 +115,7 @@ def dense(x, h_size, scope, reuse=False):
 		#h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.truncated_normal_initializer(stddev=0.02))
 		#h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.contrib.layers.xavier_initializer(uniform=True))
 	return h1
+
 
 ### GAN Class definition
 class Ganist:
@@ -363,19 +401,18 @@ class Ganist:
 					bn = tf.contrib.layers.batch_norm
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(dense(zi, 8*8*128*4, scope='fcz'))
-					h1 = tf.reshape(z_fc, [-1, 8, 8, 128*4])
+					z_fc = act(bn(dense(zi, 8*8*128*2, scope='fcz')))
+					h1 = tf.reshape(z_fc, [-1, 8, 8, 128*2])
 
 					### deconv version
 					'''
-					h2 = act(bn(deconv2d(h1, [batch_size, im_size//4, im_size//4, 64*4], scope='conv1')))
-					h3 = act(bn(deconv2d(h2, [batch_size, im_size//2, im_size//2, 32*4], scope='conv2')))
-					h4 = deconv2d(h3, [batch_size, im_size, im_size, self.data_dim[-1]], scope='conv3')
-					ol.append(tf.tanh(h4))
+					h2 = act(bn(conv2_tr(h1, 64*4, d_h=2, d_w=2, scope='conv1')))
+					h3 = act(bn(conv2_tr(h2, 32*4, d_h=2, d_w=2, scope='conv2')))
+					h4 = conv2_tr(h3, self.data_dim[-1], d_h=2, d_w=2, scope='conv3')
 					'''
 
 					### us version: decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
-					
+					'''
 					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
 					h2 = act(conv2d(h1_us, 64*4, scope='conv1'))
 
@@ -384,8 +421,18 @@ class Ganist:
 				
 					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
 					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
-					
-					ol.append(tf.tanh(h4))
+					'''
+
+					### resnext version
+					btnk_dim = 128
+					h2 = resnext(h1, 128*2, btnk_dim, 'res1', train_phase, 
+								op_type='up', bn=False, act=act)
+					h3 = resnext(h2, 128*2, btnk_dim, 'res2', train_phase,
+								op_type='up', bn=False, act=act)
+					h4 = resnext(h3, 128*2, btnk_dim, 'res3', train_phase, 
+								op_type='up', bn=False, act=act)
+					h5 = conv2d(h4, self.data_dim[-1], scope='convo')
+					ol.append(tf.tanh(h5))
 
 			z_1_hot = tf.reshape(tf.one_hot(z, self.g_num, dtype=tf_dtype), [-1, self.g_num, 1, 1, 1])
 			z_map = tf.tile(z_1_hot, [1, 1]+self.data_dim)
@@ -398,11 +445,20 @@ class Ganist:
 		with tf.variable_scope('d_net'):
 			bn = tf.contrib.layers.batch_norm
 			### encoding the 28*28*3 image with conv into 3*3*256
+			'''
 			h1 = act(conv2d(data_layer, 32*4, d_h=2, d_w=2, scope='conv1', reuse=reuse))
 			h2 = act(conv2d(h1, 64*4, d_h=2, d_w=2, scope='conv2', reuse=reuse))
 			h3 = act(conv2d(h2, 128*4, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 			#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
-
+			'''
+			### resnext version
+			btnk_dim = 128
+			h1 = resnext(data_layer, 128*2, btnk_dim, 'res1', train_phase, 
+						op_type='down', bn=False, act=act, reuse=reuse)
+			h2 = resnext(h1, 128*2, btnk_dim, 'res2', train_phase, 
+						op_type='down', bn=False, act=act, reuse=reuse)
+			h3 = resnext(h2, 128*2, btnk_dim, 'res3', train_phase, 
+						op_type='down', bn=False, act=act, reuse=reuse)
 			### fully connected discriminator
 			flat = tf.contrib.layers.flatten(h3)
 			o = dense(flat, 1, scope='fco', reuse=reuse)

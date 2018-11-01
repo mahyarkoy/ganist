@@ -33,7 +33,7 @@ import glob
 from PIL import Image
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-os.environ["CUDA_VISIBLE_DEVICES"] = "2" # "0, 1" for multiple
+os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
@@ -324,17 +324,23 @@ def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
 	else:
 		cmap = mat_cm.get_cmap(color_map)
 		rgb_colors = cmap(im_labels_norm)[:, :3] * 2. - 1.
-	rgb_colors_t = np.tile(rgb_colors.reshape((imb, 1, 1, 3)), (1, imh, imw, 1))
+	rgb_colors_t = np.tile(rgb_colors.reshape((imb, 1, 1, 3)), (1, imh+2*fh, imw+2*fw, 1))
+
+	### put im into rgb_colors_t
+	for b in range(imb):
+		rgb_colors_t[b, fh:imh+fh, fw:imw+fw, :] = im_data[b, ...]
+
+	return rgb_colors_t
 
 	### create mask
-	box_mask = np.ones((imh, imw))
-	box_mask[fh+1:imh-fh, fw+1:imw-fw] = 0.
-	box_mask_t = np.tile(box_mask.reshape((1, imh, imw, 1)), (imb, 1, 1, 3))
-	box_mask_inv = np.abs(box_mask_t - 1.)
+	#box_mask = np.ones((imh, imw))
+	#box_mask[fh+1:imh-fh, fw+1:imw-fw] = 0.
+	#box_mask_t = np.tile(box_mask.reshape((1, imh, imw, 1)), (imb, 1, 1, 3))
+	#box_mask_inv = np.abs(box_mask_t - 1.)
 
 	### apply mask
-	im_data_border = im_data_t * box_mask_inv + rgb_colors_t * box_mask_t
-	return im_data_border
+	#im_data_border = im_data_t * box_mask_inv + rgb_colors_t * box_mask_t
+	#return im_data_border
 
 '''
 im_data should be a (columns, rows, imh, imw, imc).
@@ -345,7 +351,9 @@ def block_draw(im_data, path, separate_channels=False, border=False):
 	cols, rows, imh, imw, imc = im_data.shape
 	### border
 	if border:
-		im_draw = im_color_borders(im_data.reshape((-1, imh, imw, imc)), np.zeros(cols*rows, dtype=np.int32), color_map='hot')
+		im_draw = im_color_borders(im_data.reshape((-1, imh, imw, imc)), 
+			1.*np.ones(cols*rows, dtype=np.int32), max_label=0., color_map='RdBu')
+		imb, imh, imw, imc = im_draw.shape
 		im_draw = im_draw.reshape((cols, rows, imh, imw, imc))
 	else:
 		im_draw = im_data
@@ -1281,7 +1289,7 @@ if __name__ == '__main__':
 	#print ">>> validation accuracy: ", val_acc
 	#sys.exit(0)
 	### load mnist classifier
-	mnet.load(class_net_path)
+	#mnet.load(class_net_path)
 
 	### test mnist classifier
 	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
@@ -1293,10 +1301,10 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	#train_ganist(ganist, train_imgs, train_labs)
+	train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist **g_num**
-	ganist.load(ganist_path % run_seed)
+	#ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	#gset_sample_draw(ganist, 10)
 	gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
@@ -1416,13 +1424,13 @@ if __name__ == '__main__':
 
 	### mode eval gen data
 	### >>> dataset sensitive: draw_list
-	eval_sample_quality(mnet, g_samples, log_path+'/sample_quality_gen')
-	mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
-		log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
-	pg = 1.0 * mode_count / np.sum(mode_count)
-	print ">>> gen_mode_num: ", mode_num
-	print ">>> gen_mode_count_std: ", np.std(mode_count)
-	print ">>> gen_mode_var: ", np.mean(mode_vars)
+	#eval_sample_quality(mnet, g_samples, log_path+'/sample_quality_gen')
+	#mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
+	#	log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
+	#pg = 1.0 * mode_count / np.sum(mode_count)
+	#print ">>> gen_mode_num: ", mode_num
+	#print ">>> gen_mode_count_std: ", np.std(mode_count)
+	#print ">>> gen_mode_var: ", np.mean(mode_vars)
 
 	### KL and JSD computation
 	#kl_g = np.sum(pg*np.log(1e-6 + pg / (pr+1e-6)))
@@ -1435,11 +1443,11 @@ if __name__ == '__main__':
 
 	### FID scores
 	#fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
-	#fid_r = -1
-	#fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
-	#with open(log_path+'/fid_log.txt', 'w+') as fs:
-	#	print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
-	#		% (fid_g, fid_r)
+	fid_r = -1
+	fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
+	with open(log_path+'/fid_log.txt', 'w+') as fs:
+		print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
+			% (fid_g, fid_r)
 
 	sess.close()
 
