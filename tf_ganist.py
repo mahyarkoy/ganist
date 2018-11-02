@@ -401,8 +401,8 @@ class Ganist:
 					bn = tf.contrib.layers.batch_norm
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(bn(dense(zi, 8*8*128*2, scope='fcz')))
-					h1 = tf.reshape(z_fc, [-1, 8, 8, 128*2])
+					z_fc = act(bn(dense(zi, 8*8*256, scope='fcz')))
+					h1 = tf.reshape(z_fc, [-1, 8, 8, 256])
 
 					### deconv version
 					'''
@@ -424,12 +424,12 @@ class Ganist:
 					'''
 
 					### resnext version
-					btnk_dim = 128
-					h2 = resnext(h1, 128*2, btnk_dim, 'res1', train_phase, 
+					btnk_dim = 64
+					h2 = resnext(h1, 128, btnk_dim, 'res1', train_phase, 
 								op_type='up', bn=False, act=act)
-					h3 = resnext(h2, 128*2, btnk_dim, 'res2', train_phase,
+					h3 = resnext(h2, 64, btnk_dim//2, 'res2', train_phase,
 								op_type='up', bn=False, act=act)
-					h4 = resnext(h3, 128*2, btnk_dim, 'res3', train_phase, 
+					h4 = resnext(h3, 32, btnk_dim//4, 'res3', train_phase, 
 								op_type='up', bn=False, act=act)
 					h5 = conv2d(h4, self.data_dim[-1], scope='convo')
 					ol.append(tf.tanh(h5))
@@ -452,12 +452,12 @@ class Ganist:
 			#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
 			'''
 			### resnext version
-			btnk_dim = 128
-			h1 = resnext(data_layer, 128*2, btnk_dim, 'res1', train_phase, 
+			btnk_dim = 64
+			h1 = resnext(data_layer, 32, btnk_dim//4, 'res1', train_phase, 
 						op_type='down', bn=False, act=act, reuse=reuse)
-			h2 = resnext(h1, 128*2, btnk_dim, 'res2', train_phase, 
+			h2 = resnext(h1, 64, btnk_dim//2, 'res2', train_phase, 
 						op_type='down', bn=False, act=act, reuse=reuse)
-			h3 = resnext(h2, 128*2, btnk_dim, 'res3', train_phase, 
+			h3 = resnext(h2, 128, btnk_dim, 'res3', train_phase, 
 						op_type='down', bn=False, act=act, reuse=reuse)
 			### fully connected discriminator
 			flat = tf.contrib.layers.flatten(h3)

@@ -143,6 +143,23 @@ def read_lsun(lsun_path, data_size, im_size=64):
 			break
 	return im_data
 
+def read_art(art_path, data_size=None, im_size=64):
+	print '>>> Reading ART from: '+art_path
+	with open(art_path+'/annotation_pruned.cpk', 'rb') as fs:
+		datadict = pk.load(fs)
+	fn_list = datadict['image_file_name']
+	data_size = len(fn_list) if data_size is None else data_size
+	im_data = np.zeros((data_size, im_size, im_size, 3))
+	widgets = ["ART", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=data_size, widgets=widgets)
+	pbar.start()
+	for i in range(data_size):
+		pbar.update(i)
+		fn = fn_list[i]
+		im_data[i, ...] = read_image(art_path+'/art_images/'+fn, im_size)
+	
+	return im_data, datadict['style_idx'][:data_size]
+
 def read_cifar(cifar_path):
 	with open(cifar_path, 'rb') as fs:
 		datadict = pk.load(fs)
@@ -261,7 +278,8 @@ def gset_block_draw_top(ganist, sample_size, path, pr_th=0.05, en_color=False, g
 		im_draw_flat = im_draw.reshape([-1]+ganist.data_dim)
 		z_data_flat = z_data.reshape([-1])
 		im_draw_color = im_color_borders(im_draw_flat, z_data_flat, max_label=ganist.g_num-1)
-		im_draw = im_draw_color.reshape([top_g_count, sample_size]+ganist.data_dim[:-1]+[3])
+		_, imh, imw, imc = im_draw_color.shape
+		im_draw = im_draw_color.reshape([top_g_count, sample_size, imh, imw, imc])
 	if en_color is True:
 		en_block_draw(ganist, im_draw, path)
 	else:
@@ -303,7 +321,8 @@ def en_block_draw(ganist, im_data, path, max_label=None):
 	im_draw_flat = im_data.reshape([-1]+ganist.data_dim)
 	en_labels = np.argmax(eval_ganist_en(ganist, im_draw_flat), axis=1)
 	im_draw_color = im_color_borders(im_draw_flat, en_labels, max_label=max_label)
-	block_draw(im_draw_color.reshape([cols, rows, imh, imw, 3]), path)
+	_, imh, imw, imc = im_draw_color.shape
+	block_draw(im_draw_color.reshape([cols, rows, imh, imw, imc]), path)
 
 '''
 Adds a color border to im_data corresponding to its im_label.
@@ -1181,7 +1200,7 @@ if __name__ == '__main__':
 	print '>>> lsun train std: ', np.std(train_imgs, axis=(0,1,2))
 	'''
 	### celeba lsun
-
+	'''
 	data_size_train = 20000
 	data_size_val = 300
 	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
@@ -1221,8 +1240,16 @@ if __name__ == '__main__':
 
 	all_imgs = train_imgs
 	all_labs = train_labs = None
+	'''
+
+	### read art dataset
+	art_path = '/media/evl/Public/Mahyar/Data/art_images_annotated'
+	all_imgs, all_labs = read_art(art_path)
+	train_imgs = all_imgs
+	train_labs = all_labs
+
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
-	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png')
+	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	'''
 	TENSORFLOW SETUP
