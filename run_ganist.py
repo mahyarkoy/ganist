@@ -415,6 +415,36 @@ def block_draw(im_data, path, separate_channels=False, border=False):
 		fig.savefig(path, dpi=300)
 
 '''
+Plot and saves layer stats.
+input_list: a list of dict with flat array val and layer name key.
+itrs: iteration counter when input_list is stored.
+'''
+def plot_layer_stats(input_list, itrs, title, log_path):
+	fig, ax = plt.subplots(figsize=(8, 6))
+	ax.clear()
+	cmap = mat_cm.get_cmap('tab10')
+	c = [a*0.1 for a in range(10)]
+	layer_names = input_list[0].keys()
+	assert len(c) >= len(layer_names), 'Not enough colors to plot layer_stats!'
+	layer_vals = list()
+	for i, n in enumerate(layer_names):
+		lmat = np.array([d[n] for d in input_list])
+		lmean = np.mean(lmat, axis=1)
+		lstd = np.std(lmat, axis=1)
+		ax.plot(itrs, lmean, label=n, color=cmap(c[i]))
+		ax.plot(itrs, lmean+lstd, color=cmap(c[i]), linestyle='--', linewidth=0.5)
+		ax.plot(itrs, lmean-lstd, color=cmap(c[i]), linestyle='--', linewidth=0.5)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_title(title)
+	ax.set_xlabel('Iterations')
+	ax.legend(loc=0)
+	fig.savefig(log_path+'/'+title+'.pdf')
+	plt.close(fig)
+
+	with open(log_path+'/'+title+'.cpk', 'wb+') as fs:
+		pk.dump([itrs, input_list], fs)
+
+'''
 Train Ganist
 '''
 def train_ganist(ganist, im_data, labels=None):
@@ -440,6 +470,10 @@ def train_ganist(ganist, im_data, labels=None):
 	rl_vals_logs = list()
 	rl_pvals_logs = list()
 	en_acc_logs = list()
+	g_sim_list = list()
+	g_nz_list = list()
+	d_sim_list = list()
+	d_nz_list = list()
 
 	### training inits
 	d_itr = 0
@@ -478,6 +512,16 @@ def train_ganist(ganist, im_data, labels=None):
 					#e_dist = 0 if e_dist < 0 else np.sqrt(e_dist)
 					eval_logs.append([e_dist, fid_dist])
 					stats_logs.append(net_stats)
+
+					### log layer stats
+					g_sim, g_nz = ganist.step(None, None, g_layer_stats=True)
+					g_sim_list.append(g_sim)
+					g_nz_list.append(g_nz)
+
+					d_sim, d_nz = ganist.step(None, None, d_layer_stats=True)
+					d_sim_list.append(d_sim)
+					d_nz_list.append(d_nz)
+
 					### log norms every epoch
 					'''
 					d_sample_size = 100
@@ -628,6 +672,12 @@ def train_ganist(ganist, im_data, labels=None):
 		fig.savefig(log_path+'/encoder_acc.png', dpi=300)
 		plt.close(fig)
 		'''
+
+		### plot layer stats
+		plot_layer_stats(g_sim_list, itrs_logs, 'g_sim', log_path)
+		plot_layer_stats(g_nz_list, itrs_logs, 'g_nz', log_path)
+		plot_layer_stats(d_sim_list, itrs_logs, 'd_sim', log_path)
+		plot_layer_stats(d_nz_list, itrs_logs, 'd_nz', log_path)
 
 	### save norm_logs
 	#with open(log_path+'/norm_grads.cpk', 'wb+') as fs:
@@ -853,6 +903,7 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 
 	### fid
 	fid = eval_fid(ganist.sess, r_samples, g_samples)
+	fid = 0
 
 	return fid, fid, net_stats
 
@@ -1200,8 +1251,7 @@ if __name__ == '__main__':
 	print '>>> lsun train std: ', np.std(train_imgs, axis=(0,1,2))
 	'''
 	### celeba lsun
-	'''
-	data_size_train = 20000
+	data_size_train = 50000
 	data_size_val = 300
 	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
 	lsun_bed_path_val = '/media/evl/Public/Mahyar/Data/lsun/bedroom_val_imgs'
@@ -1212,15 +1262,17 @@ if __name__ == '__main__':
 	celeba_train = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba'
 	celeba_val = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba_val'
 	
-	train_imgs_bed = read_lsun(lsun_bed_path_train, data_size_train)
-	val_imgs_bed = read_lsun(lsun_bed_path_val, data_size_val)
+	#train_imgs_bed = read_lsun(lsun_bed_path_train, data_size_train)
+	#val_imgs_bed = read_lsun(lsun_bed_path_val, data_size_val)
 
 	train_imgs_celeba = read_lsun(celeba_train, data_size_train)
 	val_imgs_celeba = read_lsun(celeba_val, data_size_val)
 
-	train_imgs = np.concatenate([train_imgs_bed, train_imgs_celeba], axis=0)
-	train_labs = np.concatenate([0 * np.ones(data_size_train, dtype=np.int32),
-								1 * np.ones(data_size_train, dtype=np.int32)], axis=0)
+	train_imgs = train_imgs_celeba
+	val_imgs = val_imgs_celeba
+	#train_imgs = np.concatenate([train_imgs_bed, train_imgs_celeba], axis=0)
+	#train_labs = np.concatenate([0 * np.ones(data_size_train, dtype=np.int32),
+	#							1 * np.ones(data_size_train, dtype=np.int32)], axis=0)
 	#val_imgs = np.concatenate([val_imgs_bed, val_imgs_celeba], axis=0)
 	#val_labs = np.concatenate([0 * np.ones(data_size_val, dtype=np.int32),
 	#							1 * np.ones(data_size_val, dtype=np.int32)], axis=0)
@@ -1240,13 +1292,14 @@ if __name__ == '__main__':
 
 	all_imgs = train_imgs
 	all_labs = train_labs = None
-	'''
 
 	### read art dataset
+	'''
 	art_path = '/media/evl/Public/Mahyar/Data/art_images_annotated'
 	all_imgs, all_labs = read_art(art_path)
 	train_imgs = all_imgs
 	train_labs = all_labs
+	'''
 
 	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
 	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)

@@ -22,6 +22,7 @@ def conv2d(input_, output_dim,
 		   scope=None, reuse=False, 
 		   padding='same', use_bias=True, trainable=True):
 	
+	k_init = tf.truncated_normal_initializer(stddev=0.02)
 	conv = tf.layers.conv2d(
 		input_, output_dim, [k_h, k_w], strides=[d_h, d_w], 
 		padding=padding, use_bias=use_bias, 
@@ -34,6 +35,7 @@ def conv2d_tr(input_, output_dim,
 		   scope=None, reuse=False, 
 		   padding='same', use_bias=True, trainable=True):
     
+    k_init = tf.truncated_normal_initializer(stddev=0.02)
     conv_tr = tf.layers.conv2d_transpose(
             input_, output_dim, [k_h, k_w], strides=[d_h, d_w], 
             padding=padding, use_bias=use_bias, 
@@ -116,6 +118,54 @@ def dense(x, h_size, scope, reuse=False):
 		#h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.contrib.layers.xavier_initializer(uniform=True))
 	return h1
 
+'''
+computes cos similarity between flattened x and y (except last axis).
+'''
+def cos_sim(x, y):
+	ch = x.shape[-1]
+	x_flat = tf.reshape(x, [-1, ch])
+	y_flat = tf.reshape(y, [-1, ch])
+	cos_term = tf.reduce_sum(x_flat * y_flat, axis=0)
+	x_norm = tf.sqrt(tf.reduce_sum(tf.square(x_flat), axis=0))
+	y_norm = tf.sqrt(tf.reduce_sum(tf.square(y_flat), axis=0))
+	return cos_term / (x_norm * y_norm)
+
+'''
+computes ratio of non zero weights in the given var x
+'''
+def non_zero_ratio(x, th=0.001):
+	ch = x.shape[-1]
+	x_flat = tf.reshape(x, [-1, ch])
+	non_zero_count = tf.reduce_sum(tf.cast(tf.square(x_flat) > th**2, tf_dtype), axis=0)
+	count = tf.cast(tf.reduce_prod(x.shape), tf_dtype)
+	return non_zero_count / count
+
+'''
+creates ops and vars for computing cos similarity between current and previous net_vars.
+layer_list: list of strings containing layer names to be included in computation.
+net_vars: list of tf variables containing the layer list variables.
+returns layer_sim: dict of 1d tensors containing sim value for each channel of each layer.
+return backup_op: op for updating the previous var values (storing new current values in them).
+'''
+def compute_layer_sim(layer_list, net_vars):
+	layer_sim = dict()
+	layer_non_zero = dict()
+	vars_pre = dict()
+	vars_pre_ops = list()
+	with tf.variable_scope('sim_layer'):
+		for li, ln in enumerate(layer_list):
+			sim_list = list()
+			non_zero_list = list()
+			for v in net_vars:
+				if ln in v.name and 'kernel' in v.name:
+					vars_pre[v.name] = tf.get_variable(v.name.split(':')[0], shape=v.shape, trainable=False)
+					vars_pre_ops.append(tf.assign(vars_pre[v.name], v))
+					sim_list.append(tf.reshape(cos_sim(vars_pre[v.name], v), [-1]))
+					non_zero_list.append(tf.reshape(non_zero_ratio(v), [-1]))
+			layer_sim[ln] = tf.concat(sim_list, axis=0)
+			layer_non_zero[ln] = tf.concat(non_zero_list, axis=0)
+	backup_op = tf.group(*vars_pre_ops)
+	return backup_op, layer_sim, layer_non_zero
 
 ### GAN Class definition
 class Ganist:
@@ -306,6 +356,14 @@ class Ganist:
 			for v in self.e_vars:
 				self.e_vars_count += int(np.prod(v.get_shape()))
 
+			### compute conv layer learning variation
+			self.g_sim_layer_list = ['conv1', 'conv2', 'conv3']
+			self.g_backup, self.g_layer_sim, self.g_layer_non_zero = compute_layer_sim(self.g_sim_layer_list, self.g_vars)
+
+			self.d_sim_layer_list = ['conv1', 'conv2', 'conv3']
+			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars)
+
+
 			### build optimizers
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 			print '>>> update_ops list: ', update_ops
@@ -401,8 +459,8 @@ class Ganist:
 					bn = tf.contrib.layers.batch_norm
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(bn(dense(zi, 8*8*256, scope='fcz')))
-					h1 = tf.reshape(z_fc, [-1, 8, 8, 256])
+					z_fc = act(dense(zi, 8*8*128*4, scope='fcz'))
+					h1 = tf.reshape(z_fc, [-1, 8, 8, 128*4])
 
 					### deconv version
 					'''
@@ -412,7 +470,7 @@ class Ganist:
 					'''
 
 					### us version: decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
-					'''
+					
 					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
 					h2 = act(conv2d(h1_us, 64*4, scope='conv1'))
 
@@ -421,9 +479,9 @@ class Ganist:
 				
 					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
 					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
-					'''
 
 					### resnext version
+					'''
 					btnk_dim = 64
 					h2 = resnext(h1, 128, btnk_dim, 'res1', train_phase, 
 								op_type='up', bn=False, act=act)
@@ -432,7 +490,8 @@ class Ganist:
 					h4 = resnext(h3, 32, btnk_dim//4, 'res3', train_phase, 
 								op_type='up', bn=False, act=act)
 					h5 = conv2d(h4, self.data_dim[-1], scope='convo')
-					ol.append(tf.tanh(h5))
+					'''
+					ol.append(tf.tanh(h4))
 
 			z_1_hot = tf.reshape(tf.one_hot(z, self.g_num, dtype=tf_dtype), [-1, self.g_num, 1, 1, 1])
 			z_map = tf.tile(z_1_hot, [1, 1]+self.data_dim)
@@ -445,7 +504,7 @@ class Ganist:
 		with tf.variable_scope('d_net'):
 			bn = tf.contrib.layers.batch_norm
 			### encoding the 28*28*3 image with conv into 3*3*256
-			'''
+			
 			h1 = act(conv2d(data_layer, 32*4, d_h=2, d_w=2, scope='conv1', reuse=reuse))
 			h2 = act(conv2d(h1, 64*4, d_h=2, d_w=2, scope='conv2', reuse=reuse))
 			h3 = act(conv2d(h2, 128*4, d_h=2, d_w=2, scope='conv3', reuse=reuse))
@@ -459,6 +518,7 @@ class Ganist:
 						op_type='down', bn=False, act=act, reuse=reuse)
 			h3 = resnext(h2, 128, btnk_dim, 'res3', train_phase, 
 						op_type='down', bn=False, act=act, reuse=reuse)
+			'''
 			### fully connected discriminator
 			flat = tf.contrib.layers.flatten(h3)
 			o = dense(flat, 1, scope='fco', reuse=reuse)
@@ -491,6 +551,7 @@ class Ganist:
 
 	def step(self, batch_data, batch_size, gen_update=False, 
 		dis_only=False, gen_only=False, stats_only=False, 
+		g_layer_stats=False, d_layer_stats=False,
 		en_only=False, z_data=None, zi_data=None):
 		batch_size = batch_data.shape[0] if batch_data is not None else batch_size		
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
@@ -499,6 +560,19 @@ class Ganist:
 			res_list = [self.nan_vars, self.inf_vars, self.zero_vars, self.big_vars]
 			res_list = self.sess.run(res_list, feed_dict={})
 			return res_list
+
+		if g_layer_stats or d_layer_stats:
+			### compute layer sims
+			sim_dict = self.g_layer_sim if g_layer_stats else self.d_layer_sim
+			sim_dict = self.sess.run(sim_dict, feed_dict={})
+			### compute layer non zero ratio
+			non_zero_dict = self.g_layer_non_zero if g_layer_stats else self.d_layer_non_zero
+			non_zero_dict = self.sess.run(non_zero_dict, feed_dict={})
+			### update previous backup vars
+			backup_op = self.g_backup if g_layer_stats else self.d_backup
+			self.sess.run(backup_op)
+
+			return sim_dict, non_zero_dict
 
 		### sample e from uniform (0,1): for gp penalty in WGAN
 		e_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1, 1, 1))
