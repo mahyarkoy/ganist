@@ -113,7 +113,9 @@ def dense_batch(x, h_size, scope, phase, reuse=False):
 
 def dense(x, h_size, scope, reuse=False):
 	with tf.variable_scope(scope, reuse=reuse):
-		h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense')
+		k_init = tf.truncated_normal_initializer(stddev=0.02)
+		h1 = tf.layers.dense(x, h_size, kernel_initializer=k_init, name=scope, reuse=reuse)
+		#h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense')
 		#h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.truncated_normal_initializer(stddev=0.02))
 		#h1 = tf.contrib.layers.fully_connected(x, h_size, activation_fn=None, scope='dense', weights_initializer=tf.contrib.layers.xavier_initializer(uniform=True))
 	return h1
@@ -357,10 +359,10 @@ class Ganist:
 				self.e_vars_count += int(np.prod(v.get_shape()))
 
 			### compute conv layer learning variation
-			self.g_sim_layer_list = ['conv1', 'conv2', 'conv3']
+			self.g_sim_layer_list = ['conv1', 'conv2', 'conv3', 'fcz']
 			self.g_backup, self.g_layer_sim, self.g_layer_non_zero = compute_layer_sim(self.g_sim_layer_list, self.g_vars)
 
-			self.d_sim_layer_list = ['conv1', 'conv2', 'conv3']
+			self.d_sim_layer_list = ['conv1', 'conv2', 'conv3', 'fco']
 			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars)
 
 
@@ -459,7 +461,7 @@ class Ganist:
 					bn = tf.contrib.layers.batch_norm
 			
 					### fully connected from hidden z 44128 to image shape
-					z_fc = act(dense(zi, 8*8*128*4, scope='fcz'))
+					z_fc = act(bn(dense(zi, 8*8*128*4, scope='fcz')))
 					h1 = tf.reshape(z_fc, [-1, 8, 8, 128*4])
 
 					### deconv version
@@ -472,10 +474,10 @@ class Ganist:
 					### us version: decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
 					
 					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
-					h2 = act(conv2d(h1_us, 64*4, scope='conv1'))
+					h2 = act(bn(conv2d(h1_us, 64*4, scope='conv1')))
 
 					h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
-					h3 = act(conv2d(h2_us, 32*4, scope='conv2'))
+					h3 = act(bn(conv2d(h2_us, 32*4, scope='conv2')))
 				
 					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
 					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
@@ -537,7 +539,7 @@ class Ganist:
 
 	def start_session(self):
 		self.saver = tf.train.Saver(tf.global_variables(), 
-			keep_checkpoint_every_n_hours=1, max_to_keep=5)
+			keep_checkpoint_every_n_hours=4, max_to_keep=5)
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):

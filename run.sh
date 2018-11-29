@@ -2,7 +2,7 @@
 set -e
 fname=$1
 target=$2
-eval_step=20000
+eval_step=5000
 mkdir -p $target
 for i in {0..4}
 do

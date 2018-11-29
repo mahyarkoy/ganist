@@ -903,7 +903,7 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 
 	### fid
 	fid = eval_fid(ganist.sess, r_samples, g_samples)
-	fid = 0
+	#fid = 0
 
 	return fid, fid, net_stats
 
