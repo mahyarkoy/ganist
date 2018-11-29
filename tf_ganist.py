@@ -645,7 +645,7 @@ class Ganist:
 					self.e_input: e_data, self.train_phase: True}
 		if not gen_update:
 			d_opt_ptr = self.d_opt if run_count < 5e4 else self.d_sub_opt
-			res_list = [self.g_layer, self.summary, self.d_opt_ptr]
+			res_list = [self.g_layer, self.summary, d_opt_ptr]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 		else:
 			res_list = [self.g_layer, self.summary, 
