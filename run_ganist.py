@@ -31,54 +31,10 @@ import scipy
 import skimage.io as skio
 import glob
 from PIL import Image
+from scipy.stats import beta as beta_dist
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
-
-arg_parser = argparse.ArgumentParser()
-arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
-arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
-arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
-args = arg_parser.parse_args()
-log_path = args.log_path
-eval_int = int(args.eval_int)
-run_seed = int(args.seed)
-
-np.random.seed(run_seed)
-tf.set_random_seed(run_seed)
-
-import tf_ganist
-import mnist_net
-import vae_ganist
-
-### global colormap set
-global_cmap = mat_cm.get_cmap('tab20')
-global_color_locs = np.arange(20) / 20.
-global_color_set = global_cmap(global_color_locs)
-
-### init setup
-### >>> dataset sensitive: stack_size
-mnist_stack_size = 1
-c_log_path = log_path+'/classifier'
-log_path_snap = log_path+'/snapshots'
-c_log_path_snap = c_log_path+'/snapshots'
-log_path_draw = log_path+'/draws'
-log_path_sum = log_path+'/sums'
-c_log_path_sum = c_log_path+'/sums'
-
-log_path_vae = log_path+'/vae'
-log_path_draw_vae = log_path_vae+'/draws'
-log_path_snap_vae = log_path_vae+'/snapshots'
-log_path_sum_vae = log_path_vae+'/sums'
-
-os.system('mkdir -p '+log_path_snap)
-os.system('mkdir -p '+c_log_path_snap)
-os.system('mkdir -p '+log_path_draw)
-os.system('mkdir -p '+log_path_sum)
-os.system('mkdir -p '+c_log_path_sum)
-os.system('mkdir -p '+log_path_draw_vae)
-os.system('mkdir -p '+log_path_snap_vae)
-os.system('mkdir -p '+log_path_sum_vae)
 
 '''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
@@ -419,7 +375,7 @@ Plot and saves layer stats.
 input_list: a list of dict with flat array val and layer name key.
 itrs: iteration counter when input_list is stored.
 '''
-def plot_layer_stats(input_list, itrs, title, log_path):
+def plot_layer_stats(input_list, itrs, title, log_path, beta_conf=0.95, min_val=False):
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
 	cmap = mat_cm.get_cmap('tab10')
@@ -431,9 +387,25 @@ def plot_layer_stats(input_list, itrs, title, log_path):
 		lmat = np.array([d[n] for d in input_list])
 		lmean = np.mean(lmat, axis=1)
 		lstd = np.std(lmat, axis=1)
-		ax.plot(itrs, lmean, label=n, color=cmap(c[i]))
-		ax.plot(itrs, lmean+lstd, color=cmap(c[i]), linestyle='--', linewidth=0.5)
-		ax.plot(itrs, lmean-lstd, color=cmap(c[i]), linestyle='--', linewidth=0.5)
+		lmin = np.min(lmat, axis=1)
+		if beta_conf > 0.:
+			m = (lmean + 1.) / 2.
+			s = lstd / 2.
+			a = m**2.*((1.-m)/s**2. - 1./m)
+			b = a*(1/m - 1.)
+			confs = [beta_dist.interval(beta_conf, ai, bi) for ai, bi in zip(a, b)]
+			err_up = np.array([ci[1]*2.-1. for ci in confs])
+			err_low = np.array([ci[0]*2.-1. for ci in confs])
+		else:
+			err_up = lmean+lstd
+			err_low = lmean-lstd
+
+		if min_val:
+			ax.plot(itrs, lmin, label=n, color=cmap(c[i]))
+		else:
+			ax.plot(itrs, lmean, label=n, color=cmap(c[i]))
+			ax.plot(itrs, err_up, color=cmap(c[i]), linestyle='--', linewidth=0.5)
+			ax.plot(itrs, err_low, color=cmap(c[i]), linestyle='--', linewidth=0.5)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_title(title)
 	ax.set_xlabel('Iterations')
@@ -579,7 +551,8 @@ def train_ganist(ganist, im_data, labels=None):
 
 				### discriminator update
 				if d_update_flag is True:
-					batch_sum, batch_g_data = ganist.step(batch_data, batch_size=None, gen_update=False)
+					batch_sum, batch_g_data = ganist.step(batch_data, 
+						batch_size=None, gen_update=False, run_count=itr_total)
 					ganist.write_sum(batch_sum, itr_total)
 					d_itr += 1
 					itr_total += 1
@@ -587,7 +560,8 @@ def train_ganist(ganist, im_data, labels=None):
 					fetch_batch = True
 				### generator updates: g_updates times for each d_updates of discriminator
 				elif g_updates > 0:
-					batch_sum, batch_g_data = ganist.step(batch_data, batch_size=None, gen_update=True)
+					batch_sum, batch_g_data = ganist.step(batch_data, 
+						batch_size=None, gen_update=True)
 					ganist.write_sum(batch_sum, itr_total)
 					g_itr += 1
 					itr_total += 1
@@ -675,9 +649,9 @@ def train_ganist(ganist, im_data, labels=None):
 
 		### plot layer stats
 		plot_layer_stats(g_sim_list, itrs_logs, 'g_sim', log_path)
-		plot_layer_stats(g_nz_list, itrs_logs, 'g_nz', log_path)
+		plot_layer_stats(g_nz_list, itrs_logs, 'g_nz', log_path, beta_conf=0)
 		plot_layer_stats(d_sim_list, itrs_logs, 'd_sim', log_path)
-		plot_layer_stats(d_nz_list, itrs_logs, 'd_nz', log_path)
+		plot_layer_stats(d_nz_list, itrs_logs, 'd_nz', log_path, beta_conf=0)
 
 	### save norm_logs
 	#with open(log_path+'/norm_grads.cpk', 'wb+') as fs:
@@ -1149,6 +1123,51 @@ def eval_mnist_net(mnet, im_data, labels, batch_size):
 	return eval_loss / eval_count, eval_sum / eval_count
 
 if __name__ == '__main__':
+	'''
+	Script Setup
+	'''
+	arg_parser = argparse.ArgumentParser()
+	arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
+	arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
+	arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
+	args = arg_parser.parse_args()
+	log_path = args.log_path
+	eval_int = int(args.eval_int)
+	run_seed = int(args.seed)
+	np.random.seed(run_seed)
+	tf.set_random_seed(run_seed)
+	import tf_ganist
+	import mnist_net
+	import vae_ganist
+
+	### global colormap set
+	global_cmap = mat_cm.get_cmap('tab20')
+	global_color_locs = np.arange(20) / 20.
+	global_color_set = global_cmap(global_color_locs)
+
+	### init setup
+	mnist_stack_size = 1
+	c_log_path = log_path+'/classifier'
+	log_path_snap = log_path+'/snapshots'
+	c_log_path_snap = c_log_path+'/snapshots'
+	log_path_draw = log_path+'/draws'
+	log_path_sum = log_path+'/sums'
+	c_log_path_sum = c_log_path+'/sums'
+
+	log_path_vae = log_path+'/vae'
+	log_path_draw_vae = log_path_vae+'/draws'
+	log_path_snap_vae = log_path_vae+'/snapshots'
+	log_path_sum_vae = log_path_vae+'/sums'
+
+	os.system('mkdir -p '+log_path_snap)
+	os.system('mkdir -p '+c_log_path_snap)
+	os.system('mkdir -p '+log_path_draw)
+	os.system('mkdir -p '+log_path_sum)
+	os.system('mkdir -p '+c_log_path_sum)
+	os.system('mkdir -p '+log_path_draw_vae)
+	os.system('mkdir -p '+log_path_snap_vae)
+	os.system('mkdir -p '+log_path_sum_vae)
+
 	### read and process data **cifar**
 	### >>> dataset sensitive
 	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'

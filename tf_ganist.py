@@ -139,7 +139,7 @@ def non_zero_ratio(x, th=0.001):
 	ch = x.shape[-1]
 	x_flat = tf.reshape(x, [-1, ch])
 	non_zero_count = tf.reduce_sum(tf.cast(tf.square(x_flat) > th**2, tf_dtype), axis=0)
-	count = tf.cast(tf.reduce_prod(x.shape), tf_dtype)
+	count = tf.cast(tf.reduce_prod(x.shape[:-1]), tf_dtype)
 	return non_zero_count / count
 
 '''
@@ -160,6 +160,8 @@ def compute_layer_sim(layer_list, net_vars):
 			non_zero_list = list()
 			for v in net_vars:
 				if ln in v.name and 'kernel' in v.name:
+					print '>>> VAR: ' + ln
+					print v.get_shape().as_list()
 					vars_pre[v.name] = tf.get_variable(v.name.split(':')[0], shape=v.shape, trainable=False)
 					vars_pre_ops.append(tf.assign(vars_pre[v.name], v))
 					sim_list.append(tf.reshape(cos_sim(vars_pre[v.name], v), [-1]))
@@ -329,6 +331,9 @@ class Ganist:
 			self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
 			self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net")
 			self.e_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "e_net")
+			self.d_vars_sub = [v for v in self.d_vars if 'fco' in v.name]
+			print '>>> d_vars_sub:'
+			print self.d_vars_sub
 
 			### compute stat of weights
 			self.nan_vars = 0.
@@ -376,6 +381,9 @@ class Ganist:
 				self.d_opt = tf.train.AdamOptimizer(
 					self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(
 					self.d_loss_total, var_list=self.d_vars)
+				self.d_sub_opt = tf.train.AdamOptimizer(
+					self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(
+					self.d_loss_total, var_list=self.d_vars_sub)
 				self.e_opt = tf.train.AdamOptimizer(
 					self.e_lr, beta1=self.e_beta1, beta2=self.e_beta2).minimize(
 					self.en_loss_total, var_list=self.e_vars)
@@ -554,7 +562,7 @@ class Ganist:
 	def step(self, batch_data, batch_size, gen_update=False, 
 		dis_only=False, gen_only=False, stats_only=False, 
 		g_layer_stats=False, d_layer_stats=False,
-		en_only=False, z_data=None, zi_data=None):
+		en_only=False, z_data=None, zi_data=None, run_count=0.0):
 		batch_size = batch_data.shape[0] if batch_data is not None else batch_size		
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
 
@@ -636,7 +644,8 @@ class Ganist:
 		feed_dict = {self.im_input:batch_data, self.z_input: z_data, self.zi_input: zi_data,
 					self.e_input: e_data, self.train_phase: True}
 		if not gen_update:
-			res_list = [self.g_layer, self.summary, self.d_opt]
+			d_opt_ptr = self.d_opt if run_count < 5e4 else self.d_sub_opt
+			res_list = [self.g_layer, self.summary, self.d_opt_ptr]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 		else:
 			res_list = [self.g_layer, self.summary, 
