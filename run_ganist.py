@@ -370,6 +370,9 @@ def block_draw(im_data, path, separate_channels=False, border=False):
 		fig.subplots_adjust(wspace=0, hspace=0)
 		fig.savefig(path, dpi=300)
 
+def im_multi_draw(im_data, sample_size, path):
+	block_draw(np.transpose(im_data[:, :sample_size, ...], (1, 0, 2, 3, 4)), path, border=True)
+
 '''
 Plot and saves layer stats.
 input_list: a list of dict with flat array val and layer name key.
@@ -502,53 +505,6 @@ def train_ganist(ganist, im_data, labels=None):
 					norms_logs.append([np.max(grad_norms), np.mean(grad_norms), np.std(grad_norms)])
 					'''
 
-					### log rl vals and pvals **g_num**
-					rl_vals_logs.append(list(ganist.g_rl_vals))
-					rl_pvals_logs.append(list(ganist.g_rl_pvals))
-					#z_pr = np.exp(ganist.pg_temp * ganist.g_rl_pvals)
-					#z_pr = z_pr / np.sum(z_pr)
-					#rl_pvals_logs.append(list(z_pr))
-
-					### en_accuracy plots **g_num**
-					'''
-					acc_array = np.zeros(ganist.g_num)
-					sample_size = 1000
-					for g in range(ganist.g_num):
-						z = g * np.ones(sample_size)
-						z = z.astype(np.int32)
-						g_samples = sample_ganist(ganist, sample_size, z_data=z)
-						acc_array[g] = eval_en_acc(ganist, g_samples, z)
-					en_acc_logs.append(list(acc_array))
-					'''
-
-					### draw real samples en classified **g_num**
-					d_sample_size = 1000
-					#im_true_color = im_color_borders(train_dataset[:d_sample_size], 
-					#	train_labs[:d_sample_size], max_label=9)
-					#im_block_draw(im_true_color, 10, draw_path+'_t.png', 
-					#	im_labels=train_labs[:d_sample_size])
-					#im_block_draw(train_dataset[:d_sample_size], 10, draw_path+'_t.png', 
-					#	im_labels=train_labs[:d_sample_size], ganist=ganist)
-
-					### en_preds
-					'''
-					en_preds = np.argmax(en_logits, axis=1)
-					en_order = np.argsort(en_preds)
-					preds_order = en_preds[en_order]
-					logits_order = en_logits[en_order]
-					labels_order = train_labs[en_order]
-					start = 0
-					preds_list = list()
-					for i, v in enumerate(labels_order):
-						if i == len(labels_order)-1 or preds_order[i] < preds_order[i+1]:
-							preds_list.append(list(labels_order[start:i+1]))
-							start = i+1
-
-					print '>>> EN_LABELS:'
-					for l in preds_list:
-						print l
-					'''
-
 				### discriminator update
 				if d_update_flag is True:
 					batch_sum, batch_g_data = ganist.step(batch_data, 
@@ -579,9 +535,6 @@ def train_ganist(ganist, im_data, labels=None):
 		eval_logs_mat = np.array(eval_logs)
 		stats_logs_mat = np.array(stats_logs)
 		#norms_logs_mat = np.array(norms_logs)
-		rl_vals_logs_mat = np.array(rl_vals_logs)
-		rl_pvals_logs_mat = np.array(rl_pvals_logs)
-		#en_acc_logs_mat = np.array(en_acc_logs)
 
 		eval_logs_names = ['fid_dist', 'fid_dist']
 		stats_logs_names = ['nan_vars_ratio', 'inf_vars_ratio', 'tiny_vars_ratio', 
@@ -606,47 +559,6 @@ def train_ganist(ganist, im_data, labels=None):
 		plt.close(fig)
 		'''
 
-		### plot rl_vals **g_num**
-		fig, ax = plt.subplots(figsize=(8, 6))
-		ax.clear()
-		for g in range(ganist.g_num):
-			ax.plot(itrs_logs, rl_vals_logs_mat[:, g], label='g_%d' % g, c=global_color_set[g])
-		ax.grid(True, which='both', linestyle='dotted')
-		ax.set_title('RL Q Values')
-		ax.set_xlabel('Iterations')
-		ax.set_ylabel('Values')
-		ax.legend(loc=0)
-		fig.savefig(log_path+'/rl_q_vals.png', dpi=300)
-		plt.close(fig)
-		
-		### plot rl_pvals **g_num**
-		fig, ax = plt.subplots(figsize=(8, 6))
-		ax.clear()
-		for g in range(ganist.g_num):
-			ax.plot(itrs_logs, rl_pvals_logs_mat[:, g], label='g_%d' % g, c=global_color_set[g])
-		ax.grid(True, which='both', linestyle='dotted')
-		ax.set_title('RL Policy')
-		ax.set_xlabel('Iterations')
-		ax.set_ylabel('Values')
-		ax.legend(loc=0)
-		fig.savefig(log_path+'/rl_policy.png', dpi=300)
-		plt.close(fig)
-
-		### plot en_accs **g_num**
-		'''
-		fig, ax = plt.subplots(figsize=(8, 6))
-		ax.clear()
-		for g in range(ganist.g_num):
-			ax.plot(itrs_logs, en_acc_logs_mat[:, g], label='g_%d' % g, c=global_color_set[g])
-		ax.grid(True, which='both', linestyle='dotted')
-		ax.set_title('Encoder Accuracy')
-		ax.set_xlabel('Iterations')
-		ax.set_ylabel('Values')
-		ax.legend(loc=0)
-		fig.savefig(log_path+'/encoder_acc.png', dpi=300)
-		plt.close(fig)
-		'''
-
 		### plot layer stats
 		plot_layer_stats(g_sim_list, itrs_logs, 'g_sim', log_path)
 		plot_layer_stats(g_nz_list, itrs_logs, 'g_nz', log_path, beta_conf=0)
@@ -656,10 +568,6 @@ def train_ganist(ganist, im_data, labels=None):
 	### save norm_logs
 	#with open(log_path+'/norm_grads.cpk', 'wb+') as fs:
 	#	pk.dump(norms_logs_mat, fs)
-
-	### save pval_logs
-	with open(log_path+'/rl_pvals.cpk', 'wb+') as fs:
-		pk.dump([itrs_logs, rl_pvals_logs_mat], fs)
 
 	### save eval_logs
 	with open(log_path+'/fid_logs.cpk', 'wb+') as fs:
@@ -739,15 +647,15 @@ Sample sample_size data points from ganist.
 def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, 
 	z_data=None, zi_data=None, z_im=None):
 	sampler = sampler if sampler is not None else ganist.step
-	g_samples = np.zeros([sample_size] + ganist.data_dim)
+	g_samples = np.zeros([ganist.g_num, sample_size] + ganist.data_dim)
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
 		batch_len = g_samples[batch_start:batch_end, ...].shape[0]
 		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
 		batch_zi = zi_data[batch_start:batch_end, ...] if zi_data is not None else None
 		batch_im = z_im[batch_start:batch_end, ...] if z_im is not None else None
-		g_samples[batch_start:batch_end, ...] = \
-			sampler(batch_im, batch_len, gen_only=True, z_data=batch_z, zi_data=batch_zi)
+		samples = sampler(batch_im, batch_len, gen_only=True, z_data=batch_z, zi_data=batch_zi)
+		g_samples[:, batch_start:batch_end, ...] = samples
 	return g_samples
 
 '''
@@ -846,37 +754,16 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	r_samples = im_data[0:sample_size, ...]
 	g_samples = sample_ganist(ganist, sample_size, sampler=sampler,
 		z_im=im_data[-sample_size:, ...])
-	
-	### calculate energy distance
-	#rr_score = np.mean(np.sqrt(np.sum(np.square( \
-	#	r_samples[0:sample_size//2, ...] - r_samples[sample_size//2:, ...]), axis=1)))
-	#gg_score = np.mean(np.sqrt(np.sum(np.square( \
-	#	g_samples[0:sample_size//2, ...] - g_samples[sample_size//2:, ...]), axis=1)))
-	#rg_score = np.mean(np.sqrt(np.sum(np.square( \
-	#	r_samples[0:sample_size//2, ...] - g_samples[0:sample_size//2, ...]), axis=1)))
 
 	### draw block image of gen samples
 	if draw_path is not None:
-		g_samples = g_samples.reshape((-1,) + im_data.shape[1:])
-		### manifold interpolation drawing mode **mt** **g_num**
-		'''
-		gr_samples = im_data[-sample_size:, ...]
-		gr_flip = np.array(gr_samples)
-		for batch_start in range(0, sample_size, batch_size):
-			batch_end = batch_start + batch_size
-			gr_flip[batch_start:batch_end, ...] = np.flip(gr_flip[batch_start:batch_end, ...], axis=0)
-		draw_samples = np.concatenate([g_samples, gr_samples, gr_flip], axis=3)
-		im_block_draw(draw_samples, draw_size, draw_path)
-		'''
-		### **g_num**
-		im_block_draw(g_samples, draw_size, draw_path+'.png', ganist=ganist)
-		gset_block_draw(ganist, 10, draw_path+'_gset.png', en_color=True)
+		im_multi_draw(g_samples, draw_size, draw_path+'.png')
 
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
 
 	### fid
-	fid = eval_fid(ganist.sess, r_samples, g_samples)
+	fid = eval_fid(ganist.sess, r_samples, g_samples[-1, ...])
 	#fid = 0
 
 	return fid, fid, net_stats
@@ -1406,8 +1293,8 @@ if __name__ == '__main__':
 	#ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	#gset_sample_draw(ganist, 10)
-	gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
-	gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png', pr_th=0.99 / ganist.g_num)
+	#gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
+	#gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png', pr_th=0.99 / ganist.g_num)
 	#sys.exit(0)
 
 	'''
@@ -1518,7 +1405,7 @@ if __name__ == '__main__':
 		z_im=r_samples[0:sample_size, ...])
 	#im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
 	im_block_draw(r_samples, 5, log_path_draw+'/real_samples.png', border=True)
-	im_block_draw(g_samples, 5, log_path_draw+'/gen_samples.png', border=True)
+	im_block_draw(g_samples[-1, ...], 5, log_path_draw+'/gen_samples.png', border=True)
 	#sys.exit(0)
 
 	### mode eval gen data
@@ -1543,7 +1430,7 @@ if __name__ == '__main__':
 	### FID scores
 	#fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
 	fid_r = -1
-	fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
+	fid_g = eval_fid(sess, g_samples[-1, ...], all_imgs_stack[:sample_size])
 	with open(log_path+'/fid_log.txt', 'w+') as fs:
 		print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
 			% (fid_g, fid_r)
