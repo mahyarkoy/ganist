@@ -166,8 +166,13 @@ def compute_layer_sim(layer_list, net_vars):
 					vars_pre_ops.append(tf.assign(vars_pre[v.name], v))
 					sim_list.append(tf.reshape(cos_sim(vars_pre[v.name], v), [-1]))
 					non_zero_list.append(tf.reshape(non_zero_ratio(v), [-1]))
-			layer_sim[ln] = tf.concat(sim_list, axis=0)
-			layer_non_zero[ln] = tf.concat(non_zero_list, axis=0)
+			if len(sim_list) > 1:
+				layer_sim[ln] = tf.concat(sim_list, axis=0)
+				layer_non_zero[ln] = tf.concat(non_zero_list, axis=0)
+			elif len(sim_list) == 1:
+				layer_sim[ln] = sim_list[0]
+				layer_non_zero[ln] = non_zero_list[0]
+				
 	backup_op = tf.group(*vars_pre_ops)
 	return backup_op, layer_sim, layer_non_zero
 
@@ -331,7 +336,8 @@ class Ganist:
 			self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
 			self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net")
 			self.e_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "e_net")
-			self.d_vars_sub = [v for v in self.d_vars if 'fco' in v.name]
+			self.g_vars_sub = [v for v in self.g_vars if 'fcz' in v.name]
+			self.d_vars_sub = [v for v in self.d_vars if 'conv3' in v.name or 'conv2' in v.name or 'conv1' in v.name]
 			print '>>> d_vars_sub:'
 			print self.d_vars_sub
 
@@ -378,6 +384,9 @@ class Ganist:
 				self.g_opt = tf.train.AdamOptimizer(
 					self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2).minimize(
 					self.g_loss_total, var_list=self.g_vars)
+				self.g_sub_opt = tf.train.AdamOptimizer(
+					self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2).minimize(
+					self.g_loss_total, var_list=self.g_vars_sub)
 				self.d_opt = tf.train.AdamOptimizer(
 					self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(
 					self.d_loss_total, var_list=self.d_vars)
@@ -644,12 +653,13 @@ class Ganist:
 		feed_dict = {self.im_input:batch_data, self.z_input: z_data, self.zi_input: zi_data,
 					self.e_input: e_data, self.train_phase: True}
 		if not gen_update:
-			d_opt_ptr = self.d_opt if run_count < 5e4 else self.d_sub_opt
+			d_opt_ptr = self.d_opt #if run_count < 5e4 else self.d_sub_opt
 			res_list = [self.g_layer, self.summary, d_opt_ptr]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 		else:
+			g_opt_ptr = self.g_opt #if run_count < 5e4 else self.g_sub_opt
 			res_list = [self.g_layer, self.summary, 
-						self.g_opt, self.e_opt, self.pg_opt]
+						g_opt_ptr, self.e_opt, self.pg_opt]
 						#self.r_en_h, self.r_en_marg_hlb, self.gi_h, self.g_en_loss]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 			#self.g_rl_vals, self.g_rl_pvals = self.sess.run((self.pg_q, self.pg_var), feed_dict={})

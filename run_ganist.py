@@ -561,7 +561,7 @@ def train_ganist(ganist, im_data, labels=None):
 				### generator updates: g_updates times for each d_updates of discriminator
 				elif g_updates > 0:
 					batch_sum, batch_g_data = ganist.step(batch_data, 
-						batch_size=None, gen_update=True)
+						batch_size=None, gen_update=True, run_count=itr_total)
 					ganist.write_sum(batch_sum, itr_total)
 					g_itr += 1
 					itr_total += 1
@@ -1326,7 +1326,7 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
 	### create a ganist instance
