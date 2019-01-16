@@ -788,7 +788,7 @@ def blur_images(imgs, sigma):
 	if sigma==0:
 		return imgs
 	### kernel
-	t = np.linspace(-10, 10, 21)
+	t = np.linspace(-20, 20, 41)
 	bump = np.exp(-t**2/sigma**2)
 	bump /= np.trapz(bump) # normalize the integral to 1
 	kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
@@ -1571,7 +1571,7 @@ if __name__ == '__main__':
 	'''
 	Multi Level FID
 	'''
-	blur_levels = [0., 1., 2., 3., 4.]
+	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
 	### draw blurred images
 	blur_im_list = list()
 	blur_draw_size = 10

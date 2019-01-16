@@ -557,13 +557,14 @@ class Ganist:
 	def start_session(self):
 		self.saver = tf.train.Saver(tf.global_variables(), 
 			keep_checkpoint_every_n_hours=4, max_to_keep=5)
+		self.saver_var_only = tf.train.Saver(self.g_vars+self.d_vars+self.e_vars+[self.pg_var, self.pg_q])
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):
 		self.saver.save(self.sess, fname)
 
 	def load(self, fname):
-		self.saver.restore(self.sess, fname)
+		self.saver_var_only.restore(self.sess, fname)
 
 	def write_sum(self, sum_str, counter):
 		self.writer.add_summary(sum_str, counter)
