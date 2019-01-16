@@ -32,6 +32,7 @@ import skimage.io as skio
 import glob
 from PIL import Image
 from scipy.stats import beta as beta_dist
+from scipy import signal
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
@@ -783,16 +784,35 @@ def extract_inception_feat(sess, feat_layer, im_layer, im_data):
 		im_feat[batch_start:batch_end, ...] = pe.reshape((-1, feat_size))
 	return im_feat
 
+def blur_images(imgs, sigma):
+	if sigma==0:
+		return imgs
+	### kernel
+	t = np.linspace(-10, 10, 21)
+	bump = np.exp(-t**2/sigma**2)
+	bump /= np.trapz(bump) # normalize the integral to 1
+	kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
+	imgs_blur = np.array(imgs)
+	for i in range(imgs.shape[0]):
+		imgs_blur[i, ...] = signal.fftconvolve(imgs[i, ...], kernel[:, :, np.newaxis], mode='same')
+	return imgs_blur
+
 '''
 Evaluate fid on data
 '''
-def eval_fid(sess, im_r, im_g):
+def eval_fid(sess, im_r, im_g, blur=0):
 	### extract real images (at least data_size)
-	feat_r = extract_inception_feat(sess, inception_feat_layer, inception_im_layer, im_r)
+	feat_r = extract_inception_feat(sess, inception_feat_layer, inception_im_layer, blur_images(im_r, blur))
 	### extract fake images
-	feat_g = extract_inception_feat(sess, inception_feat_layer, inception_im_layer, im_g)
+	feat_g = extract_inception_feat(sess, inception_feat_layer, inception_im_layer, blur_images(im_g, blur))
 	### compute fid
 	return compute_fid(feat_r, feat_g)
+
+def eval_fid_levels(sess, im_r, im_g, blur_levels):
+	fid_list = list()
+	for b in blur_levels:
+		fid_list.append(eval_fid(sess, im_r, im_g, b))
+	return fid_list
 
 '''
 Run discriminator of ganist on the given im_data, return logits and gradient norms. **g_num**
@@ -1179,7 +1199,7 @@ if __name__ == '__main__':
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier/snapshots/model_18750.h5'
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier_single/snapshots/model_11250.h5'
 	class_net_path = '/media/evl/Public/Mahyar/Data/cl_mnist_classifier/snapshots/model_54375.h5'
-	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/logs_cl64_wgan/run_%d/snapshots/model_83333_500000.h5'
+	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/1_logs_celeba_wganbn_lstatsfc/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl_temp/logs_cl_wgan/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
 	sample_size = 10000
@@ -1400,10 +1420,10 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, train_imgs, train_labs)
+	#train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist **g_num**
-	#ganist.load(ganist_path % run_seed)
+	ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	#gset_sample_draw(ganist, 10)
 	gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
@@ -1541,12 +1561,40 @@ if __name__ == '__main__':
 	#print ">>> JSD(g||p): ", jsd
 
 	### FID scores
-	#fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
-	fid_r = -1
+	fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
+	#fid_r = -1
 	fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
 	with open(log_path+'/fid_log.txt', 'w+') as fs:
 		print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
 			% (fid_g, fid_r)
+
+	'''
+	Multi Level FID
+	'''
+	blur_levels = [0., 1., 2., 3., 4.]
+	### draw blurred images
+	blur_im_list = list()
+	blur_draw_size = 10
+	for b in blur_levels:
+		blur_im_list.append(blur_images(all_imgs_stack[:blur_draw_size], b))
+	blur_im = np.stack(blur_im_list, axis=0)
+	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
+	### compute multi level fid
+	fid_list = eval_fid_levels(sess, g_samples, all_imgs_stack[:sample_size], blur_levels)
+	### plot rl_pvals **g_num**
+	fig, ax = plt.subplots(figsize=(8, 6))
+	ax.clear()
+	ax.plot(blur_levels, fid_list)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_title('FID levels')
+	ax.set_xlabel('Filter sigma')
+	ax.set_ylabel('FID')
+	ax.legend(loc=0)
+	fig.savefig(log_path+'/fid_levels.png', dpi=300)
+	plt.close(fig)
+	### save fids
+	with open(log_path+'/fid_levels.cpk', 'wb+') as fs:
+		pk.dump([blur_levels, fid_list], fs)
 
 	sess.close()
 
