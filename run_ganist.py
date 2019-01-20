@@ -1420,10 +1420,10 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	#train_ganist(ganist, train_imgs, train_labs)
+	train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist **g_num**
-	ganist.load(ganist_path % run_seed)
+	#ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	#gset_sample_draw(ganist, 10)
 	gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
@@ -1561,12 +1561,12 @@ if __name__ == '__main__':
 	#print ">>> JSD(g||p): ", jsd
 
 	### FID scores
-	fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
+	#fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
 	#fid_r = -1
-	fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
-	with open(log_path+'/fid_log.txt', 'w+') as fs:
-		print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
-			% (fid_g, fid_r)
+	#fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
+	#with open(log_path+'/fid_log.txt', 'w+') as fs:
+	#	print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
+	#		% (fid_g, fid_r)
 
 	'''
 	Multi Level FID
@@ -1579,9 +1579,10 @@ if __name__ == '__main__':
 		blur_im_list.append(blur_images(all_imgs_stack[:blur_draw_size], b))
 	blur_im = np.stack(blur_im_list, axis=0)
 	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
-	### compute multi level fid
+	### compute multi level fid (second line for real data fid levels)
 	fid_list = eval_fid_levels(sess, g_samples, all_imgs_stack[:sample_size], blur_levels)
-	### plot rl_pvals **g_num**
+	#fid_list = eval_fid_levels(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size], blur_levels)
+	### plot fid_levels
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
 	ax.plot(blur_levels, fid_list)
@@ -1589,7 +1590,7 @@ if __name__ == '__main__':
 	ax.set_title('FID levels')
 	ax.set_xlabel('Filter sigma')
 	ax.set_ylabel('FID')
-	ax.legend(loc=0)
+	#ax.legend(loc=0)
 	fig.savefig(log_path+'/fid_levels.png', dpi=300)
 	plt.close(fig)
 	### save fids
