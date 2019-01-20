@@ -425,7 +425,7 @@ def train_ganist(ganist, im_data, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 4e5
+	max_itr_total = 1e4 #4e5
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
@@ -789,7 +789,7 @@ def blur_images(imgs, sigma):
 		return imgs
 	### kernel
 	t = np.linspace(-20, 20, 41)
-	bump = np.exp(-t**2/sigma**2)
+	bump = np.exp(0.5 * -t**2/sigma**2)
 	bump /= np.trapz(bump) # normalize the integral to 1
 	kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
 	imgs_blur = np.array(imgs)
@@ -864,8 +864,7 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	
 	### collect real and gen samples **mt**
 	r_samples = im_data[0:sample_size, ...]
-	g_samples = sample_ganist(ganist, sample_size, sampler=sampler,
-		z_im=im_data[-sample_size:, ...])
+	g_samples = sample_ganist(ganist, sample_size, sampler=sampler)
 	
 	### calculate energy distance
 	#rr_score = np.mean(np.sqrt(np.sum(np.square( \
@@ -1202,7 +1201,7 @@ if __name__ == '__main__':
 	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/1_logs_celeba_wganbn_lstatsfc/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl_temp/logs_cl_wgan/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
-	sample_size = 10000
+	sample_size = 1000 #10000
 	#sample_size = 350000
 
 	'''
@@ -1290,7 +1289,7 @@ if __name__ == '__main__':
 	print '>>> lsun train std: ', np.std(train_imgs, axis=(0,1,2))
 	'''
 	### celeba lsun
-	data_size_train = 50000
+	data_size_train = 2000 #50000
 	data_size_val = 300
 	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
 	lsun_bed_path_val = '/media/evl/Public/Mahyar/Data/lsun/bedroom_val_imgs'
@@ -1362,6 +1361,9 @@ if __name__ == '__main__':
 	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
 		print >>fs, '>>> g_vars: %d --- d_vars: %d --- e_vars: %d' \
 			% (ganist.g_vars_count, ganist.d_vars_count, ganist.e_vars_count)
+	### draw filtered real samples (blurred)
+	im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True), 5, 
+		log_path_draw+'/real_samples_lp.png', border=True)
 
 	'''
 	INCEPTION SETUP

@@ -204,6 +204,7 @@ class Ganist:
 		self.g_num = 1
 		self.z_range = 1.0
 		self.data_dim = [64, 64, 3]
+		self.hp_loss_weight = 1.
 		self.mm_loss_weight = 0.0
 		self.gp_loss_weight = 10.0
 		self.rg_loss_weight = 0.0
@@ -226,6 +227,20 @@ class Ganist:
 		self.build_graph()
 		self.start_session()
 
+	def apply_filter(self, im):
+		### np kernel
+		sigma = 1.
+		krange = 10
+		ksize = 2*krange + 1
+		t = np.linspace(-krange, krange, ksize)
+		bump = np.exp(0.5 * -t**2/sigma**2)
+		bump /= np.trapz(bump) # normalize the integral to 1
+		kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
+		### tf conv2d
+		kernel = kernel.reshape((ksize, ksize, 1, 1)).astype(np_dtype)
+		kernel = np.repeat(kernel, self.data_dim[-1], axis=2)
+		return tf.nn.depthwise_conv2d(im, kernel, [1, 1, 1, 1], padding='SAME')
+
 	def build_graph(self):
 		with tf.name_scope('ganist'):
 			### define placeholders for image and label inputs **g_num** **mt**
@@ -241,64 +256,45 @@ class Ganist:
 			self.g_layer = self.build_gen(self.z_input, self.zi_input, self.g_act, self.train_phase)
 			#self.g_layer = self.build_gen_mt(self.im_input, self.z_input, self.g_act, self.train_phase)
 
-			### build discriminator
-			self.r_logits, self.r_hidden = self.build_dis(self.im_input, self.d_act, self.train_phase)
-			self.g_logits, self.g_hidden = self.build_dis(self.g_layer, self.d_act, self.train_phase, reuse=True)
+			### filter images
+			self.r_layer_lp = self.apply_filter(self.im_input)
+			self.r_layer_hp = self.im_input - self.r_layer_lp
+			self.g_layer_lp = self.apply_filter(self.g_layer)
+			self.g_layer_hp = self.g_layer - self.g_layer_lp
+
+			### build discriminator for low pass
+			self.r_logits, self.r_hidden = self.build_dis(self.im_input, self.train_phase)
+			self.g_logits, self.g_hidden = self.build_dis(self.g_layer, self.train_phase, reuse=True)
 			self.r_en_logits = self.build_encoder(self.r_hidden, self.d_act, self.train_phase)
 			self.g_en_logits = self.build_encoder(self.g_hidden, self.d_act, self.train_phase, reuse=True)
 
 			### real gen manifold interpolation
 			rg_layer = (1.0 - self.e_input) * self.g_layer + self.e_input * self.im_input
-			self.rg_logits, _ = self.build_dis(rg_layer, self.d_act, self.train_phase, reuse=True)
+			self.rg_logits, _ = self.build_dis(rg_layer, self.train_phase, reuse=True)
+
+			### build discriminator for high pass
+			self.r_logits_hp, self.r_hidden_hp = self.build_dis(self.r_layer_hp, self.train_phase, reuse=True)
+			self.r_logits_hp = self.build_fc(self.r_hidden_hp)
+			self.g_logits_hp, self.g_hidden_hp = self.build_dis(self.g_layer_hp, self.train_phase, reuse=True)
+			self.g_logits_hp = self.build_fc(self.g_hidden_hp, reuse=True)
+
+			### real gen manifold interpolation
+			rg_layer_hp = (1.0 - self.e_input) * self.g_layer_hp + self.e_input * self.r_layer_hp
+			self.rg_logits_hp, rg_hidden_hp = self.build_dis(rg_layer_hp, self.train_phase, reuse=True)
+			self.rg_logits_hp = self.build_fc(rg_hidden_hp, reuse=True)
 
 			### build d losses
-			if self.d_loss_type == 'log':
-				self.d_r_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-						logits=self.r_logits, labels=tf.ones_like(self.r_logits, tf_dtype))
-				self.d_g_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-						logits=self.g_logits, labels=tf.zeros_like(self.g_logits, tf_dtype))
-				self.d_rg_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-						logits=self.rg_logits, labels=tf.ones_like(self.rg_logits, tf_dtype))
-			elif self.d_loss_type == 'was':
-				self.d_r_loss = -self.r_logits 
-				self.d_g_loss = self.g_logits
-				self.d_rg_loss = -self.rg_logits
-			else:
-				raise ValueError('>>> d_loss_type: %s is not defined!' % self.d_loss_type)
-
-			### gradient penalty
-			### NaN free norm gradient
-			rg_grad = tf.gradients(self.rg_logits, rg_layer)
-			rg_grad_flat = tf.reshape(rg_grad, [-1, np.prod(self.data_dim)])
-			rg_grad_ok = tf.reduce_sum(tf.square(rg_grad_flat), axis=1) > 1.
-			rg_grad_safe = tf.where(rg_grad_ok, rg_grad_flat, tf.ones_like(rg_grad_flat))
-			#rg_grad_abs = tf.where(rg_grad_flat >= 0., rg_grad_flat, -rg_grad_flat)
-			rg_grad_abs =  0. * rg_grad_flat
-			rg_grad_norm = tf.where(rg_grad_ok, 
-				tf.norm(rg_grad_safe, axis=1), tf.reduce_sum(rg_grad_abs, axis=1))
-			gp_loss = tf.square(rg_grad_norm - 1.0)
-			### for logging
-			self.rg_grad_norm_output = tf.norm(rg_grad_flat, axis=1)
-			
-			### d loss combination **g_num**
-			self.d_loss_mean = tf.reduce_mean(self.d_r_loss + self.d_g_loss)
-			self.d_loss_total = self.d_loss_mean + self.gp_loss_weight * tf.reduce_mean(gp_loss)
+			d_loss_total_lp, rg_grad_norm_output_lp = \
+				self.build_dis_loss(self.r_logits, self.g_logits, self.rg_logits, rg_layer)
+			d_loss_total_hp, rg_grad_norm_output_hp = \
+				self.build_dis_loss(self.r_logits_hp, self.g_logits_hp, self.rg_logits_hp, rg_layer_hp)
+			self.rg_grad_norm_output = (rg_grad_norm_output_hp + rg_grad_norm_output_lp ) / 2.0
+			self.d_loss_total = d_loss_total_lp + self.hp_loss_weight * d_loss_total_hp
 
 			### build g loss
-			if self.g_loss_type == 'log':
-				self.g_loss = -tf.nn.sigmoid_cross_entropy_with_logits(
-					logits=self.g_logits, labels=tf.zeros_like(self.g_logits, tf_dtype))
-			elif self.g_loss_type == 'mod':
-				self.g_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-					logits=self.g_logits, labels=tf.ones_like(self.g_logits, tf_dtype))
-			elif self.g_loss_type == 'was':
-				self.g_loss = -self.g_logits
-			else:
-				raise ValueError('>>> g_loss_type: %s is not defined!' % self.g_loss_type)
-
-			self.g_loss_mean = tf.reduce_mean(self.g_loss, axis=None)
-			self.g_grad_norm = tf.norm(tf.reshape(
-				tf.gradients(self.g_loss, self.g_layer), [-1, np.prod(self.data_dim)]), axis=1)
+			self.g_loss_total_lp = self.build_gen_loss(self.g_logits)
+			self.g_loss_total_hp = self.build_gen_loss(self.g_logits_hp)
+			self.g_loss_mean = self.g_loss_total_lp + self.hp_loss_weight * self.g_loss_total_hp
 
 			### mean matching
 			mm_loss = tf.reduce_mean(tf.square(tf.reduce_mean(self.g_layer, axis=0) - tf.reduce_mean(self.im_input, axis=0)), axis=None)
@@ -398,8 +394,8 @@ class Ganist:
 					self.en_loss_total, var_list=self.e_vars)
 
 			### summaries **g_num**
-			g_loss_sum = tf.summary.scalar("g_loss", self.g_loss_mean)
-			d_loss_sum = tf.summary.scalar("d_loss", self.d_loss_mean)
+			g_loss_sum = tf.summary.scalar("g_loss", self.g_loss_total)
+			d_loss_sum = tf.summary.scalar("d_loss", self.d_loss_total)
 			e_loss_sum = tf.summary.scalar("e_loss", self.en_loss_total)
 			self.summary = tf.summary.merge([g_loss_sum, d_loss_sum, e_loss_sum])
 
@@ -451,6 +447,54 @@ class Ganist:
 			#self.pg_opt = tf.train.GradientDescentOptimizer(self.pg_lr).minimize(
 			#	pg_loss_total, var_list=[self.pg_var])
 
+
+	def build_dis_loss(self, r_logits, g_logits, rg_logits, rg_layer):
+		### build d losses
+		if self.d_loss_type == 'log':
+			d_r_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+					logits=r_logits, labels=tf.ones_like(r_logits, tf_dtype))
+			d_g_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+					logits=g_logits, labels=tf.zeros_like(g_logits, tf_dtype))
+			d_rg_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+					logits=rg_logits, labels=tf.ones_like(rg_logits, tf_dtype))
+		elif self.d_loss_type == 'was':
+			d_r_loss = -r_logits 
+			d_g_loss = g_logits
+			d_rg_loss = -rg_logits
+		else:
+			raise ValueError('>>> d_loss_type: %s is not defined!' % self.d_loss_type)
+
+		### gradient penalty
+		### NaN free norm gradient
+		rg_grad = tf.gradients(rg_logits, rg_layer)
+		rg_grad_flat = tf.contrib.layers.flatten(rg_grad[0])
+		rg_grad_ok = tf.reduce_sum(tf.square(rg_grad_flat), axis=1) > 1.
+		rg_grad_safe = tf.where(rg_grad_ok, rg_grad_flat, tf.ones_like(rg_grad_flat))
+		#rg_grad_abs = tf.where(rg_grad_flat >= 0., rg_grad_flat, -rg_grad_flat)
+		rg_grad_abs =  0. * rg_grad_flat
+		rg_grad_norm = tf.where(rg_grad_ok, 
+			tf.norm(rg_grad_safe, axis=1), tf.reduce_sum(rg_grad_abs, axis=1))
+		gp_loss = tf.square(rg_grad_norm - 1.0)
+		### for logging
+		rg_grad_norm_output = tf.norm(rg_grad_flat, axis=1)
+		### combine losses
+		d_loss_mean = tf.reduce_mean(d_r_loss + d_g_loss)
+		d_loss_total = d_loss_mean + self.gp_loss_weight * tf.reduce_mean(gp_loss)
+		return d_loss_total, rg_grad_norm_output
+
+	def build_gen_loss(self, g_logits):
+		if self.g_loss_type == 'log':
+				g_loss = -tf.nn.sigmoid_cross_entropy_with_logits(
+					logits=g_logits, labels=tf.zeros_like(g_logits, tf_dtype))
+		elif self.g_loss_type == 'mod':
+			g_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+				logits=g_logits, labels=tf.ones_like(g_logits, tf_dtype))
+		elif self.g_loss_type == 'was':
+			g_loss = -g_logits
+		else:
+			raise ValueError('>>> g_loss_type: %s is not defined!' % self.g_loss_type)
+
+		return tf.reduce_mean(g_loss)
 
 	def build_gen_mt(self, im_data, z, act, train_phase):
 		with tf.variable_scope('g_net'):
@@ -519,7 +563,8 @@ class Ganist:
 			#o = ol[0]
 			return o
 
-	def build_dis(self, data_layer, act, train_phase, reuse=False):
+	def build_dis(self, data_layer, train_phase, reuse=False):
+		act = self.d_act
 		with tf.variable_scope('d_net'):
 			bn = tf.contrib.layers.batch_norm
 			### encoding the 28*28*3 image with conv into 3*3*256
@@ -542,6 +587,10 @@ class Ganist:
 			flat = tf.contrib.layers.flatten(h3)
 			o = dense(flat, 1, scope='fco', reuse=reuse)
 			return o, flat
+
+	def build_fc(self, hidden_layer, reuse=False):
+		with tf.variable_scope('d_net'):
+			return dense(hidden_layer, 1, scope='dfilter_fc', reuse=reuse)
 
 	def build_encoder(self, hidden_layer, act, train_phase, reuse=False):
 		bn = tf.contrib.layers.batch_norm
@@ -572,7 +621,7 @@ class Ganist:
 	def step(self, batch_data, batch_size, gen_update=False, 
 		dis_only=False, gen_only=False, stats_only=False, 
 		g_layer_stats=False, d_layer_stats=False,
-		en_only=False, z_data=None, zi_data=None, run_count=0.0):
+		en_only=False, z_data=None, zi_data=None, run_count=0.0, filter_only=False):
 		batch_size = batch_data.shape[0] if batch_data is not None else batch_size		
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
 
@@ -647,8 +696,15 @@ class Ganist:
 		### only forward generator on z
 		if gen_only:
 			feed_dict = {self.z_input: z_data, self.zi_input: zi_data, self.train_phase: False}
-			g_layer = self.sess.run(self.g_layer, feed_dict=feed_dict)
-			return g_layer
+			go_layer = self.g_layer if filter_only is False else self.g_layer_lp
+			imo_layer = self.sess.run(go_layer, feed_dict=feed_dict)
+			return imo_layer
+
+		### only filter
+		if filter_only:
+			feed_dict = {self.im_input:batch_data, self.train_phase: False}
+			imo_layer = self.sess.run(self.r_layer_lp, feed_dict=feed_dict)
+			return imo_layer
 
 		### run one training step on discriminator, otherwise on generator, and log **g_num**
 		feed_dict = {self.im_input:batch_data, self.z_input: z_data, self.zi_input: zi_data,
