@@ -425,7 +425,7 @@ def train_ganist(ganist, im_data, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 1e4 #4e5
+	max_itr_total = 4e5
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
@@ -1201,7 +1201,7 @@ if __name__ == '__main__':
 	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/1_logs_celeba_wganbn_lstatsfc/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/cl_temp/logs_cl_wgan/run_%d/snapshots/model_83333_500000.h5'
 	#ganist_path = 'logs_c1_egreedy/snapshots/model_16628_99772.h5'
-	sample_size = 1000 #10000
+	sample_size = 10000
 	#sample_size = 350000
 
 	'''
@@ -1289,7 +1289,7 @@ if __name__ == '__main__':
 	print '>>> lsun train std: ', np.std(train_imgs, axis=(0,1,2))
 	'''
 	### celeba lsun
-	data_size_train = 2000 #50000
+	data_size_train = 50000
 	data_size_val = 300
 	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
 	lsun_bed_path_val = '/media/evl/Public/Mahyar/Data/lsun/bedroom_val_imgs'
