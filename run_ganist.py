@@ -85,6 +85,23 @@ def read_image(im_path, im_size):
 	'''
 	return im_re / 128.0 - 1.0
 
+def read_imagenet(im_dir, data_size, im_size=64):
+	im_data = np.zeros((1000, data_size, im_size, im_size, 3))
+	print '>>> Reading ImageNet from: '+ im_dir
+	widgets = ["ImageNet", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=1000, widgets=widgets)
+	pbar.start()
+	for c in range(1000):
+		pbar.update(c)
+		i = 0
+		for fn in glob.glob(im_dir+'/{}/*.jpg'.format(c)):
+			im_data[c, i, ...] = read_image(fn, im_size)
+			i += 1
+			if i == data_size:
+				break
+	return im_data
+
+
 def read_lsun(lsun_path, data_size, im_size=64):
 	im_data = np.zeros((data_size, im_size, im_size, 3))
 	i = 0
@@ -788,7 +805,8 @@ def blur_images(imgs, sigma):
 	if sigma==0:
 		return imgs
 	### kernel
-	t = np.linspace(-20, 20, 41)
+	#t = np.linspace(-20, 20, 41)
+	t = np.linspace(-20, 20, 81) ## for 128x128 images
 	bump = np.exp(0.5 * -t**2/sigma**2)
 	bump /= np.trapz(bump) # normalize the integral to 1
 	kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
@@ -1289,25 +1307,26 @@ if __name__ == '__main__':
 	print '>>> lsun train std: ', np.std(train_imgs, axis=(0,1,2))
 	'''
 	### celeba lsun
-	data_size_train = 50000
-	data_size_val = 300
-	lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
-	lsun_bed_path_val = '/media/evl/Public/Mahyar/Data/lsun/bedroom_val_imgs'
-	lsun_bridge_path_train = '/media/evl/Public/Mahyar/Data/lsun/bridge_train_imgs'
-	lsun_bridge_path_val = '/media/evl/Public/Mahyar/Data/lsun/bridge_val_imgs'
-	lsun_church_path_train = '/media/evl/Public/Mahyar/Data/lsun/church_outdoor_train_imgs'
-	lsun_church_path_val = '/media/evl/Public/Mahyar/Data/lsun/church_outdoor_val_imgs'
-	celeba_train = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba'
-	celeba_val = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba_val'
+	#data_size_train = 50000
+	#data_size_val = 300
+	#lsun_bed_path_train = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_imgs'
+	#lsun_bed_path_val = '/media/evl/Public/Mahyar/Data/lsun/bedroom_val_imgs'
+	#lsun_bridge_path_train = '/media/evl/Public/Mahyar/Data/lsun/bridge_train_imgs'
+	#lsun_bridge_path_val = '/media/evl/Public/Mahyar/Data/lsun/bridge_val_imgs'
+	#lsun_church_path_train = '/media/evl/Public/Mahyar/Data/lsun/church_outdoor_train_imgs'
+	#lsun_church_path_val = '/media/evl/Public/Mahyar/Data/lsun/church_outdoor_val_imgs'
+	#celeba_train = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba'
+	#celeba_val = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba_val'
 	
 	#train_imgs_bed = read_lsun(lsun_bed_path_train, data_size_train)
 	#val_imgs_bed = read_lsun(lsun_bed_path_val, data_size_val)
 
-	train_imgs_celeba = read_lsun(celeba_train, data_size_train)
-	val_imgs_celeba = read_lsun(celeba_val, data_size_val)
+	#train_imgs_celeba = read_lsun(celeba_train, data_size_train)
+	#val_imgs_celeba = read_lsun(celeba_val, data_size_val)
 
-	train_imgs = train_imgs_celeba
-	val_imgs = val_imgs_celeba
+	#train_imgs = train_imgs_celeba
+	#val_imgs = val_imgs_celeba
+	
 	#train_imgs = np.concatenate([train_imgs_bed, train_imgs_celeba], axis=0)
 	#train_labs = np.concatenate([0 * np.ones(data_size_train, dtype=np.int32),
 	#							1 * np.ones(data_size_train, dtype=np.int32)], axis=0)
@@ -1322,14 +1341,8 @@ if __name__ == '__main__':
 	#print '>>> lsun train mean: ', np.mean(train_imgs, axis=(0,1,2))
 	#print '>>> lsun train std: ', np.std(train_imgs, axis=(0,1,2))
 
-	### draw true stacked mnist images
-	### >>> dataset sensitive
-	#all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
-	#print all_imgs_stack.shape
-	#print all_labs_stack.shape
-
-	all_imgs = train_imgs
-	all_labs = train_labs = None
+	#all_imgs = train_imgs
+	#all_labs = train_labs = None
 
 	### read art dataset
 	'''
@@ -1339,8 +1352,8 @@ if __name__ == '__main__':
 	train_labs = all_labs
 	'''
 
-	all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
-	im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
+	#all_imgs_stack, all_labs_stack = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
+	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	'''
 	TENSORFLOW SETUP
@@ -1349,21 +1362,21 @@ if __name__ == '__main__':
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
 	### create a ganist instance
-	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	#ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
 	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### create a vaeganist instance
 	#vae = vae_ganist.VAEGanist(sess, log_path_sum_vae)
 	### init variables
-	sess.run(tf.global_variables_initializer())
+	#sess.run(tf.global_variables_initializer())
 	### save network initially
-	ganist.save(log_path_snap+'/model_0_0.h5')
-	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
-		print >>fs, '>>> g_vars: %d --- d_vars: %d --- e_vars: %d' \
-			% (ganist.g_vars_count, ganist.d_vars_count, ganist.e_vars_count)
+	#ganist.save(log_path_snap+'/model_0_0.h5')
+	#with open(log_path+'/vars_count_log.txt', 'w+') as fs:
+	#	print >>fs, '>>> g_vars: %d --- d_vars: %d --- e_vars: %d' \
+	#		% (ganist.g_vars_count, ganist.d_vars_count, ganist.e_vars_count)
 	### draw filtered real samples (blurred)
-	im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True), 5, 
-		log_path_draw+'/real_samples_lp.png', border=True)
+	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True), 5, 
+	#	log_path_draw+'/real_samples_lp.png', border=True)
 
 	'''
 	INCEPTION SETUP
@@ -1422,15 +1435,15 @@ if __name__ == '__main__':
 	'''
 
 	### train ganist
-	train_ganist(ganist, train_imgs, train_labs)
+	#train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist **g_num**
 	#ganist.load(ganist_path % run_seed)
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
-	#gset_sample_draw(ganist, 10)
-	gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
-	gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png', pr_th=0.99 / ganist.g_num)
-	#sys.exit(0)
+	##gset_sample_draw(ganist, 10)
+	#gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
+	#gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png', pr_th=0.99 / ganist.g_num)
+	##sys.exit(0)
 
 	'''
 	VAE GANIST SETUP SECTION
@@ -1450,7 +1463,8 @@ if __name__ == '__main__':
 	'''
 	REAL DATASET CREATE OR LOAD AND EVAL
 	'''
-	r_samples = all_imgs_stack
+	#r_samples = all_imgs_stack
+	
 	### create stack mnist dataset of all_imgs_size*factor
 	'''
 	factor = sample_size // all_imgs_stack.shape[0]
@@ -1533,15 +1547,15 @@ if __name__ == '__main__':
 	'''
 	GAN DATA EVAL
 	'''
-	gan_model = ganist#vae
-	sampler = ganist.step#vae.step
+	#gan_model = ganist#vae
+	#sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler,
-		z_im=r_samples[0:sample_size, ...])
-	#im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
-	im_block_draw(r_samples, 5, log_path_draw+'/real_samples.png', border=True)
-	im_block_draw(g_samples, 5, log_path_draw+'/gen_samples.png', border=True)
-	#sys.exit(0)
+	#g_samples = sample_ganist(gan_model, sample_size, sampler=sampler,
+	#	z_im=r_samples[0:sample_size, ...])
+	##im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
+	#im_block_draw(r_samples, 5, log_path_draw+'/real_samples.png', border=True)
+	#im_block_draw(g_samples, 5, log_path_draw+'/gen_samples.png', border=True)
+	##sys.exit(0)
 
 	### mode eval gen data
 	### >>> dataset sensitive: draw_list
@@ -1569,6 +1583,21 @@ if __name__ == '__main__':
 	#with open(log_path+'/fid_log.txt', 'w+') as fs:
 	#	print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
 	#		% (fid_g, fid_r)
+
+	'''
+	Read data from ImageNet and BigGan
+	'''
+	im_dir = '/media/evl/Public/Mahyar/Data/image_net/imagenet_train_128/train_128'
+	im_size = 128
+	im_data = read_imagenet(im_dir, 20, im_size=128)
+	im_data_re = im_data[:, :10, ...].reshape((-1, im_size, im_size, 3))
+	order = np.arange(im_data_re.shape[0])
+	np.random.shuffle(order)
+	all_imgs_stack = im_data_re[order, ...]
+
+	biggan_dir = '/media/evl/Public/Mahyar/Data/image_net/biggan/all_class_samples'
+	im_size = 128
+	g_samples = read_lsun(biggan_dir, sample_size, im_size)
 
 	'''
 	Multi Level FID
