@@ -101,6 +101,20 @@ def read_imagenet(im_dir, data_size, im_size=64):
 				break
 	return im_data
 
+def readim_from_path(im_paths, im_size=64):
+	data_size = len(im_paths)
+	im_data = np.zeros((data_size, im_size, im_size, 3))
+	print '>>> Reading Images'
+	widgets = ["Image Read", Percentage(), Bar(), ETA()]
+	pbar = ProgressBar(maxval=data_size, widgets=widgets)
+	pbar.start()
+	for i, fn in enumerate(im_paths):
+		pbar.update(i)
+		im_data[i, ...] = read_image(fn, im_size)
+	return im_data
+
+def readim_path_from_dir(im_dir, im_type='/*.jpg'):
+	return [fn for fn in glob.glob(im_dir+im_type)]
 
 def read_lsun(lsun_path, data_size, im_size=64):
 	im_data = np.zeros((data_size, im_size, im_size, 3))
@@ -805,8 +819,8 @@ def blur_images(imgs, sigma):
 	if sigma==0:
 		return imgs
 	### kernel
-	#t = np.linspace(-20, 20, 41)
-	t = np.linspace(-20, 20, 81) ## for 128x128 images
+	t = np.linspace(-20, 20, 41)
+	#t = np.linspace(-20, 20, 81) ## for 128x128 images
 	bump = np.exp(0.5 * -t**2/sigma**2)
 	bump /= np.trapz(bump) # normalize the integral to 1
 	kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
@@ -1381,6 +1395,7 @@ if __name__ == '__main__':
 	'''
 	INCEPTION SETUP
 	'''
+	fid_im_size = 256
 	inception_dir = '/media/evl/Public/Mahyar/Data/models/research/slim'
 	ckpt_path = '/media/evl/Public/Mahyar/Data/inception_v3_model/kaggle/inception_v3.ckpt'
 	sys.path.insert(0, inception_dir)
@@ -1390,7 +1405,7 @@ if __name__ == '__main__':
 	from nets.inception_v3 import inception_v3_arg_scope
 
 	### images should be N*299*299*3 of values (-1,1)
-	images_pl = tf.placeholder(tf_ganist.tf_dtype, [None, ganist.data_dim[0], ganist.data_dim[1], 3], name='input_proc_images')
+	images_pl = tf.placeholder(tf_ganist.tf_dtype, [None, fid_im_size, fid_im_size, 3], name='input_proc_images')
 	images_pl_re = tf.image.resize_bilinear(images_pl, [299, 299], align_corners=False)
 
 	### build model
@@ -1587,17 +1602,41 @@ if __name__ == '__main__':
 	'''
 	Read data from ImageNet and BigGan
 	'''
-	im_dir = '/media/evl/Public/Mahyar/Data/image_net/imagenet_train_128/train_128'
-	im_size = 128
-	im_data = read_imagenet(im_dir, 20, im_size=128)
-	im_data_re = im_data[:, :10, ...].reshape((-1, im_size, im_size, 3))
-	order = np.arange(im_data_re.shape[0])
-	np.random.shuffle(order)
-	all_imgs_stack = im_data_re[order, ...]
+	#im_dir = '/media/evl/Public/Mahyar/Data/image_net/train_128'
+	#im_size = 128
+	#im_data = read_imagenet(im_dir, 20, im_size=128)
+	##im_data_re = im_data[:, :10, ...].reshape((-1, im_size, im_size, 3))
+	#im_data_re = im_data.reshape((-1, im_size, im_size, 3))
+	#np.random.shuffle(im_data_re)
+	#all_imgs_stack = im_data_re
+	#print all_imgs_stack.shape
+	#
+	##biggan_dir = '/media/evl/Public/Mahyar/Data/image_net/biggan/all_class_samples'
+	#biggan_dir = '/media/evl/Public/Mahyar/Data/image_net/biggan/per_class_samples'
+	#im_size = 128
+	##g_samples = read_lsun(biggan_dir, sample_size, im_size)
+	#g_im_data = read_imagenet(biggan_dir, 20, im_size=im_size).reshape((-1, im_size, im_size, 3))
+	#np.random.shuffle(g_im_data)
+	#g_samples = g_im_data[:sample_size, ...]
+	#print g_samples.shape
 
-	biggan_dir = '/media/evl/Public/Mahyar/Data/image_net/biggan/all_class_samples'
-	im_size = 128
-	g_samples = read_lsun(biggan_dir, sample_size, im_size)
+	'''
+	Read data from LSUN and StyleGAN
+	'''
+	im_dir = '/media/evl/Public/Mahyar/Data/lsun/cat/'
+	im_size = 256
+	im_paths = readim_path_from_dir(im_dir)
+	np.random.shuffle(im_paths)
+	im_data = readim_from_path(im_paths[:sample_size*2], im_size)
+	all_imgs_stack = im_data
+	print all_imgs_stack.shape
+	
+	stylegan_dir = '/media/evl/Public/Mahyar/Data/stylegan/cat/'
+	im_size = 256
+	g_im_paths = readim_path_from_dir(stylegan_dir)
+	np.random.shuffle(g_im_paths)
+	g_samples = readim_from_path(g_im_paths[:sample_size], im_size)
+	print g_samples.shape
 
 	'''
 	Multi Level FID
