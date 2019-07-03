@@ -19,8 +19,8 @@ global_color_locs = np.arange(10) / 10.
 global_color_set = global_cmap(global_color_locs)
 
 fid_paths = [
-	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_imagenet_gauss41/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_biggan_per_class_gauss41/run_%d/fid_levels.cpk'
+	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_celeba128cc_gauss41/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_proggan_celeba128cc_gauss41/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/real_fidlevels_gauss_logs/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/10_fidlevels_gauss_logs/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/3_fidlevels_logs/run_%d/fid_levels.cpk',
@@ -66,13 +66,13 @@ if __name__ == '__main__':
 	ax.set_xlabel('Filter Std')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('FID Levels: ImageNet')
+	ax.set_title('FID Levels: CelebA 128')
 
 	### plot
-	pnames = ['real', 'biggan']#, 'wganbn_fc', 'wganbn_conv1', 'wganbn_conv2', 'wganbn_conv3']
+	pnames = ['real', 'prog_gan']#, 'wganbn_fc', 'wganbn_conv1', 'wganbn_conv2', 'wganbn_conv3']
 	pcolors = [0, 1]#, 2, 3, 4, 5]
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/plots/fid_levels_mean_biggan_imagenet_g41.pdf')
+	fig.savefig('/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/plots/fid_levels_mean_proggan_celeba128_g41.pdf')
