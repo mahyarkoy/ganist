@@ -182,6 +182,7 @@ class Ganist:
 		### run parameters
 		self.log_dir = log_dir
 		self.sess = sess
+		self.device_names = ['/device:GPU:0', '/device:GPU:0', '/device:GPU:1']
 
 		### optimization parameters
 		self.g_lr = 2e-4
@@ -240,7 +241,7 @@ class Ganist:
 		return tf.nn.depthwise_conv2d(im, kernel, [1, 1, 1, 1], padding='SAME')
 
 	def build_graph(self):
-		with tf.name_scope('ganist'):
+		with tf.name_scope('ganist'), tf.device(self.device_names[0]):
 			### define placeholders for image and label inputs **g_num** **mt**
 			self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
 			#self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
@@ -252,6 +253,8 @@ class Ganist:
 
 			### build generator **mt**
 			self.g_layer = self.build_gen(self.z_input, self.zi_input, self.g_act, self.train_phase)
+			self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
+			#self.g_vars_sub = [v for v in self.g_vars if 'fcz' in v.name]
 
 			### filter images
 			#self.r_layer_lp = self.apply_filter(self.im_input)
@@ -260,26 +263,116 @@ class Ganist:
 			#self.g_layer_hp = self.g_layer - self.g_layer_lp
 
 			### build discriminator
-			self.r_logits, self.g_logits, self.rg_logits, self.rg_layer = \
-				self.build_dis_logits(self.im_input, self.g_layer, self.train_phase, sub_scope='or')
+			sub_layers = ['conv3', 'conv2', 'conv1']
+			sub_layers_g = ['fcz']
+			with tf.device(self.device_names[0]):
+				### build model
+				self.r_logits, self.g_logits, self.rg_logits, self.rg_layer = \
+					self.build_dis_logits(self.im_input, self.g_layer, 
+						self.train_phase, sub_scope='or')
+				self.d_vars_or = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net/or")
+				### d loss
+				d_loss_or, rg_grad_norm_output = \
+					self.build_dis_loss(self.r_logits, self.g_logits, 
+						self.rg_logits, self.rg_layer)
+				### d opt
+				opt_vars = self.d_vars_or
+				self.d_opt_handle_or = \
+					tf.train.AdamOptimizer(self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2)
+				grads_vars = self.d_opt_handle_or.compute_gradients(d_loss_or, self.d_vars_or)
+				self.d_opt_or = self.d_opt_handle_or.apply_gradients(grads_vars)
+				grads_vars_sub = [gv for gv in grads_vars \
+					if any(l == gv[1].name for l in sub_layers)]
+				self.d_opt_or_sub = self.d_opt_handle_or.apply_gradients(grads_vars_sub)
+				### g loss
+				g_loss_or = self.build_gen_loss(self.g_logits)
+				g_layer_grad_or = tf.gradients(g_loss_or, self.g_layer)
 
 			### build discriminator down scaled (x1/4)
-			self.im_data_ds = tf.nn.avg_pool(self.im_input, 
-				ksize=[1, 5, 5, 1], strides=[1, 4, 4, 1], padding='SAME')
-			self.g_data_ds = tf.nn.avg_pool(self.g_layer, 
-				ksize=[1, 5, 5, 1], strides=[1, 4, 4, 1], padding='SAME')
-			self.r_logits_ds, self.g_logits_ds, self.rg_logits_ds, self.rg_layer_ds = \
-				self.build_dis_logits(self.im_data_ds, self.g_data_ds, self.train_phase, sub_scope='ds')
-			print '>>> im_ds shape:', self.im_data_ds.get_shape().as_list()
+			with tf.device(self.device_names[1]):
+				### build model
+				self.im_data_ds = tf.nn.avg_pool(self.im_input, 
+					ksize=[1, 5, 5, 1], strides=[1, 4, 4, 1], padding='SAME')
+				self.g_data_ds = tf.nn.avg_pool(self.g_layer, 
+					ksize=[1, 5, 5, 1], strides=[1, 4, 4, 1], padding='SAME')
+				self.r_logits_ds, self.g_logits_ds, self.rg_logits_ds, self.rg_layer_ds = \
+					self.build_dis_logits(self.im_data_ds, self.g_data_ds, 
+						self.train_phase, sub_scope='ds')
+				self.d_vars_ds = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net/ds")
+				print '>>> im_ds shape:', self.im_data_ds.get_shape().as_list()
+				### d loss down scaled
+				d_loss_ds, rg_grad_norm_output_ds = \
+					self.build_dis_loss(self.r_logits_ds, self.g_logits_ds, 
+						self.rg_logits_ds, self.rg_layer_ds)
+				### d opt
+				opt_vars = self.d_vars_ds
+				self.d_opt_handle_ds = \
+					tf.train.AdamOptimizer(self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2)
+				grads_vars = self.d_opt_handle_ds.compute_gradients(d_loss_ds, self.d_vars_ds)
+				self.d_opt_ds = self.d_opt_handle_ds.apply_gradients(grads_vars)
+				grads_vars_sub = [gv for gv in grads_vars \
+					if any(l == gv[1].name for l in sub_layers)]
+				self.d_opt_ds_sub = self.d_opt_handle_ds.apply_gradients(grads_vars_sub)
+				### g loss
+				g_loss_ds = self.build_gen_loss(self.g_logits_ds)
+				g_layer_grad_ds = tf.gradients(g_loss_ds, self.g_layer)
 
 			### build discriminator up scaled (x4)
-			self.im_data_us = tf.image.resize_nearest_neighbor(self.im_input, 
-				[self.data_dim[0]*4, self.data_dim[1]*4])
-			self.g_data_us = tf.image.resize_nearest_neighbor(self.g_layer, 
-				[self.data_dim[0]*4, self.data_dim[1]*4])
-			self.r_logits_us, self.g_logits_us, self.rg_logits_us, self.rg_layer_us = \
-				self.build_dis_logits(self.im_data_us, self.g_data_us, self.train_phase, sub_scope='us')
-			print '>>> im_ds shape:', self.im_data_us.get_shape().as_list()
+			with tf.device(self.device_names[2]):
+				### build model
+				self.im_data_us = tf.image.resize_nearest_neighbor(self.im_input, 
+					[self.data_dim[0]*4, self.data_dim[1]*4])
+				self.g_data_us = tf.image.resize_nearest_neighbor(self.g_layer, 
+					[self.data_dim[0]*4, self.data_dim[1]*4])
+				self.r_logits_us, self.g_logits_us, self.rg_logits_us, self.rg_layer_us = \
+					self.build_dis_logits(self.im_data_us, self.g_data_us, 
+						self.train_phase, sub_scope='us')
+				self.d_vars_us = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net/us")
+				print '>>> im_us shape:', self.im_data_us.get_shape().as_list()
+				### d loss up scaled
+				d_loss_us, rg_grad_norm_output_us = \
+					self.build_dis_loss(self.r_logits_us, self.g_logits_us, 
+						self.rg_logits_us, self.rg_layer_us)
+				### d opt
+				opt_vars = self.d_vars_us
+				self.d_opt_handle_us = \
+					tf.train.AdamOptimizer(self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2)
+				grads_vars = self.d_opt_handle_us.compute_gradients(d_loss_us, self.d_vars_us)
+				self.d_opt_us = self.d_opt_handle_us.apply_gradients(grads_vars)
+				grads_vars_sub = [gv for gv in grads_vars \
+					if any(l == gv[1].name for l in sub_layers)]
+				self.d_opt_us_sub = self.d_opt_handle_us.apply_gradients(grads_vars_sub)
+				### g loss
+				g_loss_us = self.build_gen_loss(self.g_logits_us)
+				g_layer_grad_us = tf.gradients(g_loss_us, self.g_layer)
+
+			### collect vars
+			self.d_vars = self.d_vars_or + self.d_vars_ds + self.d_vars_us
+
+			### collect loss
+			self.rg_grad_norm_output = (rg_grad_norm_output + rg_grad_norm_output_ds + rg_grad_norm_output_us) / 3.
+			self.d_loss_total = d_loss_or + \
+				d_loss_ds + d_loss_us
+				#self.hp_loss_weight * d_loss_hp
+
+			### g opt
+			g_opt_handle = tf.train.AdamOptimizer(self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2)
+			# change below to control the contribution of each d loss to g
+			g_layer_grad_total = g_layer_grad_or + g_layer_grad_ds + g_layer_grad_us
+			g_grads = tf.gradients(self.g_layer, self.g_vars, [g_layer_grad_total])
+			g_grads_vars = zip(g_grads, self.g_vars)
+			g_grads_vars_sub = [gv for gv in g_grads_vars \
+				if any(l == gv[1].name for l in sub_layers_g)]
+
+			### collect opt
+			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+			print '>>> update_ops list: ', update_ops
+			with tf.control_dependencies(update_ops):
+				# change below to control the contribution of each d loss to d
+				self.d_opt = tf.group(*[self.d_opt_or, self.d_opt_ds, self.d_opt_us])
+				self.d_opt_sub = tf.group(*[self.d_opt_or_sub, self.d_opt_ds_sub, self.d_opt_us_sub])
+				self.g_opt = g_opt_handle.apply_gradients(g_grads_vars)
+				self.g_opt_sub = g_opt_handle.apply_gradients(g_grads_vars_sub)
 
 			### build discriminator for low pass
 			#self.r_logits, self.r_hidden = self.build_dis(self.im_input, self.train_phase)
@@ -302,20 +395,9 @@ class Ganist:
 			#self.rg_logits_hp, rg_hidden_hp = self.build_dis(rg_layer_hp, self.train_phase, reuse=True)
 			#self.rg_logits_hp = self.build_fc(rg_hidden_hp, reuse=True)
 
-			### build d losses
-			d_loss, rg_grad_norm_output = \
-				self.build_dis_loss(self.r_logits, self.g_logits, self.rg_logits, self.rg_layer)
-			d_loss_ds, rg_grad_norm_output_ds = \
-				self.build_dis_loss(self.r_logits_ds, self.g_logits_ds, self.rg_logits_ds, self.rg_layer_ds)
-			d_loss_us, rg_grad_norm_output_us = \
-				self.build_dis_loss(self.r_logits_us, self.g_logits_us, self.rg_logits_us, self.rg_layer_us)
 			#d_loss_hp, rg_grad_norm_output_hp = \
 			#	self.build_dis_loss(self.r_logits_hp, self.g_logits_hp, self.rg_logits_hp, rg_layer_hp)
 			#self.rg_grad_norm_output = (rg_grad_norm_output_hp + rg_grad_norm_output ) / 2.0
-			self.rg_grad_norm_output = (rg_grad_norm_output + rg_grad_norm_output_ds + rg_grad_norm_output_us) / 3.
-			self.d_loss_total = d_loss #+ \
-				#d_loss_ds + d_loss_us
-				#self.hp_loss_weight * d_loss_hp
 
 			### generated encoder loss: lower bound on mutual_info(z_input, generator id) **g_num**
 			#self.g_en_loss = tf.nn.softmax_cross_entropy_with_logits(
@@ -333,27 +415,15 @@ class Ganist:
 			#	initializer=1.0)
 
 			### build g loss
-			g_loss = self.build_gen_loss(self.g_logits)
-			g_loss_ds = self.build_gen_loss(self.g_logits_ds)
-			g_loss_us = self.build_gen_loss(self.g_logits_us)
 			#self.g_loss_hp = self.build_gen_loss(self.g_logits_hp)
-			self.g_loss_total = g_loss #+ \
-				#g_loss_ds + g_loss_us
+			self.g_loss_total = g_loss_or + \
+				g_loss_ds + g_loss_us
 				#self.hp_loss_weight * self.g_loss_hp
 				#self.en_loss_weight * tf.reduce_mean(self.g_en_loss)
 
 			### e loss combination
 			#self.en_loss_total = tf.reduce_mean(self.g_en_loss) + \
 			#	0. * self.r_en_h + 0.* -self.r_en_marg_hlb
-
-			### collect params
-			self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
-			self.d_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net")
-			#self.e_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "e_net")
-			self.g_vars_sub = [v for v in self.g_vars if 'fcz' in v.name]
-			self.d_vars_sub = [v for v in self.d_vars if 'conv3' in v.name or 'conv2' in v.name or 'conv1' in v.name]
-			print '>>> d_vars_sub:'
-			print self.d_vars_sub
 
 			### compute stat of weights
 			self.nan_vars = 0.
@@ -389,26 +459,6 @@ class Ganist:
 
 			self.d_sim_layer_list = ['conv0', 'conv1', 'conv2', 'conv3', 'fco']
 			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars)
-
-			### build optimizers
-			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-			print '>>> update_ops list: ', update_ops
-			with tf.control_dependencies(update_ops):
-				self.g_opt = tf.train.AdamOptimizer(
-					self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2).minimize(
-					self.g_loss_total, var_list=self.g_vars)
-				self.g_sub_opt = tf.train.AdamOptimizer(
-					self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2).minimize(
-					self.g_loss_total, var_list=self.g_vars_sub)
-				self.d_opt = tf.train.AdamOptimizer(
-					self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(
-					self.d_loss_total, var_list=self.d_vars)
-				self.d_sub_opt = tf.train.AdamOptimizer(
-					self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2).minimize(
-					self.d_loss_total, var_list=self.d_vars_sub)
-				#self.e_opt = tf.train.AdamOptimizer(
-				#	self.e_lr, beta1=self.e_beta1, beta2=self.e_beta2).minimize(
-				#	self.en_loss_total, var_list=self.e_vars)
 
 			### summaries **g_num**
 			g_loss_sum = tf.summary.scalar("g_loss", self.g_loss_total)
