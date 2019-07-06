@@ -282,7 +282,7 @@ class Ganist:
 				grads_vars = self.d_opt_handle_or.compute_gradients(d_loss_or, self.d_vars_or)
 				self.d_opt_or = self.d_opt_handle_or.apply_gradients(grads_vars)
 				grads_vars_sub = [gv for gv in grads_vars \
-					if any(l == gv[1].name for l in sub_layers)]
+					if any(l in gv[1].name for l in sub_layers)]
 				self.d_opt_or_sub = self.d_opt_handle_or.apply_gradients(grads_vars_sub)
 				### g loss
 				g_loss_or = self.build_gen_loss(self.g_logits)
@@ -311,7 +311,7 @@ class Ganist:
 				grads_vars = self.d_opt_handle_ds.compute_gradients(d_loss_ds, self.d_vars_ds)
 				self.d_opt_ds = self.d_opt_handle_ds.apply_gradients(grads_vars)
 				grads_vars_sub = [gv for gv in grads_vars \
-					if any(l == gv[1].name for l in sub_layers)]
+					if any(l in gv[1].name for l in sub_layers)]
 				self.d_opt_ds_sub = self.d_opt_handle_ds.apply_gradients(grads_vars_sub)
 				### g loss
 				g_loss_ds = self.build_gen_loss(self.g_logits_ds)
@@ -340,7 +340,7 @@ class Ganist:
 				grads_vars = self.d_opt_handle_us.compute_gradients(d_loss_us, self.d_vars_us)
 				self.d_opt_us = self.d_opt_handle_us.apply_gradients(grads_vars)
 				grads_vars_sub = [gv for gv in grads_vars \
-					if any(l == gv[1].name for l in sub_layers)]
+					if any(l in gv[1].name for l in sub_layers)]
 				self.d_opt_us_sub = self.d_opt_handle_us.apply_gradients(grads_vars_sub)
 				### g loss
 				g_loss_us = self.build_gen_loss(self.g_logits_us)
@@ -358,11 +358,11 @@ class Ganist:
 			### g opt
 			g_opt_handle = tf.train.AdamOptimizer(self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2)
 			# change below to control the contribution of each d loss to g
-			g_layer_grad_total = g_layer_grad_or + g_layer_grad_ds + g_layer_grad_us
-			g_grads = tf.gradients(self.g_layer, self.g_vars, [g_layer_grad_total])
+			g_layer_grad_total = g_layer_grad_or[0] + g_layer_grad_ds[0] + g_layer_grad_us[0]
+			g_grads = tf.gradients([self.g_layer], self.g_vars, [g_layer_grad_total])
 			g_grads_vars = zip(g_grads, self.g_vars)
 			g_grads_vars_sub = [gv for gv in g_grads_vars \
-				if any(l == gv[1].name for l in sub_layers_g)]
+				if any(l in gv[1].name for l in sub_layers_g)]
 
 			### collect opt
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -761,11 +761,11 @@ class Ganist:
 		feed_dict = {self.im_input:batch_data, self.z_input: z_data, self.zi_input: zi_data,
 					self.e_input: e_data, self.train_phase: True}
 		if not gen_update:
-			d_opt_ptr = self.d_opt #if run_count < 5e4 else self.d_sub_opt
+			d_opt_ptr = self.d_opt #if run_count < 5e4 else self.d_opt_sub
 			res_list = [self.g_layer, self.summary, d_opt_ptr]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 		else:
-			g_opt_ptr = self.g_opt #if run_count < 5e4 else self.g_sub_opt
+			g_opt_ptr = self.g_opt #if run_count < 5e4 else self.g_opt_sub
 			res_list = [self.g_layer, self.summary, g_opt_ptr]
 						#self.e_opt, self.pg_opt]
 						#self.r_en_h, self.r_en_marg_hlb, self.gi_h, self.g_en_loss]
