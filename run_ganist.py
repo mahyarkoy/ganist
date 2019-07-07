@@ -495,7 +495,7 @@ def train_ganist(ganist, im_data, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 1e3
+	max_itr_total = 3e3
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32

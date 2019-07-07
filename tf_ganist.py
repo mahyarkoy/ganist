@@ -263,7 +263,7 @@ class Ganist:
 			#self.g_layer_hp = self.g_layer - self.g_layer_lp
 
 			### build discriminator
-			sub_layers = ['conv3', 'conv2', 'conv1']
+			sub_layers = ['conv3']
 			sub_layers_g = ['fcz']
 			with tf.device(self.device_names[0]):
 				### build model
@@ -291,15 +291,16 @@ class Ganist:
 			### build discriminator down scaled (x1/4)
 			with tf.device(self.device_names[1]):
 				### build model
-				self.im_data_ds = tf.nn.avg_pool(self.im_input, 
+				self.im_input_ds = tf.nn.avg_pool(self.im_input, 
 					ksize=[1, 5, 5, 1], strides=[1, 4, 4, 1], padding='SAME')
-				self.g_data_ds = tf.nn.avg_pool(self.g_layer, 
+				self.g_layer_ds = tf.nn.avg_pool(self.g_layer, 
 					ksize=[1, 5, 5, 1], strides=[1, 4, 4, 1], padding='SAME')
+				## change below to apply on downscaled image
 				self.r_logits_ds, self.g_logits_ds, self.rg_logits_ds, self.rg_layer_ds = \
-					self.build_dis_logits(self.im_data_ds, self.g_data_ds, 
+					self.build_dis_logits(self.im_input, self.g_layer, 
 						self.train_phase, sub_scope='ds')
 				self.d_vars_ds = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net/ds")
-				print '>>> im_ds shape:', self.im_data_ds.get_shape().as_list()
+				print '>>> im_ds shape:', self.im_input_ds.get_shape().as_list()
 				### d loss down scaled
 				d_loss_ds, rg_grad_norm_output_ds = \
 					self.build_dis_loss(self.r_logits_ds, self.g_logits_ds, 
@@ -320,15 +321,16 @@ class Ganist:
 			### build discriminator up scaled (x4)
 			with tf.device(self.device_names[2]):
 				### build model
-				self.im_data_us = tf.image.resize_nearest_neighbor(self.im_input, 
+				self.im_input_us = tf.image.resize_nearest_neighbor(self.im_input, 
 					[self.data_dim[0]*4, self.data_dim[1]*4])
-				self.g_data_us = tf.image.resize_nearest_neighbor(self.g_layer, 
+				self.g_layer_us = tf.image.resize_nearest_neighbor(self.g_layer, 
 					[self.data_dim[0]*4, self.data_dim[1]*4])
+				## change below to apply on upscaled images
 				self.r_logits_us, self.g_logits_us, self.rg_logits_us, self.rg_layer_us = \
-					self.build_dis_logits(self.im_data_us, self.g_data_us, 
+					self.build_dis_logits(self.im_input, self.g_layer, 
 						self.train_phase, sub_scope='us')
 				self.d_vars_us = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net/us")
-				print '>>> im_us shape:', self.im_data_us.get_shape().as_list()
+				print '>>> im_us shape:', self.im_input_us.get_shape().as_list()
 				### d loss up scaled
 				d_loss_us, rg_grad_norm_output_us = \
 					self.build_dis_loss(self.r_logits_us, self.g_logits_us, 
@@ -351,16 +353,25 @@ class Ganist:
 
 			### collect loss
 			self.rg_grad_norm_output = (rg_grad_norm_output + rg_grad_norm_output_ds + rg_grad_norm_output_us) / 3.
-			self.d_loss_total = d_loss_or + \
-				d_loss_ds + d_loss_us
+			self.d_loss_total = d_loss_or #+ \
+				#d_loss_ds + d_loss_us
 				#self.hp_loss_weight * d_loss_hp
 
 			### g opt
 			g_opt_handle = tf.train.AdamOptimizer(self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2)
-			# change below to control the contribution of each d loss to g
-			g_layer_grad_total = g_layer_grad_or[0] + g_layer_grad_ds[0] + g_layer_grad_us[0]
-			g_grads = tf.gradients([self.g_layer], self.g_vars, [g_layer_grad_total])
+			## change below to control the contribution of each d loss to g
+			g_grads = tf.gradients([self.g_layer], self.g_vars, 
+				[g_layer_grad_or[0] + g_layer_grad_ds[0] + g_layer_grad_us[0]])
 			g_grads_vars = zip(g_grads, self.g_vars)
+
+			g_grads_or = tf.gradients([self.g_layer], self.g_vars, 
+				[g_layer_grad_or[0]])
+			g_grads_or_vars = zip(g_grads_or, self.g_vars)
+			
+			g_grads_ords = tf.gradients([self.g_layer], self.g_vars, 
+				[g_layer_grad_or[0] + g_layer_grad_ds[0]])
+			g_grads_ords_vars = zip(g_grads_ords, self.g_vars)
+			
 			g_grads_vars_sub = [gv for gv in g_grads_vars \
 				if any(l in gv[1].name for l in sub_layers_g)]
 
@@ -368,11 +379,16 @@ class Ganist:
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 			print '>>> update_ops list: ', update_ops
 			with tf.control_dependencies(update_ops):
-				# change below to control the contribution of each d loss to d
-				self.d_opt = tf.group(*[self.d_opt_or, self.d_opt_ds, self.d_opt_us])
-				self.d_opt_sub = tf.group(*[self.d_opt_or_sub, self.d_opt_ds_sub, self.d_opt_us_sub])
+				## change below to control the contribution of each d loss to d
+				self.d_opt = tf.group(self.d_opt_or, self.d_opt_ds, self.d_opt_us)
+				self.d_opt_sub = tf.group(self.d_opt_or_sub, self.d_opt_ds_sub, self.d_opt_us_sub)
 				self.g_opt = g_opt_handle.apply_gradients(g_grads_vars)
 				self.g_opt_sub = g_opt_handle.apply_gradients(g_grads_vars_sub)
+				### extra opts
+				self.d_opt_sub_or = tf.group(self.d_opt_or)
+				self.d_opt_sub_ords = tf.group(self.d_opt_or, self.d_opt_ds)
+				self.g_opt_sub_or = g_opt_handle.apply_gradients(g_grads_or_vars)
+				self.g_opt_sub_ords = g_opt_handle.apply_gradients(g_grads_ords_vars)
 
 			### build discriminator for low pass
 			#self.r_logits, self.r_hidden = self.build_dis(self.im_input, self.train_phase)
@@ -416,8 +432,8 @@ class Ganist:
 
 			### build g loss
 			#self.g_loss_hp = self.build_gen_loss(self.g_logits_hp)
-			self.g_loss_total = g_loss_or + \
-				g_loss_ds + g_loss_us
+			self.g_loss_total = g_loss_or #+ \
+				#g_loss_ds + g_loss_us
 				#self.hp_loss_weight * self.g_loss_hp
 				#self.en_loss_weight * tf.reduce_mean(self.g_en_loss)
 
@@ -461,10 +477,16 @@ class Ganist:
 			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars_or)
 
 			### summaries **g_num**
-			g_loss_sum = tf.summary.scalar("g_loss", self.g_loss_total)
-			d_loss_sum = tf.summary.scalar("d_loss", self.d_loss_total)
+			g_loss_or_sum = tf.summary.scalar("g_loss", g_loss_or)
+			d_loss_or_sum = tf.summary.scalar("d_loss", d_loss_or)
+			g_loss_ords_sum = tf.summary.scalar("g_loss", g_loss_or+g_loss_ds)
+			d_loss_ords_sum = tf.summary.scalar("d_loss", d_loss_or+d_loss_ds)
+			g_loss_ordsus_sum = tf.summary.scalar("g_loss", g_loss_or+g_loss_ds+g_loss_us)
+			d_loss_ordsus_sum = tf.summary.scalar("d_loss", d_loss_or+d_loss_ds+d_loss_us)
 			#e_loss_sum = tf.summary.scalar("e_loss", self.en_loss_total)
-			self.summary = tf.summary.merge([g_loss_sum, d_loss_sum])
+			self.summary_or = tf.summary.merge([g_loss_or_sum, d_loss_or_sum])
+			self.summary_ords = tf.summary.merge([g_loss_ords_sum, d_loss_ords_sum])
+			self.summary_ordsus = tf.summary.merge([g_loss_ordsus_sum, d_loss_ordsus_sum])
 
 			### Policy gradient updates **g_num**
 			#self.pg_var = tf.get_variable('pg_var', dtype=tf_dtype,
@@ -741,11 +763,11 @@ class Ganist:
 			if g_output_type == 'ds':
 				feed_dict = {self.im_input: batch_data, self.z_input: z_data, 
 					self.zi_input: zi_data, self.train_phase: False}
-				go_layer = self.im_data_ds
+				go_layer = self.im_input_ds
 			elif g_output_type == 'us':
 				feed_dict = {self.im_input: batch_data, self.z_input: z_data, 
 					self.zi_input: zi_data, self.train_phase: False}
-				go_layer = self.im_data_us
+				go_layer = self.im_input_us
 			else:
 				go_layer = self.g_layer
 			imo_layer = self.sess.run(go_layer, feed_dict=feed_dict)
@@ -757,16 +779,29 @@ class Ganist:
 			imo_layer = self.sess.run(self.r_layer_lp, feed_dict=feed_dict)
 			return imo_layer
 
+		### select optimizers for the current time interval
+		if run_count < 1e3:
+			d_opt_ptr = self.d_opt_sub_or
+			g_opt_ptr = self.g_opt_sub_or
+			summary_ptr = self.summary_or
+		elif run_count < 2e3:
+			d_opt_ptr = self.d_opt_sub_ords
+			g_opt_ptr = self.g_opt_sub_ords
+			summary_ptr = self.summary_or
+		else:
+			d_opt_ptr = self.d_opt
+			g_opt_ptr = self.g_opt
+			summary_ptr = self.summary_or
 		### run one training step on discriminator, otherwise on generator, and log **g_num**
 		feed_dict = {self.im_input:batch_data, self.z_input: z_data, self.zi_input: zi_data,
 					self.e_input: e_data, self.train_phase: True}
 		if not gen_update:
-			d_opt_ptr = self.d_opt #if run_count < 5e4 else self.d_opt_sub
-			res_list = [self.g_layer, self.summary, d_opt_ptr]
+			#d_opt_ptr = self.d_opt #if run_count < 5e4 else self.d_opt_sub
+			res_list = [self.g_layer, summary_ptr, d_opt_ptr]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 		else:
-			g_opt_ptr = self.g_opt #if run_count < 5e4 else self.g_opt_sub
-			res_list = [self.g_layer, self.summary, g_opt_ptr]
+			#g_opt_ptr = self.g_opt #if run_count < 5e4 else self.g_opt_sub
+			res_list = [self.g_layer, summary_ptr, g_opt_ptr]
 						#self.e_opt, self.pg_opt]
 						#self.r_en_h, self.r_en_marg_hlb, self.gi_h, self.g_en_loss]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
