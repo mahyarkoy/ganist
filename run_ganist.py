@@ -35,7 +35,7 @@ from scipy.stats import beta as beta_dist
 from scipy import signal
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-os.environ["CUDA_VISIBLE_DEVICES"] = "1, 3" # "0, 1" for multiple
+os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
 
 '''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
@@ -302,7 +302,15 @@ def gset_block_draw_top(ganist, sample_size, path, pr_th=0.05, en_color=False, g
 		en_block_draw(ganist, im_draw, path)
 	else:
 		block_draw(im_draw, path)
-
+'''
+Draws im_data images one by one as separate image files in the save_dir.
+im_data shape: (B, H, W, C)
+'''
+def im_separate_draw(im_data, save_dir):
+	images = np.clip(np.rint((im_data + 1.0) / 2.0 * 255.0), 0.0, 255.0).astype(np.uint8)
+	for i, im in enumerate(images):
+		fname = save_dir + '/{}.jpg'.format(i)
+		Image.fromarray(im, 'RGB').save(fname, 'JPEG')
 '''
 Draws sample_size**2 randomly selected images from im_data.
 If im_labels is provided: selects sample_size images for each im_label and puts in columns.
@@ -1175,6 +1183,7 @@ if __name__ == '__main__':
 	log_path_draw = log_path+'/draws'
 	log_path_sum = log_path+'/sums'
 	c_log_path_sum = c_log_path+'/sums'
+	log_path_sample = log_path+'/samples/'
 
 	log_path_vae = log_path+'/vae'
 	log_path_draw_vae = log_path_vae+'/draws'
@@ -1186,6 +1195,7 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_draw)
 	os.system('mkdir -p '+log_path_sum)
 	os.system('mkdir -p '+c_log_path_sum)
+	os.system('mkdir -p '+log_path_sample)
 	os.system('mkdir -p '+log_path_draw_vae)
 	os.system('mkdir -p '+log_path_snap_vae)
 	os.system('mkdir -p '+log_path_sum_vae)
@@ -1423,20 +1433,20 @@ if __name__ == '__main__':
 	GAN SETUP SECTION
 	'''
 	### print scaled ims
-	im_samples_ds = sample_ganist(ganist, 25, 
-		sampler=ganist.step, g_output_type='ds', z_im=all_imgs_stack[:25])
-	im_block_draw(im_samples_ds, 5, log_path+'/true_samples_ds.png', border=True)
+	#im_samples_ds = sample_ganist(ganist, 25, 
+	#	sampler=ganist.step, g_output_type='ds', z_im=all_imgs_stack[:25])
+	#im_block_draw(im_samples_ds, 5, log_path+'/true_samples_ds.png', border=True)
 
-	im_samples_us = sample_ganist(ganist, 25, 
-		sampler=ganist.step, g_output_type='us', z_im=all_imgs_stack[:25])
-	im_block_draw(im_samples_us, 5, log_path+'/true_samples_us.png', border=True)
+	#im_samples_us = sample_ganist(ganist, 25, 
+	#	sampler=ganist.step, g_output_type='us', z_im=all_imgs_stack[:25])
+	#im_block_draw(im_samples_us, 5, log_path+'/true_samples_us.png', border=True)
 
 	### train ganist
 	train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist
-	#load_path = 'logs_celeba128cc/snapshots/model_best.h5'
-	#ganist.load(load_path)
+	#load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/logs_gandm_ords4_celeba128cc/run_{}/snapshots/model_best.h5'
+	#ganist.load(load_path.format(run_seed))
 
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	##gset_sample_draw(ganist, 10)
@@ -1510,7 +1520,8 @@ if __name__ == '__main__':
 	##im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
 	#im_block_draw(r_samples, 5, log_path_draw+'/real_samples.png', border=True)
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
-	##sys.exit(0)
+	im_separate_draw(g_samples[:1000], log_path_sample)
+	#sys.exit(0)
 
 	### mode eval gen data
 	### >>> dataset sensitive: draw_list

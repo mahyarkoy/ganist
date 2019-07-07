@@ -182,7 +182,7 @@ class Ganist:
 		### run parameters
 		self.log_dir = log_dir
 		self.sess = sess
-		self.device_names = ['/device:GPU:0', '/device:GPU:0', '/device:GPU:1']
+		self.device_names = ['/device:GPU:0', '/device:GPU:0', '/device:GPU:0']
 
 		### optimization parameters
 		self.g_lr = 2e-4
@@ -458,7 +458,7 @@ class Ganist:
 			self.g_backup, self.g_layer_sim, self.g_layer_non_zero = compute_layer_sim(self.g_sim_layer_list, self.g_vars)
 
 			self.d_sim_layer_list = ['conv0', 'conv1', 'conv2', 'conv3', 'fco']
-			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars)
+			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars_or)
 
 			### summaries **g_num**
 			g_loss_sum = tf.summary.scalar("g_loss", self.g_loss_total)
