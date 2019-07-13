@@ -684,7 +684,7 @@ class Ganist:
 
 	def start_session(self):
 		self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=100)
-		self.saver_var_only = tf.train.Saver(self.g_vars+self.d_vars)#+self.e_vars+[self.pg_var, self.pg_q])
+		self.saver_var_only = tf.train.Saver(self.g_vars)#+self.d_vars)#+self.e_vars+[self.pg_var, self.pg_q])
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):

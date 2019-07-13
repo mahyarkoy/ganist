@@ -99,7 +99,8 @@ def apply_fft_images(ims):
 #im_dir = '/media/evl/Public/Mahyar/Data/lsun/cat/'
 #g_dir = '/media/evl/Public/Mahyar/Data/stylegan/cat/'
 im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
-g_dir = '/media/evl/Public/Mahyar/Data/prog_gan/celeba_128/'
+#g_dir = '/media/evl/Public/Mahyar/Data/prog_gan/celeba_128/'
+g_dir = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/temp/logs_ganms_or_celeba128cc/run_0/samples/'
 save_path = '/home/mahyar/'
 data_size = 1000
 im_size = 128
@@ -118,7 +119,7 @@ fig = plt.figure(0, figsize=(8,6))
 ax = fig.add_subplot(1,1,1)
 pa = ax.imshow(np.log(imf_agg) - np.log(g_imf_agg), cmap=plt.get_cmap('bwr'), vmin=-5, vmax=5)
 fig.colorbar(pa)
-fig.savefig(save_path+'/fft_diff_celeba_128.jpg', dpi=300)
+fig.savefig(save_path+'/fft_diff_wganbn_celeba_128.jpg', dpi=300)
 
 fig.clf()
 ax = fig.add_subplot(1,1,1)
@@ -130,7 +131,7 @@ fig.clf()
 ax = fig.add_subplot(1,1,1)
 pa = ax.imshow(np.log(g_imf_agg), cmap=plt.get_cmap('hot'), vmin=0, vmax=20)
 fig.colorbar(pa)
-fig.savefig(save_path+'/fft_gan_celeba_128.jpg', dpi=300)
+fig.savefig(save_path+'/fft_wganbn_celeba_128.jpg', dpi=300)
 
 #plt.imshow(np.log(imf_agg) - np.log(g_imf_agg))
 #plt.xlim(44, 84)

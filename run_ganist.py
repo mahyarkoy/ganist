@@ -812,9 +812,11 @@ def extract_inception_feat(sess, feat_layer, im_layer, im_data):
 		im_feat[batch_start:batch_end, ...] = pe.reshape((-1, feat_size))
 	return im_feat
 
-def blur_images(imgs, sigma):
+def blur_images(imgs, sigma, blur_type='avg'):
 	if sigma==0:
 		return imgs
+	if blur_type == 'avg':
+		return TFutil.get().blur_images(imgs, sigma)
 	### kernel
 	t = np.linspace(-20, 20, 41)
 	#t = np.linspace(-20, 20, 81) ## for 128x128 images
@@ -825,6 +827,40 @@ def blur_images(imgs, sigma):
 	for i in range(imgs.shape[0]):
 		imgs_blur[i, ...] = signal.fftconvolve(imgs[i, ...], kernel[:, :, np.newaxis], mode='same')
 	return imgs_blur
+
+class TFutil:
+	__instance = None
+	@staticmethod
+	def get():
+		if TFutil.__instance == None:
+			raise Exception('TFutil is not initialized.')
+		return TFutil.__instance
+	
+	def __init__(self, sess):
+		if TFutil.__instance != None:
+			raise Exception('TFutil is a singleton class.')
+		else:
+			TFutil.__instance = self
+			self.sess = sess
+			self.blur_dict = dict()
+			self.im_dict = dict()
+	
+	def blur_images(self, imgs, ksize, batch_size=64):
+		imgs_size = imgs.shape[0]
+		imgs_blur = np.array(imgs)
+		if imgs.shape[1:] not in self.im_dict:
+			self.im_dict[imgs.shape[1:]] = \
+				tf.placeholder(tf.float32, (None,)+imgs.shape[1:])
+		im_layer = self.im_dict[imgs.shape[1:]]
+		if ksize not in self.blur_dict:
+			self.blur_dict[ksize] = tf.nn.avg_pool(im_layer, 
+				ksize=[1, ksize, ksize, 1], strides=[1, 1, 1, 1], padding='SAME')
+		blur_layer = self.blur_dict[ksize]
+		for batch_start in range(0, imgs_size, batch_size):
+			batch_end = min(batch_start+batch_size, imgs_size)
+			imgs_blur[batch_start:batch_end, ...] = self.sess.run(blur_layer, 
+				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
+		return imgs_blur
 
 '''
 Evaluate fid on data
@@ -840,6 +876,7 @@ def eval_fid(sess, im_r, im_g, blur=0):
 def eval_fid_levels(sess, im_r, im_g, blur_levels):
 	fid_list = list()
 	for b in blur_levels:
+		print('>>> Computing FID Level {}'.format(b))
 		fid_list.append(eval_fid(sess, im_r, im_g, b))
 	return fid_list
 
@@ -1367,6 +1404,8 @@ if __name__ == '__main__':
 	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
 	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	sess = tf.Session(config=config)
+	### init TFutil
+	tfutil = TFutil(sess)
 	### create a ganist instance
 	ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
@@ -1442,11 +1481,12 @@ if __name__ == '__main__':
 	#im_block_draw(im_samples_us, 5, log_path+'/true_samples_us.png', border=True)
 
 	### train ganist
-	train_ganist(ganist, train_imgs, train_labs)
+	#train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist
-	#load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/logs_gandm_ords4_celeba128cc/run_{}/snapshots/model_best.h5'
-	#ganist.load(load_path.format(run_seed))
+	#load_path = log_path_snap+'/model_best.h5'
+	load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
+	ganist.load(load_path.format(run_seed))
 
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	##gset_sample_draw(ganist, 10)
@@ -1610,7 +1650,8 @@ if __name__ == '__main__':
 	'''
 	Multi Level FID
 	'''
-	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	#blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	blur_levels = [0, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
 	### draw blurred images
 	blur_im_list = list()
 	blur_draw_size = 10
@@ -1627,8 +1668,10 @@ if __name__ == '__main__':
 	ax.plot(blur_levels, fid_list)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_title('FID levels')
-	ax.set_xlabel('Filter sigma')
+	#ax.set_xlabel('Filter sigma')
+	ax.set_xlabel('Filter Size')
 	ax.set_ylabel('FID')
+	ax.set_xticks(blur_levels)
 	#ax.legend(loc=0)
 	fig.savefig(log_path+'/fid_levels.png', dpi=300)
 	plt.close(fig)
