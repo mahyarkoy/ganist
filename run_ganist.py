@@ -495,13 +495,13 @@ def train_ganist(ganist, im_data, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 3e3
+	max_itr_total = 5e5
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
 	eval_step = eval_int
 	draw_step = eval_int
-	snap_step = max_itr_total // 5
+	snap_step = max_itr_total // 10
 
 	### logs initi
 	g_logs = list()
@@ -812,7 +812,7 @@ def extract_inception_feat(sess, feat_layer, im_layer, im_data):
 		im_feat[batch_start:batch_end, ...] = pe.reshape((-1, feat_size))
 	return im_feat
 
-def blur_images(imgs, sigma, blur_type='avg'):
+def blur_images(imgs, sigma, blur_type='gauss'):
 	if sigma==0:
 		return imgs
 	if blur_type == 'avg':
@@ -846,6 +846,8 @@ class TFutil:
 			self.im_dict = dict()
 	
 	def blur_images(self, imgs, ksize, batch_size=64):
+		if ksize == 1 or ksize == 0:
+			return imgs
 		imgs_size = imgs.shape[0]
 		imgs_blur = np.array(imgs)
 		if imgs.shape[1:] not in self.im_dict:
@@ -923,7 +925,7 @@ Returns the energy distance of a trained GANist, and draws block images of GAN s
 '''
 def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	### sample and batch size
-	sample_size = 1000
+	sample_size = 10000
 	batch_size = 64
 	draw_size = 5
 	sampler = sampler if sampler is not None else ganist.step
@@ -1249,7 +1251,7 @@ if __name__ == '__main__':
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier_single/snapshots/model_11250.h5'
 	class_net_path = '/media/evl/Public/Mahyar/Data/cl_mnist_classifier/snapshots/model_54375.h5'
 	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/1_logs_celeba_wganbn_lstatsfc/run_%d/snapshots/model_83333_500000.h5'
-	sample_size = 1000
+	sample_size = 10000
 	#sample_size = 350000
 
 	'''
@@ -1388,7 +1390,7 @@ if __name__ == '__main__':
 	### read celeba 128
 	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
 	im_size = 128
-	dataset_size = 2000	
+	dataset_size = 60000
 	im_paths = readim_path_from_dir(im_dir)
 	np.random.shuffle(im_paths)
 	im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
@@ -1481,11 +1483,11 @@ if __name__ == '__main__':
 	#im_block_draw(im_samples_us, 5, log_path+'/true_samples_us.png', border=True)
 
 	### train ganist
-	#train_ganist(ganist, train_imgs, train_labs)
+	train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist
-	#load_path = log_path_snap+'/model_best.h5'
-	load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
+	load_path = log_path_snap+'/model_best.h5'
+	#load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
 	ganist.load(load_path.format(run_seed))
 
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
@@ -1557,8 +1559,6 @@ if __name__ == '__main__':
 	### sample gen data and draw **mt**
 	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler)
 	print '>>> g_samples shape: ', g_samples.shape
-	##im_block_draw(g_samples, 10, log_path_draw+'/gen_samples.png')
-	#im_block_draw(r_samples, 5, log_path_draw+'/real_samples.png', border=True)
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
 	im_separate_draw(g_samples[:1000], log_path_sample)
 	#sys.exit(0)
@@ -1639,19 +1639,20 @@ if __name__ == '__main__':
 	#im_data = readim_from_path(im_paths[:sample_size*2], im_size)
 	#all_imgs_stack = im_data
 	#print all_imgs_stack.shape
-	#
-	#prog_gan_dir = '/media/evl/Public/Mahyar/Data/prog_gan/celeba_128/'
+	
+	#prog_gan_dir = '/media/evl/Public/Mahyar/Data/stylegan/celeba_1024/'
 	#im_size = 128
 	#g_im_paths = readim_path_from_dir(prog_gan_dir)
 	#np.random.shuffle(g_im_paths)
 	#g_samples = readim_from_path(g_im_paths[:sample_size], im_size)
 	#print g_samples.shape
+	#im_separate_draw(g_samples[:1000], log_path_sample)
 
 	'''
 	Multi Level FID
 	'''
-	#blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
-	blur_levels = [0, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
+	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	#blur_levels = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
 	### draw blurred images
 	blur_im_list = list()
 	blur_draw_size = 10
@@ -1668,8 +1669,8 @@ if __name__ == '__main__':
 	ax.plot(blur_levels, fid_list)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_title('FID levels')
-	#ax.set_xlabel('Filter sigma')
-	ax.set_xlabel('Filter Size')
+	ax.set_xlabel('Filter sigma')
+	#ax.set_xlabel('Filter Size')
 	ax.set_ylabel('FID')
 	ax.set_xticks(blur_levels)
 	#ax.legend(loc=0)

@@ -20,13 +20,16 @@ global_color_set = global_cmap(global_color_locs)
 
 fid_paths = [
 	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_celeba128cc_gauss41/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_proggan_celeba128cc_gauss41/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/temp/logs_ganms_or_celeba128cc/run_0/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/fid_avg/run_%d/fid_levels_r.cpk',
+	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/31_logs_ganms_celeba128cc_5e4_10e4/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/24_logs_gandm_ords4_celeba128cc/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/temp/logs_gandm_ordsus4_celeba128cc/run_0/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_proggan_celeba128cc_gauss41/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/26_logs_gan_celeba128cc_frz1e4_butconv3/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/27_logs_gan_celeba128cc_frz5e4_butconv3/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/28_logs_gan_celeba128cc_frz10e4_butconv3/run_%d/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/real_fidlevels_gauss_logs/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/29_logs_gan_celeba128cc_frz5e4_butconv3fco/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/30_logs_gan_celeba128cc_frz5e4_butconv3_newopt/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/10_fidlevels_gauss_logs/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/3_fidlevels_logs/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/7_fidlevels_logs/run_%d/fid_levels.cpk',
@@ -58,10 +61,12 @@ def plot_fid_levels(ax, pathname, pname, pcolor):
 	fid_mean = np.mean(fid_mat, axis=0)
 	fid_std = np.std(fid_mat, axis=0)
 	### plot fid means with std
+	#blur_levels[0] = 1 ## for the average pooling blurring
 	blur_levels = np.array(blur_levels)
 	ax.plot(blur_levels, fid_mean, color=pcolor, label=pname)
 	ax.plot(blur_levels, fid_mean+fid_std, linestyle='--', linewidth=0.5, color=pcolor)
 	ax.plot(blur_levels, fid_mean-fid_std, linestyle='--', linewidth=0.5, color=pcolor)
+	ax.set_xticks(blur_levels)
 	
 if __name__ == '__main__':
 	### prepare plot
@@ -71,13 +76,13 @@ if __name__ == '__main__':
 	ax.set_xlabel('Filter Std')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('CelebA 128: Freeze Except Conv3')
+	ax.set_title('CelebA 128: WGANBN vs Multistage')
 
 	### plot
-	pnames = ['real', 'prog_gan', 'wganbn']
+	pnames = ['real', 'wganbn', 'wganbn_multistage']
 	pcolors = [0, 1, 2] ## add 0 for real
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/plots/fid_levels_mean_proggan_wganbn_celeba128cc_g41.pdf')
+	fig.savefig('/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/plots/fids_wganbn_wganbnms5e4ms10e4_celeba128cc_g41.pdf')
