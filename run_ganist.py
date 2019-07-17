@@ -495,13 +495,13 @@ def train_ganist(ganist, im_data, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 5e5
+	max_itr_total = 3e3
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
 	eval_step = eval_int
 	draw_step = eval_int
-	snap_step = max_itr_total // 10
+	snap_step = max_itr_total // 5
 
 	### logs initi
 	g_logs = list()
@@ -925,7 +925,7 @@ Returns the energy distance of a trained GANist, and draws block images of GAN s
 '''
 def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	### sample and batch size
-	sample_size = 10000
+	sample_size = 1000
 	batch_size = 64
 	draw_size = 5
 	sampler = sampler if sampler is not None else ganist.step
@@ -1251,7 +1251,7 @@ if __name__ == '__main__':
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier_single/snapshots/model_11250.h5'
 	class_net_path = '/media/evl/Public/Mahyar/Data/cl_mnist_classifier/snapshots/model_54375.h5'
 	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/1_logs_celeba_wganbn_lstatsfc/run_%d/snapshots/model_83333_500000.h5'
-	sample_size = 10000
+	sample_size = 1000
 	#sample_size = 350000
 
 	'''
@@ -1390,7 +1390,7 @@ if __name__ == '__main__':
 	### read celeba 128
 	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
 	im_size = 128
-	dataset_size = 60000
+	dataset_size = 2000
 	im_paths = readim_path_from_dir(im_dir)
 	np.random.shuffle(im_paths)
 	im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
