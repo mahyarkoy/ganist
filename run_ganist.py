@@ -1191,6 +1191,46 @@ def eval_mnist_net(mnet, im_data, labels, batch_size):
 
 	return eval_loss / eval_count, eval_sum / eval_count
 
+def eval_fft_layer(val):
+	val_agg = np.sum(val, axis=-1)
+	val_fft = np.fft.fftn(val_agg)
+	val_fft_shifted = np.abs(np.fft.fftshift(val_fft))
+	return val_fft_shifted
+
+'''
+Computes and plots the fft of each conv layer in ganist.
+'''
+def eval_fft(ganist, save_dir):
+	fft_vars = list()
+	d_vars, g_vars = ganist.get_vars_array()
+	fig = plt.figure(0, figsize=(8,6))
+	for val, name in d_vars+g_vars:
+		if 'kernel' in name and 'conv' in name:
+			scopes = name.split('/')
+			net_name = next(v for v in scopes if 'net' in  v)
+			conv_name = next(v for v in scopes if 'conv' in  v)
+			save_path = '{}/{}_{}'.format(save_dir, net_name, conv_name)
+			layer_name = '{}_{}'.format(net_name, conv_name)
+			print(name)
+			print(val.shape)
+			print(save_path)
+			fft_mat = np.zeros((val.shape[3], val.shape[0], val.shape[1]))
+			for i in range(val.shape[3]):
+				fft_mat[i, ...] = eval_fft_layer(val[:, :, :, i])
+			print '>>> FFT MIN: ', fft_mat.min()
+			print '>>> FFT MAX: ', fft_mat.max()
+			fft_mean = np.mean(fft_mat, axis=0)
+			### plot mean fft
+			fig.clf()
+			ax = fig.add_subplot(1,1,1)
+			pa = ax.imshow(np.log(fft_mean), cmap=plt.get_cmap('hot'), vmin=-3, vmax=3)
+			ax.set_title(layer_name)
+			fig.colorbar(pa)
+			fig.savefig(save_path+'.png', dpi=300)
+			fft_vars.append((fft_mean, layer_name))
+	with open('{}/eval_fft.cpk'.format(save_dir), 'wb+') as fs:
+		pk.dump(fft_vars, fs)
+
 if __name__ == '__main__':
 	'''
 	Script Setup
@@ -1388,17 +1428,17 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
-	im_size = 128
-	dataset_size = 2000
-	im_paths = readim_path_from_dir(im_dir)
-	np.random.shuffle(im_paths)
-	im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
-	all_imgs_stack = im_data
-	train_imgs = im_data[sample_size:, ...]
-	train_labs = None
-	print all_imgs_stack.shape
-	im_block_draw(all_imgs_stack[:25], 5, log_path+'/true_samples.png', border=True)
+	#im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	#im_size = 128
+	#dataset_size = 2000
+	#im_paths = readim_path_from_dir(im_dir)
+	#np.random.shuffle(im_paths)
+	#im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
+	#all_imgs_stack = im_data
+	#train_imgs = im_data[sample_size:, ...]
+	#train_labs = None
+	#print all_imgs_stack.shape
+	#im_block_draw(all_imgs_stack[:25], 5, log_path+'/true_samples.png', border=True)
 
 	'''
 	TENSORFLOW SETUP
@@ -1483,11 +1523,11 @@ if __name__ == '__main__':
 	#im_block_draw(im_samples_us, 5, log_path+'/true_samples_us.png', border=True)
 
 	### train ganist
-	train_ganist(ganist, train_imgs, train_labs)
+	#train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist
-	load_path = log_path_snap+'/model_best.h5'
-	#load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
+	#load_path = log_path_snap+'/model_best.h5'
+	load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
 	ganist.load(load_path.format(run_seed))
 
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
@@ -1554,6 +1594,7 @@ if __name__ == '__main__':
 	'''
 	GAN DATA EVAL
 	'''
+	eval_fft(ganist, log_path_draw)
 	gan_model = ganist#vae
 	sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
@@ -1561,7 +1602,7 @@ if __name__ == '__main__':
 	print '>>> g_samples shape: ', g_samples.shape
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
 	im_separate_draw(g_samples[:1000], log_path_sample)
-	#sys.exit(0)
+	sys.exit(0)
 
 	### mode eval gen data
 	### >>> dataset sensitive: draw_list

@@ -572,6 +572,7 @@ class Ganist:
 		return tf.reduce_mean(g_loss)
 
 	def build_gen(self, z, zi, act, train_phase):
+		train_phase = True
 		ol = list()
 		with tf.variable_scope('g_net'):
 			for gi in range(self.g_num):
@@ -687,6 +688,13 @@ class Ganist:
 
 	def write_sum(self, sum_str, counter):
 		self.writer.add_summary(sum_str, counter)
+
+	def get_vars_array(self):
+		d_vars_vals = self.sess.run(self.d_vars)
+		g_vars_vals = self.sess.run(self.g_vars)
+		d_vars_names = [v.name for v in self.d_vars]
+		g_vars_names = [v.name for v in self.g_vars]
+		return zip(d_vars_vals, d_vars_names), zip(g_vars_vals, g_vars_names)
 
 	def step(self, batch_data, batch_size, gen_update=False, 
 		dis_only=False, gen_only=False, stats_only=False, 
