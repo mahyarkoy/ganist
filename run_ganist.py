@@ -1191,16 +1191,51 @@ def eval_mnist_net(mnet, im_data, labels, batch_size):
 
 	return eval_loss / eval_count, eval_sum / eval_count
 
-def eval_fft_layer(val):
+'''
+DFT of the 2d discrete non-periodic input image.
+im: must be 2d array
+freqs: a 1d array of freqs to evaluate the dft at (max 0.5)
+'''
+def compute_dft(im, freqs=None):
+	im_size = im.shape[0]
+	freqs = 1. * np.arange(im_size) / im_size if freqs is None else freqs
+	freq_size = freqs.shape[0]
+	dft = 0j * np.zeros((freq_size, freq_size))
+	x_arr = np.arange(im_size)
+	y_arr = np.arange(im_size)
+	for ui, u in enumerate(freqs):
+		u_kernel = np.exp(-2j*np.pi*x_arr*u)
+		for vi, v in enumerate(freqs):
+			v_kernel = np.exp(-2j*np.pi*y_arr*v)
+			### because u correspond to x axis
+			dft[vi,ui] = im.dot(u_kernel).dot(v_kernel)
+	### reshape
+	even = (freq_size+1) % 2
+	odd = (freq_size) % 2
+	center = freq_size // 2
+	dft_full = 0j * np.zeros((freq_size+even, freq_size+even))
+	dft_full[:center+1, center:] = np.flip(dft[:center+1, :center+1], 0)
+	dft_full[:center+1, :center] = np.flip(dft[:center+1, center+odd:], 0)
+	dft_full[center+1:, center:] = np.flip(dft[center+odd:, :center+1], 0)
+	dft_full[center+1:, :center] = np.flip(dft[center+odd:, center+odd:], 0)
+	return dft_full, dft
+
+def eval_fft_layer(val, dft_size=None):
 	val_agg = np.sum(val, axis=-1)
-	val_fft = np.fft.fftn(val_agg)
-	val_fft_shifted = np.abs(np.fft.fftshift(val_fft))
-	return val_fft_shifted
+	if dft_size is None:
+		val_ft = np.fft.fftn(val_agg)
+		val_ft_s = np.flip(np.fft.fftshift(val_ft), 0)
+	else:
+		freqs = 1. * np.arange(dft_size) / dft_size
+		val_ft_s, val_ft = compute_dft(val_agg, freqs)
+	fft_power = np.abs(val_ft_s)**2
+	return fft_power
 
 '''
 Computes and plots the fft of each conv layer in ganist.
+dft_size: if not None, will apply dft without assuming continuous signal, using a base freq of 1/dft_size.
 '''
-def eval_fft(ganist, save_dir):
+def eval_fft(ganist, save_dir, dft_size=5):
 	fft_vars = list()
 	d_vars, g_vars = ganist.get_vars_array()
 	fig = plt.figure(0, figsize=(8,6))
@@ -1216,15 +1251,22 @@ def eval_fft(ganist, save_dir):
 			print(save_path)
 			fft_mat = np.zeros((val.shape[3], val.shape[0], val.shape[1]))
 			for i in range(val.shape[3]):
-				fft_mat[i, ...] = eval_fft_layer(val[:, :, :, i])
+				fft_mat[i, ...] = eval_fft_layer(val[:, :, :, i], dft_size)
 			print '>>> FFT MIN: ', fft_mat.min()
 			print '>>> FFT MAX: ', fft_mat.max()
 			fft_mean = np.mean(fft_mat, axis=0)
 			### plot mean fft
 			fig.clf()
 			ax = fig.add_subplot(1,1,1)
-			pa = ax.imshow(np.log(fft_mean), cmap=plt.get_cmap('hot'), vmin=-3, vmax=3)
+			pa = ax.imshow(np.log(fft_mean), cmap=plt.get_cmap('hot'), vmin=-6, vmax=6)
 			ax.set_title(layer_name)
+			if dft_size is not None:
+				ticks = [-(dft_size//2), 0, dft_size//2]
+				ticks_loc = [0, dft_size//2, dft_size-dft_size%2]
+				ax.set_xticks(ticks_loc)
+				ax.set_xticklabels(ticks)
+				ax.set_yticks(ticks_loc)
+				ax.set_yticklabels(ticks[::-1])
 			fig.colorbar(pa)
 			fig.savefig(save_path+'.png', dpi=300)
 			fft_vars.append((fft_mean, layer_name))
