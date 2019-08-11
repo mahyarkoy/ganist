@@ -1333,7 +1333,7 @@ if __name__ == '__main__':
 	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier_single/snapshots/model_11250.h5'
 	class_net_path = '/media/evl/Public/Mahyar/Data/cl_mnist_classifier/snapshots/model_54375.h5'
 	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/1_logs_celeba_wganbn_lstatsfc/run_%d/snapshots/model_83333_500000.h5'
-	sample_size = 1000
+	sample_size = 10000
 	#sample_size = 350000
 
 	'''
@@ -1470,17 +1470,17 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	#im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
-	#im_size = 128
-	#dataset_size = 2000
-	#im_paths = readim_path_from_dir(im_dir)
-	#np.random.shuffle(im_paths)
-	#im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
-	#all_imgs_stack = im_data
-	#train_imgs = im_data[sample_size:, ...]
-	#train_labs = None
-	#print all_imgs_stack.shape
-	#im_block_draw(all_imgs_stack[:25], 5, log_path+'/true_samples.png', border=True)
+	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	im_size = 128
+	dataset_size = 20000
+	im_paths = readim_path_from_dir(im_dir)
+	np.random.shuffle(im_paths)
+	im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
+	all_imgs_stack = im_data
+	train_imgs = im_data[sample_size:, ...]
+	train_labs = None
+	print all_imgs_stack.shape
+	im_block_draw(all_imgs_stack[:25], 5, log_path+'/true_samples.png', border=True)
 
 	'''
 	TENSORFLOW SETUP
@@ -1569,8 +1569,8 @@ if __name__ == '__main__':
 
 	### load ganist
 	#load_path = log_path_snap+'/model_best.h5'
-	load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
-	ganist.load(load_path.format(run_seed))
+	#load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
+	#ganist.load(load_path.format(run_seed))
 
 	### gset draws: run sample_draw before block_draw_top to load learned gset prior
 	##gset_sample_draw(ganist, 10)
@@ -1636,7 +1636,7 @@ if __name__ == '__main__':
 	'''
 	GAN DATA EVAL
 	'''
-	eval_fft(ganist, log_path_draw)
+	#eval_fft(ganist, log_path_draw)
 	gan_model = ganist#vae
 	sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
@@ -1644,7 +1644,7 @@ if __name__ == '__main__':
 	print '>>> g_samples shape: ', g_samples.shape
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
 	im_separate_draw(g_samples[:1000], log_path_sample)
-	sys.exit(0)
+	#sys.exit(0)
 
 	### mode eval gen data
 	### >>> dataset sensitive: draw_list
@@ -1730,6 +1730,10 @@ if __name__ == '__main__':
 	#g_samples = readim_from_path(g_im_paths[:sample_size], im_size)
 	#print g_samples.shape
 	#im_separate_draw(g_samples[:1000], log_path_sample)
+
+	pyramid = tf_make_lap_pyramid(all_imgs_stack[sample_size:2*sample_size])
+	reconst = tf_reconst_lap_pyramid(pyramid)
+	g_samples = sess.run(reconst)
 
 	'''
 	Multi Level FID

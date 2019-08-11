@@ -176,6 +176,69 @@ def compute_layer_sim(layer_list, net_vars):
 	backup_op = tf.group(*vars_pre_ops)
 	return backup_op, layer_sim, layer_non_zero
 
+'''
+tf image upsampling.
+im: shape [b, h, w, c]
+'''
+def tf_upsample(im):
+	im = tf.convert_to_tensor(im)
+	_, h, w, c = im.get_shape().as_list()
+	#us_x = tf.tile(tf.reshape(im, [-1, h*w, 1, c]), [1, 1, 2, 1])
+	#us_xy = tf.tile(tf.reshape(us_x, [-1, h, 1, 2*w, c]), [1, 1, 2, 1, 1])
+	us_x = tf.pad(tf.reshape(im, [-1, h*w, 1, c]), [[0,0], [0,0], [0,1], [0,0]])
+	us_xy = tf.pad(tf.reshape(us_x, [-1, h, 1, 2*w, c]), [[0,0], [0,0], [0,1], [0,0], [0,0]])
+	output = tf.reshape(us_xy, [-1, 2*h, 2*w, c])
+	if h%2 == 1:
+		output = output[:, :-1, :, :]
+	if w%2 == 1:
+		output = output[:, :, :-1, :]
+	print '>>> tf upsample shape: ', output.get_shape().as_list()
+	return output
+
+'''
+tf image downsampling.
+im: shape [b, h, w, c] 
+'''
+def tf_downsample(im):
+	im = tf.convert_to_tensor(im)
+	output = tf.nn.max_pool(im, ksize=[1, 1, 1, 1], strides=[1, 2, 2, 1], padding='SAME')
+	print '>>> tf downsample shape: ', output.get_shape().as_list()
+	return output
+
+'''
+tf applies binomial blur to approximate gaussian blurring.
+im: shape [b, h, w, c]
+'''
+def tf_binomial_blur(im, kernel=np.array([1., 4., 6., 4., 1.])/16.):
+	im = tf.convert_to_tensor(im)
+	c = tf.shape(im)[3]
+	ksize = kernel.shape[0]
+	kernel_x = tf.tile(tf.reshape(kernel, [1, ksize, 1, 1]), [1, 1, c, 1])
+	kernel_y = tf.tile(tf.reshape(kernel, [ksize, 1, 1, 1]), [1, 1, c, 1])
+	output = tf.nn.depthwise_conv2d(
+		tf.nn.depthwise_conv2d(im, kernel_x, [1, 1, 1, 1], padding='SAME'), 
+		kernel_y, [1, 1, 1, 1], padding='SAME')
+	return output
+
+def tf_make_lap_pyramid(im, levels=3):
+	im = tf.convert_to_tensor(im)
+	pyramid = list()
+	for l in range(levels):
+		if l == levels-1:
+			pyramid.append(im)
+		else:
+			im_blur = tf_binomial_blur(im)
+			pyramid.append(im - im_blur)
+			im = tf_downsample(im_blur)
+	return pyramid
+
+def tf_reconst_lap_pyramid(pyramid):
+	reconst = pyramid[-1]
+	for im in pyramid[-2::-1]:
+		us = tf_upsample(reconst)
+		reconst = tf_binomial_blur(us, kernel=np.array([1., 2., 1.])/2.) + im
+	return reconst
+
 ### GAN Class definition
 class Ganist:
 	def __init__(self, sess, log_dir='logs'):
