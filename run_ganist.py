@@ -828,6 +828,20 @@ def blur_images(imgs, sigma, blur_type='gauss'):
 		imgs_blur[i, ...] = signal.fftconvolve(imgs[i, ...], kernel[:, :, np.newaxis], mode='same')
 	return imgs_blur
 
+def apply_lap_pyramid(im, batch_size=64):
+	im_size, h, w, c = im.shape
+	### build op
+	im_layer = tf.placeholder(tf_ganist.tf_dtype, [None, h, w, c])
+	pyramid = tf_ganist.tf_make_lap_pyramid(im_layer)
+	reconst = tf_ganist.tf_reconst_lap_pyramid(pyramid)
+	### apply op
+	im_reconst = np.zeros((im_size, h, w, c))
+	for batch_start in range(0, im_size, batch_size):
+		batch_end = min(batch_start + batch_size, im_size)
+		im_batch = im[batch_start:batch_end]
+		im_reconst[batch_start:batch_end, ...] = sess.run(reconst, {im_layer: im_batch})
+	return im_reconst
+
 class TFutil:
 	__instance = None
 	@staticmethod
@@ -1731,9 +1745,7 @@ if __name__ == '__main__':
 	#print g_samples.shape
 	#im_separate_draw(g_samples[:1000], log_path_sample)
 
-	pyramid = tf_make_lap_pyramid(all_imgs_stack[sample_size:2*sample_size])
-	reconst = tf_reconst_lap_pyramid(pyramid)
-	g_samples = sess.run(reconst)
+	g_samples = apply_lap_pyramid(all_imgs_stack[sample_size:2*sample_size])
 
 	'''
 	Multi Level FID
