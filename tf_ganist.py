@@ -177,21 +177,22 @@ def compute_layer_sim(layer_list, net_vars):
 	return backup_op, layer_sim, layer_non_zero
 
 '''
-tf image upsampling.
+tf image upsampling with smoothing.
 im: shape [b, h, w, c]
 '''
-def tf_upsample(im):
-	im = tf.convert_to_tensor(im)
+def tf_upsample(im, smooth=True):
+	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	_, h, w, c = im.get_shape().as_list()
 	#us_x = tf.tile(tf.reshape(im, [-1, h*w, 1, c]), [1, 1, 2, 1])
 	#us_xy = tf.tile(tf.reshape(us_x, [-1, h, 1, 2*w, c]), [1, 1, 2, 1, 1])
 	us_x = tf.pad(tf.reshape(im, [-1, h*w, 1, c]), [[0,0], [0,0], [0,1], [0,0]])
 	us_xy = tf.pad(tf.reshape(us_x, [-1, h, 1, 2*w, c]), [[0,0], [0,0], [0,1], [0,0], [0,0]])
-	output = tf.reshape(us_xy, [-1, 2*h, 2*w, c])
+	im_us = tf.reshape(us_xy, [-1, 2*h, 2*w, c])
 	if h%2 == 1:
-		output = output[:, :-1, :, :]
+		im_us = im_us[:, :-1, :, :]
 	if w%2 == 1:
-		output = output[:, :, :-1, :]
+		im_us = im_us[:, :, :-1, :]
+	output = tf_binomial_blur(im_us, kernel=np.array([1., 2., 1.])/2.) if smooth == True else im_us
 	print '>>> tf upsample shape: ', output.get_shape().as_list()
 	return output
 
@@ -200,7 +201,7 @@ tf image downsampling.
 im: shape [b, h, w, c] 
 '''
 def tf_downsample(im):
-	im = tf.convert_to_tensor(im)
+	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	output = tf.nn.max_pool(im, ksize=[1, 1, 1, 1], strides=[1, 2, 2, 1], padding='SAME')
 	print '>>> tf downsample shape: ', output.get_shape().as_list()
 	return output
@@ -210,7 +211,8 @@ tf applies binomial blur to approximate gaussian blurring.
 im: shape [b, h, w, c]
 '''
 def tf_binomial_blur(im, kernel=np.array([1., 4., 6., 4., 1.])/16.):
-	im = tf.convert_to_tensor(im)
+	im = tf.convert_to_tensor(im, dtype=tf_dtype)
+	kernel = tf.convert_to_tensor(kernel, dtype=tf_dtype)
 	c = tf.shape(im)[3]
 	ksize = kernel.shape[0]
 	kernel_x = tf.tile(tf.reshape(kernel, [1, ksize, 1, 1]), [1, 1, c, 1])
@@ -221,22 +223,24 @@ def tf_binomial_blur(im, kernel=np.array([1., 4., 6., 4., 1.])/16.):
 	return output
 
 def tf_make_lap_pyramid(im, levels=3):
-	im = tf.convert_to_tensor(im)
+	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	pyramid = list()
 	for l in range(levels):
 		if l == levels-1:
 			pyramid.append(im)
 		else:
 			im_blur = tf_binomial_blur(im)
-			pyramid.append(im - im_blur)
-			im = tf_downsample(im_blur)
+			im_ds = tf_downsample(im_blur)
+			im_us = tf_upsample(im_ds)
+			pyramid.append(im - im_us)
+			im = im_ds
 	return pyramid
 
 def tf_reconst_lap_pyramid(pyramid):
 	reconst = pyramid[-1]
 	for im in pyramid[-2::-1]:
-		us = tf_upsample(reconst)
-		reconst = tf_binomial_blur(us, kernel=np.array([1., 2., 1.])/2.) + im
+		im_us = tf_upsample(reconst)
+		reconst = im_us + im
 	return reconst
 
 ### GAN Class definition

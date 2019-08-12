@@ -1651,13 +1651,13 @@ if __name__ == '__main__':
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
-	gan_model = ganist#vae
-	sampler = ganist.step#vae.step
+	#gan_model = ganist#vae
+	#sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler)
-	print '>>> g_samples shape: ', g_samples.shape
-	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
-	im_separate_draw(g_samples[:1000], log_path_sample)
+	#g_samples = sample_ganist(gan_model, sample_size, sampler=sampler)
+	#print '>>> g_samples shape: ', g_samples.shape
+	#im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
+	#im_separate_draw(g_samples[:1000], log_path_sample)
 	#sys.exit(0)
 
 	### mode eval gen data
@@ -1746,6 +1746,7 @@ if __name__ == '__main__':
 	#im_separate_draw(g_samples[:1000], log_path_sample)
 
 	g_samples = apply_lap_pyramid(all_imgs_stack[sample_size:2*sample_size])
+	im_block_draw(g_samples, 5, log_path+'/lap_samples.png', border=True)
 
 	'''
 	Multi Level FID
