@@ -311,6 +311,7 @@ def im_separate_draw(im_data, save_dir):
 	for i, im in enumerate(images):
 		fname = save_dir + '/{}.jpg'.format(i)
 		Image.fromarray(im, 'RGB').save(fname, 'JPEG')
+
 '''
 Draws sample_size**2 randomly selected images from im_data.
 If im_labels is provided: selects sample_size images for each im_label and puts in columns.
@@ -389,8 +390,40 @@ def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
 	#return im_data_border
 
 '''
+Draws the given layers of the pyramid.
+pyramid: [l0, l1, ..., reconst] each shape [b, h, w, c] with values (-1,1)
+'''
+def pyramid_draw(pyramid, path):
+	n, h, w, c = pyramid[-1].shape
+	im_l0 = TFutil.get().upsample(pyramid[0], times=2)
+	im_l1 = TFutil.get().upsample(pyramid[1])
+	im_l2 = pyramid[2]
+	im_rec = pyramid[-1]
+	im_comb = np.zeros((n, 4, h, w, c))
+	im_comb[:, 0, ...] = im_l0
+	im_comb[:, 1, ...] = im_l1
+	im_comb[:, 2, ...] = im_l2
+	im_comb[:, 3, ...] = im_rec
+	block_draw(im_comb, path, border=True)
+
+'''
+Samples from all layers of the generator pyramid and draws them if path is specified.
+'''
+def sample_pyramid(ganist, path=None, sample_size=10):
+	zi = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
+		size=[sample_size, ganist.z_dim]).astype(tf_ganist.np_dtype)
+	samples_l0 = sample_ganist(ganist, sample_size, zi_data=zi, output_type='l0')
+	samples_l1 = sample_ganist(ganist, sample_size, zi_data=zi, output_type='l1')
+	samples_l2 = sample_ganist(ganist, sample_size, zi_data=zi, output_type='l2')
+	samples_rec = sample_ganist(ganist, sample_size, zi_data=zi, output_type='rec')
+	pyramid = [samples_l0, samples_l1, samples_l2, samples_rec]
+	if path is not None:
+		pyramid_draw(pyramid, path)
+	return pyramid
+
+'''
 im_data should be a (columns, rows, imh, imw, imc).
-im_data values should be in [0, 1].
+im_data values should be in [-1, 1].
 If c is not 3 then draws first channel only.
 '''
 def block_draw(im_data, path, separate_channels=False, border=False):
@@ -407,39 +440,45 @@ def block_draw(im_data, path, separate_channels=False, border=False):
 	im_draw = im_draw.reshape([cols, imh*rows, imw, imc])
 	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
 	im_draw = (im_draw + 1.0) / 2.0
+	
+	### new draw without matplotlib
+	images = np.clip(np.rint(im_draw * 255.0), 0.0, 255.0).astype(np.uint8)
+	Image.fromarray(images, 'RGB').save(path)
+	return
+
 	### plots
-	fig = plt.figure(0)
-	fig.clf()
-	if not separate_channels or im_draw.shape[-1] != 3:
-		ax = fig.add_subplot(1, 1, 1)
-		if im_draw.shape[-1] == 1:
-			ims = ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
-		else:
-			ims = ax.imshow(im_draw)
-		ax.set_axis_off()
-		#fig.colorbar(ims)
-		fig.savefig(path, dpi=300)
-	else:
-		im_tmp = np.zeros(im_draw.shape)
-		ax = fig.add_subplot(1, 3, 1)
-		im_tmp[..., 0] = im_draw[..., 0]
-		ax.set_axis_off()
-		ax.imshow(im_tmp)
-
-		ax = fig.add_subplot(1, 3, 2)
-		im_tmp[...] = 0.0
-		im_tmp[..., 1] = im_draw[..., 1]
-		ax.set_axis_off()
-		ax.imshow(im_tmp)
-
-		ax = fig.add_subplot(1, 3, 3)
-		im_tmp[...] = 0.0
-		im_tmp[..., 2] = im_draw[..., 2]
-		ax.set_axis_off()
-		ax.imshow(im_tmp)
-
-		fig.subplots_adjust(wspace=0, hspace=0)
-		fig.savefig(path, dpi=300)
+	#fig = plt.figure(0)
+	#fig.clf()
+	#if not separate_channels or im_draw.shape[-1] != 3:
+	#	ax = fig.add_subplot(1, 1, 1)
+	#	if im_draw.shape[-1] == 1:
+	#		ims = ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
+	#	else:
+	#		ims = ax.imshow(im_draw)
+	#	ax.set_axis_off()
+	#	#fig.colorbar(ims)
+	#	fig.savefig(path, dpi=300)
+	#else:
+	#	im_tmp = np.zeros(im_draw.shape)
+	#	ax = fig.add_subplot(1, 3, 1)
+	#	im_tmp[..., 0] = im_draw[..., 0]
+	#	ax.set_axis_off()
+	#	ax.imshow(im_tmp)
+	#	
+	#	ax = fig.add_subplot(1, 3, 2)
+	#	im_tmp[...] = 0.0
+	#	im_tmp[..., 1] = im_draw[..., 1]
+	#	ax.set_axis_off()
+	#	ax.imshow(im_tmp)
+	#	
+	#	ax = fig.add_subplot(1, 3, 3)
+	#	im_tmp[...] = 0.0
+	#	im_tmp[..., 2] = im_draw[..., 2]
+	#	ax.set_axis_off()
+	#	ax.imshow(im_tmp)
+	#	
+	#	fig.subplots_adjust(wspace=0, hspace=0)
+	#	fig.savefig(path, dpi=300)
 
 '''
 Plot and saves layer stats.
@@ -712,14 +751,14 @@ def train_ganist(ganist, im_data, labels=None):
 			#	plt.close(fig)
 
 			### plot layer stats
-			if len(g_sim_list) > 1:
-				plot_layer_stats(g_sim_list, itrs_logs, 'g_sim', log_path)
-			if len(g_nz_list) > 1:
-				plot_layer_stats(g_nz_list, itrs_logs, 'g_nz', log_path, beta_conf=0)
-			if len(d_sim_list) > 1:
-				plot_layer_stats(d_sim_list, itrs_logs, 'd_sim', log_path)
-			if len(d_nz_list) > 1:
-				plot_layer_stats(d_nz_list, itrs_logs, 'd_nz', log_path, beta_conf=0)
+			#if len(g_sim_list) > 1:
+			#	plot_layer_stats(g_sim_list, itrs_logs, 'g_sim', log_path)
+			#if len(g_nz_list) > 1:
+			#	plot_layer_stats(g_nz_list, itrs_logs, 'g_nz', log_path, beta_conf=0)
+			#if len(d_sim_list) > 1:
+			#	plot_layer_stats(d_sim_list, itrs_logs, 'd_sim', log_path)
+			#if len(d_nz_list) > 1:
+			#	plot_layer_stats(d_nz_list, itrs_logs, 'd_nz', log_path, beta_conf=0)
 
 			### save best model
 			if fid_dist < fid_best:
@@ -759,14 +798,14 @@ def train_ganist(ganist, im_data, labels=None):
 Sample sample_size data points from ganist.
 '''
 def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, 
-	z_data=None, zi_data=None, z_im=None, g_output_type='or'):
+	z_data=None, zi_data=None, z_im=None, output_type='rec'):
 	sampler = sampler if sampler is not None else ganist.step
-	if g_output_type == 'ds':
-		g_samples = np.zeros([sample_size, ganist.data_dim[0]//4, ganist.data_dim[1]//4, ganist.data_dim[2]])
-	elif g_output_type == 'us':
-		g_samples = np.zeros([sample_size, ganist.data_dim[0]*4, ganist.data_dim[1]*4, ganist.data_dim[2]])
+	if output_type == 'l0':
+		g_samples = np.zeros([sample_size, 32, 32, 3])
+	elif output_type == 'l1':
+		g_samples = np.zeros([sample_size, 64, 64, 3])
 	else:
-		g_samples = np.zeros([sample_size, ganist.data_dim[0], ganist.data_dim[1], ganist.data_dim[2]])
+		g_samples = np.zeros([sample_size, 128, 128, 3])
 	
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = batch_start + batch_size
@@ -776,7 +815,7 @@ def sample_ganist(ganist, sample_size, sampler=None, batch_size=64,
 		batch_im = z_im[batch_start:batch_end, ...] if z_im is not None else None
 		g_samples[batch_start:batch_end, ...] = \
 			sampler(batch_im, batch_len, 
-				gen_only=True, z_data=batch_z, zi_data=batch_zi, g_output_type=g_output_type)
+				gen_only=True, z_data=batch_z, zi_data=batch_zi, output_type=output_type)
 	return g_samples
 
 '''
@@ -858,6 +897,7 @@ class TFutil:
 			self.sess = sess
 			self.blur_dict = dict()
 			self.im_dict = dict()
+			self.upsample_dict = dict()
 	
 	def blur_images(self, imgs, ksize, batch_size=64):
 		if ksize == 1 or ksize == 0:
@@ -877,6 +917,29 @@ class TFutil:
 			imgs_blur[batch_start:batch_end, ...] = self.sess.run(blur_layer, 
 				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
 		return imgs_blur
+
+	def upsample(self, imgs, times=1, batch_size=64):
+		imgs_size, h, w, c = imgs.shape
+		imgs_us = np.zeros((imgs_size, h*2**times, w*2**times, c))
+		im_key = imgs.shape[1:]
+		if im_key not in self.im_dict:
+			self.im_dict[im_key] = \
+				tf.placeholder(tf.float32, (None,)+imgs.shape[1:])
+		im_layer = self.im_dict[im_key]
+		
+		us_key = imgs.shape[1:]+(times,)
+		if us_key not in self.upsample_dict:
+			im_x = im_layer
+			for i in range(times):
+				im_x = tf_ganist.tf_upsample(im_x)
+			self.upsample_dict[us_key] = im_x
+		us_layer = self.upsample_dict[us_key]
+		
+		for batch_start in range(0, imgs_size, batch_size):
+			batch_end = min(batch_start+batch_size, imgs_size)
+			imgs_us[batch_start:batch_end, ...] = self.sess.run(us_layer, 
+				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
+		return imgs_us
 
 '''
 Evaluate fid on data
@@ -952,8 +1015,7 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	if draw_path is not None:
 		g_samples = g_samples.reshape((-1,) + im_data.shape[1:])
 		im_block_draw(g_samples, draw_size, draw_path+'.png', border=True)
-		#im_block_draw(g_samples, draw_size, draw_path+'.png', ganist=ganist)
-		#gset_block_draw(ganist, 10, draw_path+'_gset.png', en_color=True)
+		sample_pyramid(ganist, draw_path+'_pyramid.png', 10)
 
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
@@ -1335,20 +1397,8 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_snap_vae)
 	os.system('mkdir -p '+log_path_sum_vae)
 
-	### read and process data **cifar**
-	### >>> dataset sensitive
-	data_path = '/media/evl/Public/Mahyar/Data/mnist.pkl.gz'
-	#stack_mnist_path = '/media/evl/Public/Mahyar/stack_mnist_350k.cpk'
-	#stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_stack_mnist_350k.cpk'
-	stack_mnist_path = '/media/evl/Public/Mahyar/mnist_70k.cpk'
-	stack_mnist_mode_path = '/media/evl/Public/Mahyar/mode_analysis_mnist_70k.cpk'
-	#class_net_path = '/media/evl/Public/Mahyar/Data/mnist_classifier/snapshots/model_100000.h5'
-	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier/snapshots/model_18750.h5'
-	#class_net_path = '/media/evl/Public/Mahyar/Data/cl_classifier_single/snapshots/model_11250.h5'
-	class_net_path = '/media/evl/Public/Mahyar/Data/cl_mnist_classifier/snapshots/model_54375.h5'
-	ganist_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/1_logs_celeba_wganbn_lstatsfc/run_%d/snapshots/model_83333_500000.h5'
-	sample_size = 10000
-	#sample_size = 350000
+	### read and process data
+	sample_size = 1000
 
 	'''
 	DATASET LOADING AND DRAWING
@@ -1486,7 +1536,7 @@ if __name__ == '__main__':
 	### read celeba 128
 	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
 	im_size = 128
-	dataset_size = 20000
+	dataset_size = 2000
 	im_paths = readim_path_from_dir(im_dir)
 	np.random.shuffle(im_paths)
 	im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
@@ -1551,141 +1601,29 @@ if __name__ == '__main__':
 	#print '>>> FID TEST: ', fid_test
 
 	'''
-	CLASSIFIER SETUP SECTION
-	'''
-	### train mnist classifier
-	#val_loss, val_acc = train_mnist_net(mnet, train_imgs, train_labs, val_imgs, val_labs)
-	#print ">>> validation loss: ", val_loss
-	#print ">>> validation accuracy: ", val_acc
-	#sys.exit(0)
-	### load mnist classifier
-	#mnet.load(class_net_path)
-
-	### test mnist classifier
-	#test_loss, test_acc = eval_mnist_net(mnet, test_imgs, test_labs, batch_size=64)
-	#print ">>> test loss: ", test_loss
-	#print ">>> test accuracy: ", test_acc
-
-	'''
 	GAN SETUP SECTION
 	'''
-	### print scaled ims
-	#im_samples_ds = sample_ganist(ganist, 25, 
-	#	sampler=ganist.step, g_output_type='ds', z_im=all_imgs_stack[:25])
-	#im_block_draw(im_samples_ds, 5, log_path+'/true_samples_ds.png', border=True)
-
-	#im_samples_us = sample_ganist(ganist, 25, 
-	#	sampler=ganist.step, g_output_type='us', z_im=all_imgs_stack[:25])
-	#im_block_draw(im_samples_us, 5, log_path+'/true_samples_us.png', border=True)
-
 	### train ganist
-	#train_ganist(ganist, train_imgs, train_labs)
+	train_ganist(ganist, train_imgs, train_labs)
 
 	### load ganist
-	#load_path = log_path_snap+'/model_best.h5'
+	load_path = log_path_snap+'/model_best.h5'
 	#load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
-	#ganist.load(load_path.format(run_seed))
-
-	### gset draws: run sample_draw before block_draw_top to load learned gset prior
-	##gset_sample_draw(ganist, 10)
-	#gset_block_draw(ganist, 10, log_path+'/gset_samples.png', border=True)
-	#gset_block_draw_top(ganist, 10, log_path+'/gset_top_samples.png', pr_th=0.99 / ganist.g_num)
-	##sys.exit(0)
-
-	'''
-	REAL DATASET CREATE OR LOAD AND EVAL
-	'''
-	#r_samples = all_imgs_stack
-	
-	### create stack mnist dataset of all_imgs_size*factor
-	'''
-	factor = sample_size // all_imgs_stack.shape[0]
-	mod = sample_size % all_imgs_stack.shape[0]
-	if mod > 0:
-		ims, labs = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
-		ims_mod = ims[:mod, ...]
-		labs_mod = labs[:mod, ...]
-	if factor > 0:
-		r_samples = np.zeros((factor,)+all_imgs_stack.shape)
-		r_labs = np.zeros((factor,)+all_labs_stack.shape)
-		for i in range(factor):
-			ims, labs = get_stack_mnist(all_imgs, all_labs, stack_size=mnist_stack_size)
-			r_samples[i, ...] = ims[...]
-			r_labs[i, ...] = labs[...]
-		r_samples = r_samples.reshape((-1,)+all_imgs_stack.shape[1:])
-		r_labs = r_labs.flatten()
-		if mod > 0:
-			r_samples = np.concatenate((r_samples, ims_mod), axis=0)
-			r_labs = np.concatenate((r_labs, labs_mod), axis=0)
-	else:
-		r_samples = ims_mod
-		r_labs = labs_mod
-
-	print '>>> r_samples shape: ', r_samples.shape
-	print '>>> r_labs shape: ', r_labs.shape
-	'''
-	#with open(log_path+'/stack_mnist_dataset.cpk', 'wb') as fs:
-	#	pk.dump([r_samples, r_labs], fs)
-	### OR load stack mnist dataset
-	#with open(stack_mnist_path, 'rb') as fs:
-	#	r_samples, r_labs = pk.load(fs)
-	### mode eval true data
-	#eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_test')
-	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples,
-	#	log_path+'/mode_analysis_true.cpk', labels=r_labs)
-	### mode eval real data
-	#eval_sample_quality(mnet, r_samples, log_path+'/sample_quality_real')
-	#mode_num, mode_count, mode_vars = mode_analysis(mnet, r_samples, 
-	#	log_path+'/mode_analysis_real.cpk')
-
-	### OR load mode eval real data
-	#with open(stack_mnist_mode_path, 'rb') as fs:
-	#	mode_num, mode_count, mode_vars = pk.load(fs)
-
-	#pr = 1.0 * mode_count / np.sum(mode_count)
-	#print ">>> real_mode_num: ", mode_num
-	#print ">>> real_mode_count_std: ", np.std(mode_count)
-	#print ">>> real_mode_var ", np.mean(mode_vars)
+	ganist.load(load_path.format(run_seed))
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
-	#gan_model = ganist#vae
-	#sampler = ganist.step#vae.step
+	gan_model = ganist#vae
+	sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
-	#g_samples = sample_ganist(gan_model, sample_size, sampler=sampler)
-	#print '>>> g_samples shape: ', g_samples.shape
-	#im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
-	#im_separate_draw(g_samples[:1000], log_path_sample)
+	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler)
+	print '>>> g_samples shape: ', g_samples.shape
+	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
+	im_separate_draw(g_samples[:1000], log_path_sample)
+	sample_pyramid(ganist, log_path+'/gen_samples_pyramid.png')
 	#sys.exit(0)
-
-	### mode eval gen data
-	### >>> dataset sensitive: draw_list
-	#eval_sample_quality(mnet, g_samples, log_path+'/sample_quality_gen')
-	#mode_num, mode_count, mode_vars = mode_analysis(mnet, g_samples, 
-	#	log_path+'/mode_analysis_gen.cpk')#, draw_list=range(1000), draw_name='gen')
-	#pg = 1.0 * mode_count / np.sum(mode_count)
-	#print ">>> gen_mode_num: ", mode_num
-	#print ">>> gen_mode_count_std: ", np.std(mode_count)
-	#print ">>> gen_mode_var: ", np.mean(mode_vars)
-
-	### KL and JSD computation
-	#kl_g = np.sum(pg*np.log(1e-6 + pg / (pr+1e-6)))
-	#kl_p = np.sum(pr*np.log(1e-6 + pr / (pg+1e-6)))
-	#jsd = (np.sum(pg*np.log(1e-6 + 2 * pg / (pg+pr+1e-6))) + \
-	#np.sum(pr*np.log(1e-6 + 2 * pr / (pg+pr+1e-6)))) / 2.0
-	#print ">>> KL(g||p): ", kl_g
-	#print ">>> KL(p||g): ", kl_p
-	#print ">>> JSD(g||p): ", jsd
-
-	### FID scores
-	#fid_r = eval_fid(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size])
-	#fid_r = -1
-	#fid_g = eval_fid(sess, g_samples, all_imgs_stack[:sample_size])
-	#with open(log_path+'/fid_log.txt', 'w+') as fs:
-	#	print >>fs, '>>> fid_gen: %f --- fid_real: %f' \
-	#		% (fid_g, fid_r)
 
 	'''
 	Read data from ImageNet and BigGan
@@ -1745,8 +1683,8 @@ if __name__ == '__main__':
 	#print g_samples.shape
 	#im_separate_draw(g_samples[:1000], log_path_sample)
 
-	g_samples = apply_lap_pyramid(all_imgs_stack[sample_size:2*sample_size])
-	im_block_draw(g_samples, 5, log_path+'/lap_samples.png', border=True)
+	#g_samples = apply_lap_pyramid(all_imgs_stack[sample_size:2*sample_size])
+	#im_block_draw(g_samples, 5, log_path+'/lap_samples.png', border=True)
 
 	'''
 	Multi Level FID

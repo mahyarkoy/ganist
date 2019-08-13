@@ -20,7 +20,7 @@ global_color_set = global_cmap(global_color_locs)
 
 fid_paths = [
 	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_celeba128cc_gauss41/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/35_logs_celeba128cc_lap3_reconst/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/35_logs_lap3_reconst_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/fid_avg/run_%d/fid_levels_r.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
 	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/31_logs_ganms_celeba128cc_5e4_10e4/run_%d/fid_levels.cpk'

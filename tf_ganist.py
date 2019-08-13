@@ -193,7 +193,7 @@ def tf_upsample(im, smooth=True):
 	if w%2 == 1:
 		im_us = im_us[:, :, :-1, :]
 	output = tf_binomial_blur(im_us, kernel=np.array([1., 2., 1.])/2.) if smooth == True else im_us
-	print '>>> tf upsample shape: ', output.get_shape().as_list()
+	#print '>>> tf upsample shape: ', output.get_shape().as_list()
 	return output
 
 '''
@@ -203,7 +203,7 @@ im: shape [b, h, w, c]
 def tf_downsample(im):
 	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	output = tf.nn.max_pool(im, ksize=[1, 1, 1, 1], strides=[1, 2, 2, 1], padding='SAME')
-	print '>>> tf downsample shape: ', output.get_shape().as_list()
+	#print '>>> tf downsample shape: ', output.get_shape().as_list()
 	return output
 
 '''
@@ -222,6 +222,11 @@ def tf_binomial_blur(im, kernel=np.array([1., 4., 6., 4., 1.])/16.):
 		kernel_y, [1, 1, 1, 1], padding='SAME')
 	return output
 
+'''
+tf constructs a laplacian pyramid as a list [layer0, layer1, ...].
+im: shape [b, h, w, c]
+levels: number of layers of the pyramid
+'''
 def tf_make_lap_pyramid(im, levels=3):
 	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	pyramid = list()
@@ -234,11 +239,15 @@ def tf_make_lap_pyramid(im, levels=3):
 			im_us = tf_upsample(im_ds)
 			pyramid.append(im - im_us)
 			im = im_ds
-	return pyramid
+	return pyramid[::-1]
 
+'''
+tf reconstruct original images from the given laplacian pyramid.
+pyramid: list of [layer0, layer1, ...] of the gaussian pyramid where each layer [b, h, w, c]
+'''
 def tf_reconst_lap_pyramid(pyramid):
-	reconst = pyramid[-1]
-	for im in pyramid[-2::-1]:
+	reconst = pyramid[0]
+	for im in pyramid[1:]:
 		im_us = tf_upsample(reconst)
 		reconst = im_us + im
 	return reconst
@@ -311,126 +320,104 @@ class Ganist:
 		with tf.name_scope('ganist'):
 			### define placeholders for image and label inputs **g_num** **mt**
 			self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
-			#self.z_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='z_input')
-			#self.z_input = tf.placeholder(tf_dtype, [None, 1, 1, 1], name='z_input')
-			self.z_input = tf.placeholder(tf.int32, [None], name='z_input')
 			self.zi_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='zi_input')
-			self.e_input = tf.placeholder(tf_dtype, [None, 1, 1, 1], name='e_input')
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
-			### build generator **mt**
-			self.g_layer = self.build_gen(self.z_input, self.zi_input, self.g_act, self.train_phase)
-			self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "g_net")
-			#self.g_vars_sub = [v for v in self.g_vars if 'fcz' in v.name]
+			### apply pyramid for images
+			self.im_input_l0, self.im_input_l1, self.im_input_l2 = \
+				tf_make_lap_pyramid(self.im_input, levels=3)
+			self.im_input_rec = tf_reconst_lap_pyramid([self.im_input_l0, self.im_input_l1, self.im_input_l2])
 
-			### filter images
-			#self.r_layer_lp = self.apply_filter(self.im_input)
-			#self.r_layer_hp = self.im_input - self.r_layer_lp
-			#self.g_layer_lp = self.apply_filter(self.g_layer)
-			#self.g_layer_hp = self.g_layer - self.g_layer_lp
+			### build generators at each pyramid level
+			batch_size = tf.shape(self.zi_input)[0]
+			#zi = tf.random_uniform([batch_size, self.z_dim], 
+			#		minval=-self.z_range, maxval=self.z_range, dtype=tf_dtype)
+			self.g_layer_l0 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
+				im_size=32, sub_scope='l0')
+			self.g_layer_l1 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
+				im_size=64, sub_scope='l1')
+			self.g_layer_l2 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
+				im_size=128, sub_scope='l2')
+			self.g_vars_l0 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l0')
+			self.g_vars_l1 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l1')
+			self.g_vars_l2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l2')
 
-			sub_layers = ['conv3']
-			sub_layers_g = ['fcz']
-			### build discriminator original resolution		
+			### reconst from generated pyramid
+			self.g_layer_rec = tf_reconst_lap_pyramid([self.g_layer_l0, self.g_layer_l1, self.g_layer_l2])
+
+			### collect g vars
+			self.g_vars = self.g_vars_l0 + self.g_vars_l1 + self.g_vars_l2
+
+			### build discriminator pyramid l0
 			### build model
-			self.r_logits, self.g_logits, self.rg_logits, self.rg_layer = \
-				self.build_dis_logits(self.im_input, self.g_layer, 
-					self.train_phase, sub_scope='or')
-			self.d_vars_or = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net/or")
-			### d loss original
-			d_loss_or, rg_grad_norm_output = \
-				self.build_dis_loss(self.r_logits, self.g_logits, 
-					self.rg_logits, self.rg_layer)
-			### g loss original
-			g_loss_or = self.build_gen_loss(self.g_logits)
+			self.r_logits_l0, self.g_logits_l0, self.rg_logits_l0, self.rg_layer_l0 = \
+				self.build_dis_logits(self.im_input_l0, self.g_layer_l0, 
+					self.train_phase, im_size=32, sub_scope='l0')
+			self.d_vars_l0 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd_net/l0')
+			### d loss l0
+			d_loss_l0, rg_grad_norm_output_l0 = \
+				self.build_dis_loss(self.r_logits_l0, self.g_logits_l0, 
+					self.rg_logits_l0, self.rg_layer_l0)
+			### g loss l0
+			g_loss_l0 = self.build_gen_loss(self.g_logits_l0)
 
-			### build discriminator down scaled (x1/4)
-			### build model
-			self.im_input_ds = tf.nn.avg_pool(self.im_input, 
-				ksize=[1, 5, 5, 1], strides=[1, 4, 4, 1], padding='SAME')
-			self.g_layer_ds = tf.nn.avg_pool(self.g_layer, 
-				ksize=[1, 5, 5, 1], strides=[1, 4, 4, 1], padding='SAME')
-			## change below to apply on downscaled image
-			self.r_logits_ds, self.g_logits_ds, self.rg_logits_ds, self.rg_layer_ds = \
-				self.build_dis_logits(self.im_input, self.g_layer, 
-					self.train_phase, sub_scope='ds')
-			self.d_vars_ds = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net/ds")
-			print '>>> im_ds shape:', self.im_input_ds.get_shape().as_list()
-			### d loss downscaled
-			d_loss_ds, rg_grad_norm_output_ds = \
-				self.build_dis_loss(self.r_logits_ds, self.g_logits_ds, 
-					self.rg_logits_ds, self.rg_layer_ds)
-			### g loss downscaled
-			g_loss_ds = self.build_gen_loss(self.g_logits_ds)
+			### build discriminator pyramid l1
+			self.r_logits_l1, self.g_logits_l1, self.rg_logits_l1, self.rg_layer_l1 = \
+				self.build_dis_logits(self.im_input_l1, self.g_layer_l1, 
+					self.train_phase, im_size=64, sub_scope='l1')
+			self.d_vars_l1 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd_net/l1')
+			### d loss l1
+			d_loss_l1, rg_grad_norm_output_l1 = \
+				self.build_dis_loss(self.r_logits_l1, self.g_logits_l1, 
+					self.rg_logits_l1, self.rg_layer_l1)
+			### g loss l1
+			g_loss_l1 = self.build_gen_loss(self.g_logits_l1)
 
-			### build discriminator up scaled (x4)
-			### build model
-			self.im_input_us = tf.image.resize_nearest_neighbor(self.im_input, 
-				[self.data_dim[0]*4, self.data_dim[1]*4])
-			self.g_layer_us = tf.image.resize_nearest_neighbor(self.g_layer, 
-				[self.data_dim[0]*4, self.data_dim[1]*4])
-			## change below to apply on upscaled images
-			self.r_logits_us, self.g_logits_us, self.rg_logits_us, self.rg_layer_us = \
-				self.build_dis_logits(self.im_input, self.g_layer, 
-					self.train_phase, sub_scope='us')
-			self.d_vars_us = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "d_net/us")
-			print '>>> im_us shape:', self.im_input_us.get_shape().as_list()
-			### d loss upscaled
-			d_loss_us, rg_grad_norm_output_us = \
-				self.build_dis_loss(self.r_logits_us, self.g_logits_us, 
-					self.rg_logits_us, self.rg_layer_us)
-			### g loss upscaled
-			g_loss_us = self.build_gen_loss(self.g_logits_us)
+			### build discriminator pyramid l2
+			self.r_logits_l2, self.g_logits_l2, self.rg_logits_l2, self.rg_layer_l2 = \
+				self.build_dis_logits(self.im_input_l2, self.g_layer_l2, 
+					self.train_phase, im_size=128, sub_scope='l2')
+			self.d_vars_l2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd_net/l2')
+			### d loss l2
+			d_loss_l2, rg_grad_norm_output_l2 = \
+				self.build_dis_loss(self.r_logits_l2, self.g_logits_l2, 
+					self.rg_logits_l2, self.rg_layer_l2)
+			### g loss l2
+			g_loss_l2 = self.build_gen_loss(self.g_logits_l2)
+
+			### build discriminator pyramid reconst
+			self.r_logits_rec, self.g_logits_rec, self.rg_logits_rec, self.rg_layer_rec = \
+				self.build_dis_logits(self.im_input, self.g_layer_rec, 
+					self.train_phase, im_size=128, sub_scope='rec')
+			self.d_vars_rec = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd_net/rec')
+			### d loss rec
+			d_loss_rec, rg_grad_norm_output_rec = \
+				self.build_dis_loss(self.r_logits_rec, self.g_logits_rec, 
+					self.rg_logits_rec, self.rg_layer_rec)
+			### g loss rec
+			g_loss_rec = self.build_gen_loss(self.g_logits_rec)
 
 			### collect d vars
-			self.d_vars = self.d_vars_or #+ self.d_vars_ds + self.d_vars_us
+			self.d_vars = self.d_vars_l0 + self.d_vars_l1 + self.d_vars_l2 + self.d_vars_rec
 
 			### collect d loss
-			self.rg_grad_norm_output = (rg_grad_norm_output + rg_grad_norm_output_ds + rg_grad_norm_output_us) / 3.
-			self.d_loss_total = d_loss_or #+ \
-				#d_loss_ds + d_loss_us
-				#self.hp_loss_weight * d_loss_hp
+			self.rg_grad_norm_output = (rg_grad_norm_output_l0 + rg_grad_norm_output_l1 + \
+				rg_grad_norm_output_l2 + rg_grad_norm_output_rec) / 3.
+			self.d_loss_total = d_loss_l0 + d_loss_l1 + d_loss_l2 + d_loss_rec
 
 			### d opt total
 			self.d_opt_handle = \
 				tf.train.AdamOptimizer(self.d_lr, beta1=self.d_beta1, beta2=self.d_beta2)
 			d_grads_vars = self.d_opt_handle.compute_gradients(self.d_loss_total, self.d_vars)
 			self.d_opt_total = self.d_opt_handle.apply_gradients(d_grads_vars)
-			d_grads_vars_sub = [gv for gv in d_grads_vars \
-				if any(l in gv[1].name for l in sub_layers)]
-			self.d_opt_total_sub = self.d_opt_handle.apply_gradients(d_grads_vars_sub)
-
-			### d opt original resolution
-			d_grads_vars_or = self.d_opt_handle.compute_gradients(d_loss_or, self.d_vars_or)
-			self.d_opt_or = self.d_opt_handle.apply_gradients(d_grads_vars_or)
-
-			### d opt original resolution and downscaled
-			d_grads_vars_ords = self.d_opt_handle.compute_gradients(d_loss_or+d_loss_ds, 
-				self.d_vars_or+self.d_vars_ds)
-			self.d_opt_ords = self.d_opt_handle.apply_gradients(d_grads_vars_ords)
-
+			
 			### collect g loss
-			#self.g_loss_hp = self.build_gen_loss(self.g_logits_hp)
-			self.g_loss_total = g_loss_or #+ \
-				#g_loss_ds + g_loss_us
-				#self.hp_loss_weight * self.g_loss_hp
-				#self.en_loss_weight * tf.reduce_mean(self.g_en_loss)
+			self.g_loss_total = g_loss_l0 + g_loss_l1 + g_loss_l2 + g_loss_rec
 
 			### g opt total
 			self.g_opt_handle = tf.train.AdamOptimizer(self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2)
 			g_grads_vars = self.g_opt_handle.compute_gradients(self.g_loss_total, self.g_vars)
 			self.g_opt_total = self.g_opt_handle.apply_gradients(g_grads_vars)
-			g_grads_vars_sub = [gv for gv in g_grads_vars \
-				if any(l in gv[1].name for l in sub_layers_g)]
-			self.g_opt_total_sub = self.g_opt_handle.apply_gradients(g_grads_vars_sub)
-
-			### g opt original resolution discriminator only
-			g_grads_vars_or = self.g_opt_handle.compute_gradients(g_loss_or, self.g_vars)
-			self.g_opt_or = self.g_opt_handle.apply_gradients(g_grads_vars_or)
-
-			### g opt original resolution and downscaled discriminator
-			g_grads_vars_ords = self.g_opt_handle.compute_gradients(g_loss_or+g_loss_ds, self.g_vars)
-			self.g_opt_ords = self.g_opt_handle.apply_gradients(g_grads_vars_ords)
 
 			### bn variables
 			self.bn_moving_vars = [v for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES) \
@@ -441,60 +428,8 @@ class Ganist:
 			### collect opt
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 			with tf.control_dependencies(update_ops):
-				## change below to control the contribution of each d loss to d
 				self.d_opt = tf.group(self.d_opt_total)
-				self.d_opt_sub = tf.group(self.d_opt_total_sub)
 				self.g_opt = tf.group(self.g_opt_total)
-				self.g_opt_sub = tf.group(self.g_opt_total_sub)
-				### extra opts
-				self.d_opt_sub_or = tf.group(self.d_opt_or)
-				self.d_opt_sub_ords = tf.group(self.d_opt_ords)
-				self.g_opt_sub_or = tf.group(self.g_opt_or)
-				self.g_opt_sub_ords = tf.group(self.g_opt_ords)
-
-			### build discriminator for low pass
-			#self.r_logits, self.r_hidden = self.build_dis(self.im_input, self.train_phase)
-			#self.g_logits, self.g_hidden = self.build_dis(self.g_layer, self.train_phase, reuse=True)
-			#self.r_en_logits = self.build_encoder(self.r_hidden, self.d_act, self.train_phase)
-			#self.g_en_logits = self.build_encoder(self.g_hidden, self.d_act, self.train_phase, reuse=True)
-
-			### real gen manifold interpolation
-			#rg_layer = (1.0 - self.e_input) * self.g_layer + self.e_input * self.im_input
-			#self.rg_logits, _ = self.build_dis(rg_layer, self.train_phase, reuse=True)
-
-			### build discriminator for high pass
-			#self.r_logits_hp, self.r_hidden_hp = self.build_dis(self.r_layer_hp, self.train_phase, reuse=True)
-			#self.r_logits_hp = self.build_fc(self.r_hidden_hp)
-			#self.g_logits_hp, self.g_hidden_hp = self.build_dis(self.g_layer_hp, self.train_phase, reuse=True)
-			#self.g_logits_hp = self.build_fc(self.g_hidden_hp, reuse=True)
-
-			### real gen manifold interpolation for high pass
-			#rg_layer_hp = (1.0 - self.e_input) * self.g_layer_hp + self.e_input * self.r_layer_hp
-			#self.rg_logits_hp, rg_hidden_hp = self.build_dis(rg_layer_hp, self.train_phase, reuse=True)
-			#self.rg_logits_hp = self.build_fc(rg_hidden_hp, reuse=True)
-
-			#d_loss_hp, rg_grad_norm_output_hp = \
-			#	self.build_dis_loss(self.r_logits_hp, self.g_logits_hp, self.rg_logits_hp, rg_layer_hp)
-			#self.rg_grad_norm_output = (rg_grad_norm_output_hp + rg_grad_norm_output ) / 2.0
-
-			### generated encoder loss: lower bound on mutual_info(z_input, generator id) **g_num**
-			#self.g_en_loss = tf.nn.softmax_cross_entropy_with_logits(
-			#	labels=tf.one_hot(tf.reshape(self.z_input, [-1]), self.g_num, dtype=tf_dtype), 
-			#	logits=self.g_en_logits)
-
-			### real encoder entropy: entropy of g_id given real image, marginal entropy of g_id **g_num**
-			#self.r_en_h = -tf.reduce_mean(tf.reduce_sum(tf.nn.softmax(self.r_en_logits) * tf.nn.log_softmax(self.r_en_logits), axis=1))
-			#r_en_marg_pr = tf.reduce_mean(tf.nn.softmax(self.r_en_logits), axis=0)
-			#self.r_en_marg_hlb = -tf.reduce_sum(r_en_marg_pr * tf.log(r_en_marg_pr + 1e-8))
-			#print 'r_en_logits_shape: ', self.r_en_logits.shape
-
-			### discounter
-			#self.rl_counter = tf.get_variable('rl_counter', dtype=tf_dtype,
-			#	initializer=1.0)
-
-			### e loss combination
-			#self.en_loss_total = tf.reduce_mean(self.g_en_loss) + \
-			#	0. * self.r_en_h + 0.* -self.r_en_marg_hlb
 
 			### compute stat of weights
 			self.nan_vars = 0.
@@ -516,78 +451,32 @@ class Ganist:
 
 			self.g_vars_count = 0
 			self.d_vars_count = 0
-			#self.e_vars_count = 0
 			for v in self.g_vars:
 				self.g_vars_count += int(np.prod(v.get_shape()))
 			for v in self.d_vars:
 				self.d_vars_count += int(np.prod(v.get_shape()))
-			#for v in self.e_vars:
-			#	self.e_vars_count += int(np.prod(v.get_shape()))
 
 			### compute conv layer learning variation
 			self.g_sim_layer_list = ['conv0', 'conv1', 'conv2', 'conv3', 'fcz']
-			self.g_backup, self.g_layer_sim, self.g_layer_non_zero = compute_layer_sim(self.g_sim_layer_list, self.g_vars)
+			self.g_backup, self.g_layer_sim, self.g_layer_non_zero = compute_layer_sim(self.g_sim_layer_list, self.g_vars_l0)
 
 			self.d_sim_layer_list = ['conv0', 'conv1', 'conv2', 'conv3', 'fco']
-			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars_or)
+			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars_l0)
 
 			### summaries **g_num**
-			g_loss_or_sum = tf.summary.scalar("g_loss", g_loss_or)
-			d_loss_or_sum = tf.summary.scalar("d_loss", d_loss_or)
-			g_loss_ords_sum = tf.summary.scalar("g_loss", g_loss_or+g_loss_ds)
-			d_loss_ords_sum = tf.summary.scalar("d_loss", d_loss_or+d_loss_ds)
-			g_loss_ordsus_sum = tf.summary.scalar("g_loss", g_loss_or+g_loss_ds+g_loss_us)
-			d_loss_ordsus_sum = tf.summary.scalar("d_loss", d_loss_or+d_loss_ds+d_loss_us)
-			#e_loss_sum = tf.summary.scalar("e_loss", self.en_loss_total)
-			self.summary_or = tf.summary.merge([g_loss_or_sum, d_loss_or_sum])
-			self.summary_ords = tf.summary.merge([g_loss_ords_sum, d_loss_ords_sum])
-			self.summary_ordsus = tf.summary.merge([g_loss_ordsus_sum, d_loss_ordsus_sum])
+			g_loss_sum = tf.summary.scalar("g_loss", self.g_loss_total)
+			d_loss_sum = tf.summary.scalar("d_loss", self.d_loss_total)
+			self.summary = tf.summary.merge([g_loss_sum, d_loss_sum])
 
-			### Policy gradient updates **g_num**
-			#self.pg_var = tf.get_variable('pg_var', dtype=tf_dtype,
-			#	initializer=self.g_rl_vals)
-			#self.pg_q = tf.get_variable('pg_q', dtype=tf_dtype,
-			#	initializer=self.g_rl_vals)
-			#self.pg_base = tf.get_variable('pg_base', dtype=tf_dtype,
-			#	initializer=0.0)
-			#self.pg_var_flat = self.pg_temp * tf.reshape(self.pg_var, [1, -1])
-			
-			### log p(x) for the selected policy at each batch location
-			#log_soft_policy = -tf.nn.softmax_cross_entropy_with_logits(
-			#	labels=tf.one_hot(tf.reshape(self.z_input, [-1]), self.g_num, dtype=tf_dtype), 
-			#	logits=tf.tile(self.pg_var_flat, tf.shape(tf.reshape(self.z_input, [-1, 1]))))
-			
-			#self.gi_h = -tf.reduce_sum(tf.nn.softmax(self.pg_var) * tf.nn.log_softmax(self.pg_var))
-			
-			### policy gradient reward
-			#pg_reward = tf.reduce_mean(self.r_en_logits, axis=0)
-			
-			### critic update (q values update)
-			#rl_counter_opt = tf.assign(self.rl_counter, self.rl_counter * 0.999)
-
-			### r_en_logits as q values
-			#pg_q_opt = tf.assign(self.pg_q, (1-self.pg_q_lr)*self.pg_q + \
-			#	self.pg_q_lr * pg_reward)
-
-			### cross entropy E_x H(p(c|x)||q(c))
-			#with tf.control_dependencies([pg_q_opt, rl_counter_opt]):
-			#	en_pr = tf.nn.softmax(self.r_en_logits)
-			#	pg_loss_total = -tf.reduce_mean(en_pr * tf.nn.log_softmax(self.pg_var)) \
-			#		- 1000. * self.rl_counter * self.gi_h
-
-			#self.pg_opt = tf.train.AdamOptimizer(
-			#		self.pg_lr, beta1=self.pg_beta1, beta2=self.pg_beta2).minimize(
-			#		pg_loss_total, var_list=[self.pg_var])
-
-	def build_dis_logits(self, im_data, g_data, train_phase, sub_scope='or'):
+	def build_dis_logits(self, im_data, g_data, train_phase, im_size, sub_scope='or'):
 		int_rand = tf.random_uniform([tf.shape(im_data)[0]], minval=0.0, maxval=1.0, dtype=tf_dtype)
 		int_rand = tf.reshape(int_rand, [-1, 1, 1, 1])
 		### build discriminator for low pass
-		r_logits, r_hidden = self.build_dis(im_data, train_phase, sub_scope=sub_scope)
-		g_logits, g_hidden = self.build_dis(g_data, train_phase, sub_scope=sub_scope, reuse=True)
+		r_logits, r_hidden = self.build_dis(im_data, train_phase, im_size, sub_scope=sub_scope)
+		g_logits, g_hidden = self.build_dis(g_data, train_phase, im_size, sub_scope=sub_scope, reuse=True)
 		### real gen manifold interpolation
 		rg_layer = (1.0 - int_rand) * g_data + int_rand * im_data
-		rg_logits, _ = self.build_dis(rg_layer, train_phase, sub_scope=sub_scope, reuse=True)
+		rg_logits, _ = self.build_dis(rg_layer, train_phase, im_size, sub_scope=sub_scope, reuse=True)
 		return r_logits, g_logits, rg_logits, rg_layer
 
 	def build_dis_loss(self, r_logits, g_logits, rg_logits, rg_layer):
@@ -638,79 +527,71 @@ class Ganist:
 
 		return tf.reduce_mean(g_loss)
 
-	def build_gen(self, z, zi, act, train_phase):
+	def build_gen(self, zi, act, train_phase, im_size, sub_scope='or'):
 		train_phase = True
 		ol = list()
 		with tf.variable_scope('g_net'):
-			for gi in range(self.g_num):
-				with tf.variable_scope('gnum_%d' % gi):
-					im_size = self.data_dim[0]
-					batch_size = tf.shape(z)[0]
+			with tf.variable_scope(sub_scope):
+				bn = tf.contrib.layers.batch_norm
+				### setup based on size
+				if im_size == 32:
+					z_fc = act(bn(dense(zi, 4*4*256, scope='fcz'),
+						is_training=train_phase))
+					h0 = tf.reshape(z_fc, [-1, 4, 4, 256])
+					h1 = h0
+				elif im_size == 64:
+					z_fc = act(bn(dense(zi, 8*8*512, scope='fcz'),
+						is_training=train_phase))
+					h0 = tf.reshape(z_fc, [-1, 8, 8, 512])
+					h0_us = tf.image.resize_nearest_neighbor(h0, [16, 16], name='us0')
+					h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
+						is_training=train_phase))
+				elif im_size == 128:
+					z_fc = act(bn(dense(zi, 8*8*512, scope='fcz'),
+						is_training=train_phase))
+					h0 = tf.reshape(z_fc, [-1, 8, 8, 512])
+					h0_us = tf.image.resize_nearest_neighbor(h0, [16, 16], name='us0')
+					h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
+						is_training=train_phase))
+				else:
+					raise ValueError('{} for generator im_size is not defined!'.format(im_size))
 
-					### **g_num**
-					zi = tf.random_uniform([batch_size, self.z_dim], 
-						minval=-self.z_range, maxval=self.z_range, dtype=tf_dtype)
-					bn = tf.contrib.layers.batch_norm
+				### us version: decoding fc code with upsampling and conv hidden layers
+				h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
+				h2 = act(bn(conv2d(h1_us, 128, scope='conv1'),
+					is_training=train_phase))
+
+				h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
+				h3 = act(bn(conv2d(h2_us, 64, scope='conv2'),
+					is_training=train_phase))
 			
-					### fully connected from hidden z 44128 to image shape
-					z_fc = act(bn(dense(zi, 8*8*256*2, scope='fcz'),
-						is_training=train_phase))
-					h0 = tf.reshape(z_fc, [-1, 8, 8, 256*2])
+				h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
+				h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
 
-					### deconv version
-					'''
-					h2 = act(bn(conv2_tr(h1, 64*4, d_h=2, d_w=2, scope='conv1')))
-					h3 = act(bn(conv2_tr(h2, 32*4, d_h=2, d_w=2, scope='conv2')))
-					h4 = conv2_tr(h3, self.data_dim[-1], d_h=2, d_w=2, scope='conv3')
-					'''
-
-					### us version: decoding 4*4*256 code with upsampling and conv hidden layers into 32*32*3
-					h0_us = tf.image.resize_nearest_neighbor(h0, [im_size//8, im_size//8], name='us0')
-					h1 = act(bn(conv2d(h0_us, 128*2, scope='conv0'), 
-						is_training=train_phase))
-
-					h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
-					h2 = act(bn(conv2d(h1_us, 64*2, scope='conv1'),
-						is_training=train_phase))
-
-					h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
-					h3 = act(bn(conv2d(h2_us, 32*2, scope='conv2'),
-						is_training=train_phase))
-				
-					h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
-					h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
-
-					### resnext version
-					'''
-					btnk_dim = 64
-					h2 = resnext(h1, 128, btnk_dim, 'res1', train_phase, 
-								op_type='up', bn=False, act=act)
-					h3 = resnext(h2, 64, btnk_dim//2, 'res2', train_phase,
-								op_type='up', bn=False, act=act)
-					h4 = resnext(h3, 32, btnk_dim//4, 'res3', train_phase, 
-								op_type='up', bn=False, act=act)
-					h5 = conv2d(h4, self.data_dim[-1], scope='convo')
-					'''
-					ol.append(tf.tanh(h4))
-
-			#z_1_hot = tf.reshape(tf.one_hot(z, self.g_num, dtype=tf_dtype), [-1, self.g_num, 1, 1, 1])
-			#z_map = tf.tile(z_1_hot, [1, 1]+self.data_dim)
-			#os = tf.stack(ol, axis=1)
-			#o = tf.reduce_sum(os * z_map, axis=1)
-			o = ol[0]
+				### resnext version
+				'''
+				btnk_dim = 64
+				h2 = resnext(h1, 128, btnk_dim, 'res1', train_phase, 
+							op_type='up', bn=False, act=act)
+				h3 = resnext(h2, 64, btnk_dim//2, 'res2', train_phase,
+							op_type='up', bn=False, act=act)
+				h4 = resnext(h3, 32, btnk_dim//4, 'res3', train_phase, 
+							op_type='up', bn=False, act=act)
+				h5 = conv2d(h4, self.data_dim[-1], scope='convo')
+				'''
+				o = tf.tanh(h4)
 			return o
 
-	def build_dis(self, data_layer, train_phase, reuse=False, sub_scope='or'):
+	def build_dis(self, data_layer, train_phase, im_size, sub_scope='or', reuse=False):
 		act = self.d_act
 		with tf.variable_scope('d_net'):
 			with tf.variable_scope(sub_scope):
 				bn = tf.contrib.layers.batch_norm
+
 				### encoding the 28*28*3 image with conv into 3*3*256
-				
-				h0 = act(conv2d(data_layer, 32*2, d_h=2, d_w=2, scope='conv0', reuse=reuse))
-				h1 = act(conv2d(h0, 64*2, d_h=2, d_w=2, scope='conv1', reuse=reuse))
-				h2 = act(conv2d(h1, 128*2, d_h=2, d_w=2, scope='conv2', reuse=reuse))
-				h3 = act(conv2d(h2, 256*2, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+				h0 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv0', reuse=reuse))
+				h1 = act(conv2d(h0, 128, d_h=2, d_w=2, scope='conv1', reuse=reuse))
+				h2 = act(conv2d(h1, 256, d_h=2, d_w=2, scope='conv2', reuse=reuse))
 				#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
 				'''
 				### resnext version
@@ -722,6 +603,17 @@ class Ganist:
 				h3 = resnext(h2, 128, btnk_dim, 'res3', train_phase, 
 							op_type='down', bn=False, act=act, reuse=reuse)
 				'''
+
+				### im_size setup
+				if im_size == 32:
+					h3 = h2
+				elif im_size == 64:
+					h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+				elif im_size == 128:
+					h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+				else:
+					raise ValueError('{} for discriminator im_size is not defined!'.format(im_size))
+
 				### fully connected discriminator
 				flat = tf.contrib.layers.flatten(h3)
 				o = dense(flat, 1, scope='fco', reuse=reuse)
@@ -767,7 +659,7 @@ class Ganist:
 		dis_only=False, gen_only=False, stats_only=False, 
 		g_layer_stats=False, d_layer_stats=False,
 		en_only=False, z_data=None, zi_data=None, run_count=0.0, 
-		filter_only=False, g_output_type='or'):
+		filter_only=False, output_type='rec'):
 		batch_size = batch_data.shape[0] if batch_data is not None else batch_size		
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None
 
@@ -789,67 +681,52 @@ class Ganist:
 
 			return sim_dict, non_zero_dict
 
-		### sample e from uniform (0,1): for gp penalty in WGAN
-		e_data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, 1, 1, 1))
-		e_data = e_data.astype(np_dtype)
-
 		### sample z from uniform (-1,1)
 		if zi_data is None:
 			zi_data = np.random.uniform(low=-self.z_range, high=self.z_range, 
 				size=[batch_size, self.z_dim])
 		zi_data = zi_data.astype(np_dtype)
 		
-		### multiple generator uses z_data to select gen **g_num**
-		#self.g_rl_vals, self.g_rl_pvals = self.sess.run((self.pg_q, self.pg_var), feed_dict={})
-		if z_data is None:
-			#g_th = min(1 + self.rl_counter // 1000, self.g_num)
-			#g_th = self.g_num
-			#z_pr = np.exp(self.pg_temp * self.g_rl_pvals[:g_th])
-			#z_pr = z_pr / np.sum(z_pr)
-			#z_data = np.random.choice(g_th, size=batch_size, p=z_pr)
-			z_data = np.random.randint(low=0, high=self.g_num, size=batch_size)
-		
 		### only forward discriminator on batch_data
 		if dis_only:
-			feed_dict = {self.im_input: batch_data, self.z_input: z_data, self.zi_input: zi_data,
-						self.e_input: e_data, self.train_phase: False}
-			res_list = [self.r_logits, self.rg_grad_norm_output]
+			feed_dict = {self.im_input: batch_data, self.zi_input: zi_data, self.train_phase: False}
+			res_list = [self.r_logits_rec, self.rg_grad_norm_output_rec]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 			return res_list[0].flatten(), res_list[1].flatten()
 
-		### only forward encoder on batch_data
-		if en_only:
-			feed_dict = {self.im_input: batch_data, self.train_phase: False}
-			en_logits = self.sess.run(self.r_en_logits, feed_dict=feed_dict)
-			return en_logits
-
 		### only forward generator on z
 		if gen_only:
-			feed_dict = {self.z_input: z_data, self.zi_input: zi_data, self.train_phase: False}
+			feed_dict = {self.zi_input: zi_data, self.train_phase: False}
 			#go_layer = self.g_layer if filter_only is False else self.g_layer_lp
-			if g_output_type == 'ds':
-				feed_dict = {self.im_input: batch_data, self.z_input: z_data, 
-					self.zi_input: zi_data, self.train_phase: False}
-				go_layer = self.im_input_ds
-			elif g_output_type == 'us':
-				feed_dict = {self.im_input: batch_data, self.z_input: z_data, 
-					self.zi_input: zi_data, self.train_phase: False}
-				go_layer = self.im_input_us
+			if output_type == 'l0':
+				go_layer = self.g_layer_l0
+			elif output_type == 'l1':
+				go_layer = self.g_layer_l1
+			elif output_type == 'l2':
+				go_layer = self.g_layer_l2
 			else:
-				go_layer = self.g_layer
+				go_layer = self.g_layer_rec
 			imo_layer = self.sess.run(go_layer, feed_dict=feed_dict)
 			return imo_layer
 
 		### only filter
 		if filter_only:
 			feed_dict = {self.im_input:batch_data, self.train_phase: False}
-			imo_layer = self.sess.run(self.r_layer_lp, feed_dict=feed_dict)
+			if output_type == 'l0':
+				go_layer = self.im_input_l0
+			elif output_type == 'l1':
+				go_layer = self.im_input_l1
+			elif output_type == 'l2':
+				go_layer = self.im_input_l2
+			else:
+				go_layer = self.im_input_rec
+			imo_layer = self.sess.run(go_layer, feed_dict=feed_dict)
 			return imo_layer
 
 		### select optimizers for the current time interval
 		d_opt_ptr = self.d_opt
 		g_opt_ptr = self.g_opt
-		summary_ptr = self.summary_or
+		summary_ptr = self.summary
 		#if run_count < 1e3:
 		#	d_opt_ptr = self.d_opt_sub_or
 		#	g_opt_ptr = self.g_opt_sub_or
@@ -863,15 +740,14 @@ class Ganist:
 		#	g_opt_ptr = self.g_opt
 		#	summary_ptr = self.summary_or
 		### run one training step on discriminator, otherwise on generator, and log **g_num**
-		feed_dict = {self.im_input:batch_data, self.z_input: z_data, self.zi_input: zi_data,
-					self.e_input: e_data, self.train_phase: True}
+		feed_dict = {self.im_input:batch_data, self.zi_input: zi_data, self.train_phase: True}
 		if not gen_update:
 			#d_opt_ptr = self.d_opt #if run_count < 5e4 else self.d_opt_sub
-			res_list = [self.g_layer, summary_ptr, d_opt_ptr]
+			res_list = [self.g_layer_rec, summary_ptr, d_opt_ptr]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 		else:
 			#g_opt_ptr = self.g_opt #if run_count < 5e4 else self.g_opt_sub
-			res_list = [self.g_layer, summary_ptr, g_opt_ptr]
+			res_list = [self.g_layer_rec, summary_ptr, g_opt_ptr]
 						#self.e_opt, self.pg_opt]
 						#self.r_en_h, self.r_en_marg_hlb, self.gi_h, self.g_en_loss]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
