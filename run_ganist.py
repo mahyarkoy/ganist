@@ -327,8 +327,13 @@ def im_block_draw(im_data, sample_size, path, im_labels=None, ganist=None, borde
 		for g in range(max_label+1):
 			im_draw[g, ...] = im_data[im_labels == g, ...][:sample_size, ...]
 	else:
-		draw_ids = np.random.choice(imb, size=sample_size**2, replace=False)
-		im_draw = im_data[draw_ids, ...].reshape([sample_size, sample_size, imh, imw, imc])
+		if sample_size**2 >= imb:
+			im_draw = np.zeros([sample_size**2, imh, imw, imc])
+			im_draw[:imb] = im_data
+		else:
+			draw_ids = np.random.choice(imb, size=sample_size**2, replace=False)
+			im_draw = im_data[draw_ids, ...]
+		im_draw = im_draw.reshape([sample_size, sample_size, imh, imw, imc])
 	
 	#im_draw = (im_draw + 1.0) / 2.0
 	if ganist is not None:
@@ -567,6 +572,9 @@ def train_ganist(ganist, im_data, labels=None):
 	batch_end = train_size
 	fetch_batch = True
 	d_update_flag = True
+	train_order = np.arange(train_size)
+	train_dataset = im_data
+	train_labs = labels
 	widgets = ["Ganist", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=max_itr_total, widgets=widgets)
 	pbar.start()
@@ -577,12 +585,15 @@ def train_ganist(ganist, im_data, labels=None):
 			if batch_end >= train_size:
 				epoch += 1
 				print('>>> Epoch {} started.'.format(epoch))
-				train_dataset, _, train_labs = shuffle_data(im_data, label=labels)
+				np.random.shuffle(train_order)
 				batch_start = 0
 			else:
 				batch_start = batch_end
 			batch_end = batch_start + batch_size
-			batch_data = train_dataset[batch_start:batch_end, ...]
+			batch_order = train_order[batch_start:batch_end]
+			#print('>>> batch order: {}'.format(batch_order))
+			batch_data = train_dataset[batch_order, ...]
+			#im_block_draw(batch_data, 6, log_path_draw+'/batch_data_{}.png'.format(batch_start), border=True)
 			fetch_batch = False
 		
 		### save network once per snap step total iterations

@@ -120,23 +120,23 @@ def apply_fft_images(ims):
 	return imf_data, im_data
 
 ### single image test fft vs dft
-im_path = '/home/mahyar/celeba_3.jpg'
-im_size = 64
-im = read_image(im_path, 64)
-imf_proc, im_gray, = apply_fft(im)
-imf_dft, im_gray = apply_fft(im, freqs=1. * np.arange(im_size) / im_size)
-plt.imshow(im_gray, cmap='gray', vmin=0., vmax=1.)
-plt.show()
-plt.imshow(np.log(np.flip(imf_proc, 0)))
-#xlabs = list(map('{:+.2f}'.format, 1. * np.arange(-im_size//2, im_size//2+1, im_size//8) / im_size))
-#plt.xticks(np.arange(0, im_size+1, im_size//8), xlabs)
-plt.show()
-plt.imshow(np.log(imf_dft))
-ticks = [-(im_size//2), 0, im_size//2]
-ticks_loc = [0, im_size//2, im_size+im_size%2]
-plt.xticks(ticks_loc, ticks)
-plt.yticks(ticks_loc, ticks[::-1])
-plt.show()
+#im_path = '/home/mahyar/celeba_3.jpg'
+#im_size = 64
+#im = read_image(im_path, 64)
+#imf_proc, im_gray, = apply_fft(im)
+#imf_dft, im_gray = apply_fft(im, freqs=1. * np.arange(im_size) / im_size)
+#plt.imshow(im_gray, cmap='gray', vmin=0., vmax=1.)
+#plt.show()
+#plt.imshow(np.log(np.flip(imf_proc, 0)))
+##xlabs = list(map('{:+.2f}'.format, 1. * np.arange(-im_size//2, im_size//2+1, im_size//8) / im_size))
+##plt.xticks(np.arange(0, im_size+1, im_size//8), xlabs)
+#plt.show()
+#plt.imshow(np.log(imf_dft))
+#ticks = [-(im_size//2), 0, im_size//2]
+#ticks_loc = [0, im_size//2, im_size+im_size%2]
+#plt.xticks(ticks_loc, ticks)
+#plt.yticks(ticks_loc, ticks[::-1])
+#plt.show()
 
 ### read multiple images
 #im_dir = '/media/evl/Public/Mahyar/Data/image_net/train_128'
@@ -145,41 +145,41 @@ plt.show()
 #g_dir = '/media/evl/Public/Mahyar/Data/stylegan/cat/'
 im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
 #g_dir = '/media/evl/Public/Mahyar/Data/prog_gan/celeba_128/'
-g_dir = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/temp/logs_ganms_or_celeba128cc/run_0/samples/'
+g_dir = '/media/evl/Public/Mahyar/ganist_lap_logs/temp/logs_wganbn_lap3_celeba128cc/run_0/samples/'
 save_path = '/home/mahyar/'
 data_size = 1000
 im_size = 128
-#imf, img = apply_fft_dir(im_dir, data_size=data_size, im_size=im_size, center_crop=(121, 89))
-#g_imf, g_img = apply_fft_dir(g_dir, data_size=data_size, im_size=im_size, center_crop=(64, 64))
-##imf, img = apply_fft_images(
-##	read_imagenet(im_dir, 10, im_size=im_size).reshape((-1, im_size, im_size, 3)))
-##g_imf, g_img = apply_fft_images(
-##	read_imagenet(g_dir, 10, im_size=im_size).reshape((-1, im_size, im_size, 3)))
+imf, img = apply_fft_dir(im_dir, data_size=data_size, im_size=im_size, center_crop=(121, 89))
+g_imf, g_img = apply_fft_dir(g_dir, data_size=data_size, im_size=im_size, center_crop=(64, 64))
+#imf, img = apply_fft_images(
+#	read_imagenet(im_dir, 10, im_size=im_size).reshape((-1, im_size, im_size, 3)))
+#g_imf, g_img = apply_fft_images(
+#	read_imagenet(g_dir, 10, im_size=im_size).reshape((-1, im_size, im_size, 3)))
 
-#imf_agg = np.mean(imf, axis=0)
-#g_imf_agg = np.mean(g_imf, axis=0)
+imf_agg = np.mean(imf, axis=0)
+g_imf_agg = np.mean(g_imf, axis=0)
 
 ### draw and save
-#fig = plt.figure(0, figsize=(8,6))
-#ax = fig.add_subplot(1,1,1)
-#pa = ax.imshow(np.log(imf_agg) - np.log(g_imf_agg), cmap=plt.get_cmap('bwr'), vmin=-5, vmax=5)
-#fig.colorbar(pa)
-#fig.savefig(save_path+'/fft_diff_wganbn_celeba_128.jpg', dpi=300)
+fig = plt.figure(0, figsize=(8,6))
+ax = fig.add_subplot(1,1,1)
+pa = ax.imshow(np.log(imf_agg) - np.log(g_imf_agg), cmap=plt.get_cmap('bwr'), vmin=-5, vmax=5)
+fig.colorbar(pa)
+fig.savefig(save_path+'/fft_diff_lap3_wganbn_celeba_128.jpg', dpi=300)
 
-#fig.clf()
-#ax = fig.add_subplot(1,1,1)
-#pa = ax.imshow(np.log(imf_agg), cmap=plt.get_cmap('hot'), vmin=0, vmax=20)
-#fig.colorbar(pa)
-#fig.savefig(save_path+'/fft_celeba_128.jpg', dpi=300)
+fig.clf()
+ax = fig.add_subplot(1,1,1)
+pa = ax.imshow(np.log(imf_agg), cmap=plt.get_cmap('hot'), vmin=0, vmax=20)
+fig.colorbar(pa)
+fig.savefig(save_path+'/fft_celeba_128.jpg', dpi=300)
 
-#fig.clf()
-#ax = fig.add_subplot(1,1,1)
-#pa = ax.imshow(np.log(g_imf_agg), cmap=plt.get_cmap('hot'), vmin=0, vmax=20)
-#fig.colorbar(pa)
-#fig.savefig(save_path+'/fft_wganbn_celeba_128.jpg', dpi=300)
+fig.clf()
+ax = fig.add_subplot(1,1,1)
+pa = ax.imshow(np.log(g_imf_agg), cmap=plt.get_cmap('hot'), vmin=0, vmax=20)
+fig.colorbar(pa)
+fig.savefig(save_path+'/fft_lap3_wganbn_celeba_128.jpg', dpi=300)
 
-##plt.imshow(np.log(imf_agg) - np.log(g_imf_agg))
-##plt.xlim(44, 84)
-##plt.ylim(44, 84)
-##plt.colorbar()
-##plt.show()
+#plt.imshow(np.log(imf_agg) - np.log(g_imf_agg))
+#plt.xlim(44, 84)
+#plt.ylim(44, 84)
+#plt.colorbar()
+#plt.show()

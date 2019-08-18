@@ -20,10 +20,12 @@ global_color_set = global_cmap(global_color_locs)
 
 fid_paths = [
 	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_celeba128cc_gauss41/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/35_logs_lap3_reconst_celeba128cc/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/fid_avg/run_%d/fid_levels_r.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/35_logs_lap3_reconst_celeba128cc/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/33_logs_gansd_celeba128cc/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lap_logs/logs_wganbn_lap3_celeba128cc/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lap_logs/logs_wganbn_lap3_reconly_celeba128cc/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/31_logs_ganms_celeba128cc_5e4_10e4/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/24_logs_gandm_ords4_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/temp/logs_gandm_ordsus4_celeba128cc/run_0/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_proggan_celeba128cc_gauss41/run_%d/fid_levels.cpk'
@@ -77,13 +79,13 @@ if __name__ == '__main__':
 	ax.set_xlabel('Filter Std')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('CelebA 128: Laplacian Reconst')
+	ax.set_title('CelebA 128: 3Level Laplacian WGAN')
 
 	### plot
-	pnames = ['real', 'lap3_reconst', 'wganbn']
-	pcolors = [0, 1, 2] ## add 0 for real
+	pnames = ['real', 'wganbn', 'lap3_wganbn', 'lap3_wganbn_reconly']
+	pcolors = [0, 1, 2, 3] ## add 0 for real
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/plots/fids_lap3_reconst_celeba128cc_g41.pdf')
+	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids_wganbn_lap3_reconly_celeba128cc_g41.pdf')
