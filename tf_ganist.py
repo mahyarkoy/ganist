@@ -323,10 +323,17 @@ class Ganist:
 			self.zi_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='zi_input')
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
-			### apply pyramid for images
+			### apply pyramid for real images
 			self.im_input_l0, self.im_input_l1, self.im_input_l2 = \
 				tf_make_lap_pyramid(self.im_input, levels=3)
-			self.im_input_rec = tf_reconst_lap_pyramid([self.im_input_l0, self.im_input_l1, self.im_input_l2])
+			self.im_input_rec = tf_reconst_lap_pyramid(
+				[self.im_input_l0, self.im_input_l1, self.im_input_l2])
+			
+			### reconstruct from misaligned pyramids
+			self.im_input_rec_mal1 = tf_reconst_lap_pyramid(
+				[self.im_input_l0, tf.reverse(self.im_input_l1, [0]), self.im_input_l2])
+			self.im_input_rec_mal2 = tf_reconst_lap_pyramid(
+				[self.im_input_l0, self.im_input_l1, tf.reverse(self.im_input_l2, [0])])
 
 			### build generators at each pyramid level
 			batch_size = tf.shape(self.zi_input)[0]
@@ -397,13 +404,33 @@ class Ganist:
 			### g loss rec
 			g_loss_rec = self.build_gen_loss(self.g_logits_rec)
 
+			### build discriminator pyramid reconst on misaligned l1 real images
+			_, self.g_logits_rec_mal1, self.rg_logits_rec_mal1, self.rg_layer_rec_mal1 = \
+				self.build_dis_logits(self.im_input, self.im_input_rec_mal1,
+					self.train_phase, im_size=128, sub_scope='rec', reuse=True)
+			### d loss rec mal1
+			d_loss_rec_mal1, rg_grad_norm_output_rec_mal1 = \
+				self.build_dis_loss(self.r_logits_rec, self.g_logits_rec_mal1, 
+					self.rg_logits_rec_mal1, self.rg_layer_rec_mal1)
+
+			### build discriminator pyramid reconst on misaligned l2 real images
+			_, self.g_logits_rec_mal2, self.rg_logits_rec_mal2, self.rg_layer_rec_mal2 = \
+				self.build_dis_logits(self.im_input, self.im_input_rec_mal2,
+					self.train_phase, im_size=128, sub_scope='rec', reuse=True)
+			### d loss rec mal2
+			d_loss_rec_mal2, rg_grad_norm_output_rec_mal2 = \
+				self.build_dis_loss(self.r_logits_rec, self.g_logits_rec_mal2, 
+					self.rg_logits_rec_mal2, self.rg_layer_rec_mal2)
+
 			### collect d vars
 			self.d_vars = self.d_vars_l0 + self.d_vars_l1 + self.d_vars_l2 + self.d_vars_rec
 
 			### collect d loss
 			self.rg_grad_norm_output = (rg_grad_norm_output_l0 + rg_grad_norm_output_l1 + \
-				rg_grad_norm_output_l2 + rg_grad_norm_output_rec) / 3.
-			self.d_loss_total = d_loss_l0 + d_loss_l1 + d_loss_l2 + d_loss_rec
+				rg_grad_norm_output_l2 + rg_grad_norm_output_rec + \
+				rg_grad_norm_output_rec_mal1 + rg_grad_norm_output_rec_mal2) / 6.
+			self.d_loss_total = d_loss_l0 + d_loss_l1 + d_loss_l2 + \
+				(d_loss_rec + d_loss_rec_mal1 + d_loss_rec_mal2) / 3.
 
 			### d opt total
 			self.d_opt_handle = \
@@ -468,11 +495,11 @@ class Ganist:
 			d_loss_sum = tf.summary.scalar("d_loss", self.d_loss_total)
 			self.summary = tf.summary.merge([g_loss_sum, d_loss_sum])
 
-	def build_dis_logits(self, im_data, g_data, train_phase, im_size, sub_scope='or'):
+	def build_dis_logits(self, im_data, g_data, train_phase, im_size, sub_scope='or', reuse=False):
 		int_rand = tf.random_uniform([tf.shape(im_data)[0]], minval=0.0, maxval=1.0, dtype=tf_dtype)
 		int_rand = tf.reshape(int_rand, [-1, 1, 1, 1])
 		### build discriminator for low pass
-		r_logits, r_hidden = self.build_dis(im_data, train_phase, im_size, sub_scope=sub_scope)
+		r_logits, r_hidden = self.build_dis(im_data, train_phase, im_size, sub_scope=sub_scope, reuse=reuse)
 		g_logits, g_hidden = self.build_dis(g_data, train_phase, im_size, sub_scope=sub_scope, reuse=True)
 		### real gen manifold interpolation
 		rg_layer = (1.0 - int_rand) * g_data + int_rand * im_data

@@ -1577,8 +1577,12 @@ if __name__ == '__main__':
 		print >>fs, '>>> g_vars: %d --- d_vars: %d' \
 			% (ganist.g_vars_count, ganist.d_vars_count)
 	### draw filtered real samples (blurred)
-	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True), 5, 
-	#	log_path_draw+'/real_samples_lp.png', border=True)
+	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='rec'), 5, 
+	#	log_path_draw+'/real_samples_rec.png', border=True)
+	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='l1'), 5, 
+	#	log_path_draw+'/real_samples_mal1.png', border=True)
+	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='l2'), 5, 
+	#	log_path_draw+'/real_samples_mal2.png', border=True)
 
 	'''
 	INCEPTION SETUP
