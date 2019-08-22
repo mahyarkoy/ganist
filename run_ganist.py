@@ -33,6 +33,7 @@ import glob
 from PIL import Image
 from scipy.stats import beta as beta_dist
 from scipy import signal
+import tf_ganist
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
@@ -1476,7 +1477,6 @@ if __name__ == '__main__':
 	run_seed = int(args.seed)
 	np.random.seed(run_seed)
 	tf.set_random_seed(run_seed)
-	import tf_ganist
 	import mnist_net
 	import vae_ganist
 
@@ -1710,7 +1710,7 @@ if __name__ == '__main__':
 	### prepare train images and features
 	im_data = readim_from_path(im_paths[:train_size], 
 		im_size, center_crop=(121, 89), verbose=True)
-	#train_feats = TFutil.get().extract_feats(im_data, blur_levels=blur_levels)
+	#train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 	train_imgs = im_data
 	train_labs = None
 	print('>>> Shape of training images: {}'.format(train_imgs.shape))
@@ -1828,7 +1828,7 @@ if __name__ == '__main__':
 	'''
 	### compute multi level fid (second line for real data fid levels)
 	fid_list = compute_fid_levels(g_feats, test_feats)
-	#fid_list = compute_fid_levels(sess, train_feats, test_feats)
+	#fid_list = compute_fid_levels(train_feats, test_feats)
 	### plot fid_levels
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()

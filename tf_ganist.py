@@ -244,11 +244,25 @@ def tf_gauss_blur(im, sigma, krange=20):
 	return output
 
 '''
+Shifts im frequencies with half a sampling frequency amount.
+im: shape [b, h, w, c]
+'''
+def tf_freq_shift(im):
+	im = tf.convert_to_tensor(im, dtype=tf_dtype)
+	im_size = im.get_shape().as_list()[1]
+	kernel = np.tile([1., -1.], [im_size//2+1])[:im_size]
+	kernel = tf.convert_to_tensor(kernel, dtype=tf_dtype)
+	kernel_x = tf.reshape(kernel, (1, 1, im_size, 1))
+	kernel_y = tf.reshape(kernel, (1, im_size, 1, 1))
+	output_x = im * kernel_x
+	return output_x * kernel_y
+
+'''
 tf constructs a laplacian pyramid as a list [layer0, layer1, ...].
 im: shape [b, h, w, c]
 levels: number of layers of the pyramid
 '''
-def tf_make_lap_pyramid(im, levels=3):
+def tf_make_lap_pyramid(im, levels=3, freq_shift=False):
 	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	pyramid = list()
 	for l in range(levels):
@@ -260,13 +274,21 @@ def tf_make_lap_pyramid(im, levels=3):
 			im_us = tf_upsample(im_ds)
 			pyramid.append(im - im_us)
 			im = im_ds
-	return pyramid[::-1]
+	
+	pyramid_re = pyramid[::-1]
+	if freq_shift:
+		pyramid_re = [tf_freq_shift(pi) if i > 0 else pi for i, pi in enumerate(pyramid_re)]
+
+	return pyramid_re
 
 '''
 tf reconstruct original images from the given laplacian pyramid.
 pyramid: list of [layer0, layer1, ...] of the gaussian pyramid where each layer [b, h, w, c]
 '''
-def tf_reconst_lap_pyramid(pyramid):
+def tf_reconst_lap_pyramid(pyramid, freq_shift=False):
+	if freq_shift:
+		pyramid = [tf_freq_shift(pi) if i > 0 else pi for i, pi in enumerate(pyramid)]
+
 	reconst = pyramid[0]
 	for im in pyramid[1:]:
 		im_us = tf_upsample(reconst)
@@ -346,15 +368,15 @@ class Ganist:
 
 			### apply pyramid for real images
 			self.im_input_l0, self.im_input_l1, self.im_input_l2 = \
-				tf_make_lap_pyramid(self.im_input, levels=3)
+				tf_make_lap_pyramid(self.im_input, levels=3, freq_shift=True)
 			self.im_input_rec = tf_reconst_lap_pyramid(
-				[self.im_input_l0, self.im_input_l1, self.im_input_l2])
+				[self.im_input_l0, self.im_input_l1, self.im_input_l2], freq_shift=True)
 			
 			### reconstruct from misaligned pyramids
 			self.im_input_rec_mal1 = tf_reconst_lap_pyramid(
-				[self.im_input_l0, tf.reverse(self.im_input_l1, [0]), self.im_input_l2])
+				[self.im_input_l0, tf.reverse(self.im_input_l1, [0]), self.im_input_l2], freq_shift=True)
 			self.im_input_rec_mal2 = tf_reconst_lap_pyramid(
-				[self.im_input_l0, self.im_input_l1, tf.reverse(self.im_input_l2, [0])])
+				[self.im_input_l0, self.im_input_l1, tf.reverse(self.im_input_l2, [0])], freq_shift=True)
 
 			### build generators at each pyramid level
 			batch_size = tf.shape(self.zi_input)[0]
@@ -371,7 +393,8 @@ class Ganist:
 			self.g_vars_l2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l2')
 
 			### reconst from generated pyramid
-			self.g_layer_rec = tf_reconst_lap_pyramid([self.g_layer_l0, self.g_layer_l1, self.g_layer_l2])
+			self.g_layer_rec = tf_reconst_lap_pyramid(
+				[self.g_layer_l0, self.g_layer_l1, self.g_layer_l2], freq_shift=True)
 
 			### collect g vars
 			self.g_vars = self.g_vars_l0 + self.g_vars_l1 + self.g_vars_l2
