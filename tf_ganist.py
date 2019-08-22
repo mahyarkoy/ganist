@@ -223,6 +223,27 @@ def tf_binomial_blur(im, kernel=np.array([1., 4., 6., 4., 1.])/16.):
 	return output
 
 '''
+tf applies gaussian blur.
+im: shape [b, h, w, c]
+'''
+def tf_gauss_blur(im, sigma, krange=20):
+	if sigma == 0:
+		return im
+	ksize = 2*krange + 1
+	t = np.linspace(-krange, krange, ksize)
+	kernel = np.exp(0.5 * -t**2/sigma**2)
+	kernel = kernel / np.sum(kernel)
+	kernel = tf.convert_to_tensor(kernel, dtype=tf_dtype)
+	im = tf.convert_to_tensor(im, dtype=tf_dtype)
+	c = tf.shape(im)[3]
+	kernel_x = tf.tile(tf.reshape(kernel, [1, ksize, 1, 1]), [1, 1, c, 1])
+	kernel_y = tf.tile(tf.reshape(kernel, [ksize, 1, 1, 1]), [1, 1, c, 1])
+	output = tf.nn.depthwise_conv2d(
+		tf.nn.depthwise_conv2d(im, kernel_x, [1, 1, 1, 1], padding='SAME'), 
+		kernel_y, [1, 1, 1, 1], padding='SAME')
+	return output
+
+'''
 tf constructs a laplacian pyramid as a list [layer0, layer1, ...].
 im: shape [b, h, w, c]
 levels: number of layers of the pyramid

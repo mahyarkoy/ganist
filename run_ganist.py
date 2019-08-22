@@ -116,14 +116,16 @@ def read_imagenet(im_dir, data_size, im_size=64):
 				break
 	return im_data
 
-def readim_from_path(im_paths, im_size=64, center_crop=None):
+def readim_from_path(im_paths, im_size=64, center_crop=None, verbose=False):
 	data_size = len(im_paths)
 	im_data = np.zeros((data_size, im_size, im_size, 3))
-	widgets = ["Reading Images", Percentage(), Bar(), ETA()]
-	pbar = ProgressBar(maxval=data_size, widgets=widgets)
-	pbar.start()
+	if verbose:
+		widgets = ["Reading Images", Percentage(), Bar(), ETA()]
+		pbar = ProgressBar(maxval=data_size, widgets=widgets)
+		pbar.start()
 	for i, fn in enumerate(im_paths):
-		pbar.update(i)
+		if verbose:
+			pbar.update(i)
 		im_data[i, ...] = read_image(fn, im_size, center_crop=center_crop)
 	return im_data
 
@@ -577,7 +579,6 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 	widgets = ["Ganist", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=max_itr_total, widgets=widgets)
 	pbar.start()
-
 	while True:
 		pbar.update(itr_total)
 		if fetch_batch:
@@ -842,6 +843,8 @@ def blur_images(imgs, sigma, blur_type='gauss'):
 		return imgs
 	if blur_type == 'avg':
 		return TFutil.get().blur_images_pool(imgs, sigma)
+	elif blur_type == 'gauss':
+		return TFutil.get().blur_images_gauss(imgs, sigma)
 	### kernel
 	t = np.linspace(-20, 20, 41)
 	#t = np.linspace(-20, 20, 81) ## for 128x128 images
@@ -883,6 +886,7 @@ class TFutil:
 			self.sess = sess
 			self.blur_dict = dict()
 			self.bi_blur_dict = dict()
+			self.blur_dict_gauss = dict()
 			self.im_dict = dict()
 			self.upsample_dict = dict()
 			self.inception_input = inception_input
@@ -914,6 +918,27 @@ class TFutil:
 				imgs_blur[i][batch_start:batch_end] = imb
 		return imgs_blur
 	
+	def blur_images_gauss(self, imgs, sigma, batch_size=64):
+		imgs_size = imgs.shape[0]
+		imgs_blur = np.array(imgs)
+		### find or construct image placeholder
+		im_key = imgs.shape[1:]
+		if im_key not in self.im_dict:
+			self.im_dict[im_key] = \
+				tf.placeholder(tf.float32, (None,)+imgs.shape[1:])
+		im_layer = self.im_dict[im_key]
+		### find or construct pooling for the given image placeholder
+		f_key = im_key + (sigma,)
+		if f_key not in self.blur_dict_gauss:
+			self.blur_dict_gauss[f_key] = tf_ganist.tf_gauss_blur(im_layer, sigma)
+		blur_layer = self.blur_dict_gauss[f_key]
+		### apply
+		for batch_start in range(0, imgs_size, batch_size):
+			batch_end = min(batch_start+batch_size, imgs_size)
+			imgs_blur[batch_start:batch_end, ...] = self.sess.run(blur_layer, 
+				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
+		return imgs_blur
+
 	def blur_images_pool(self, imgs, ksize, batch_size=64):
 		if ksize == 1 or ksize == 0:
 			return imgs
@@ -966,7 +991,12 @@ class TFutil:
 			ganist=None, im_paths=None, batch_size=1024, im_size=128, center_crop=None):
 		feat_size = self.inception_feat.get_shape().as_list()[-1]
 		feat_list = [np.zeros((sample_size, feat_size)) for _ in range(len(blur_levels))]
+		print('>>> Extrating features')
+		widgets = ["Extract Feats", Percentage(), Bar(), ETA()]
+		pbar = ProgressBar(maxval=sample_size, widgets=widgets)
+		pbar.start()
 		for batch_start in range(0, sample_size, batch_size):
+			pbar.update(batch_start)
 			batch_end = min(batch_start + batch_size, sample_size)
 			batch_len = batch_end - batch_start
 			### collect images
@@ -1679,7 +1709,7 @@ if __name__ == '__main__':
 		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
 	### prepare train images and features
 	im_data = readim_from_path(im_paths[:train_size], 
-		im_size, center_crop=(121, 89))
+		im_size, center_crop=(121, 89), verbose=True)
 	#train_feats = TFutil.get().extract_feats(im_data, blur_levels=blur_levels)
 	train_imgs = im_data
 	train_labs = None
