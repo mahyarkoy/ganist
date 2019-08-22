@@ -119,8 +119,7 @@ def read_imagenet(im_dir, data_size, im_size=64):
 def readim_from_path(im_paths, im_size=64, center_crop=None):
 	data_size = len(im_paths)
 	im_data = np.zeros((data_size, im_size, im_size, 3))
-	print '>>> Reading Images'
-	widgets = ["Image Read", Percentage(), Bar(), ETA()]
+	widgets = ["Reading Images", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=data_size, widgets=widgets)
 	pbar.start()
 	for i, fn in enumerate(im_paths):
@@ -534,7 +533,7 @@ def plot_layer_stats(input_list, itrs, title, log_path, beta_conf=0.95, min_val=
 '''
 Train Ganist
 '''
-def train_ganist(ganist, im_data, labels=None):
+def train_ganist(ganist, im_data, eval_feats, labels=None):
 	### dataset definition
 	train_size = im_data.shape[0]
 
@@ -600,12 +599,12 @@ def train_ganist(ganist, im_data, labels=None):
 		if itr_total % snap_step == 0 or itr_total == max_itr_total:
 			ganist.save(log_path_snap+'/model_{}_{}.h5'.format(g_itr, itr_total))
 
-		if itr_total % eval_step == 0 or itr_total == max_itr_total:
+		if itr_total % eval_step == 0 or itr_total == max_itr_total:	
 			### evaluate FID distance between real and gen distributions
 			itrs_logs.append(itr_total)
 			draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 \
 				else None
-			fid_dist, net_stats = eval_ganist(ganist, train_dataset, draw_path)
+			fid_dist, net_stats = eval_ganist(ganist, eval_feats, draw_path)
 			eval_logs.append(fid_dist)
 			stats_logs.append(net_stats)
 
@@ -829,44 +828,20 @@ def sample_ganist(ganist, sample_size, sampler=None, batch_size=64,
 				gen_only=True, z_data=batch_z, zi_data=batch_zi, output_type=output_type)
 	return g_samples
 
-'''
-Calculate FID score between two set of image Inception features.
-Shape (N, 2048)
-'''
-def compute_fid(feat1, feat2):
-	num = feat1.shape[0]
-	m1 = np.mean(feat1, axis=0)
-	m2 = np.mean(feat2, axis=0)
-	cov1 = (feat1 - m1).T.dot(feat1 - m1) / (num - 1.)
-	cov2 = (feat2 - m2).T.dot(feat2 - m2) / (num - 1.)
-	csqrt = scipy.linalg.sqrtm(cov1.dot(cov2))
-	fid2 = np.sum(np.square(m1 - m2)) + np.trace(cov1 + cov2 - 2.*csqrt)
-	return np.sqrt(fid2)
-
-'''
-Extract inception final pool features from pretrained inception v3 model on imagenet
-'''
-def extract_inception_feat(sess, feat_layer, im_layer, im_data):
-	data_size = im_data.shape[0]
-	batch_size = 64
-	feat_size = feat_layer.get_shape().as_list()[-1]
-	im_feat = np.zeros((data_size, feat_size))
-	### forward on inception v3
-	widgets = ["InceptionV3", Percentage(), Bar(), ETA()]
-	pbar = ProgressBar(maxval=data_size, widgets=widgets)
-	pbar.start()
-	for batch_start in range(0, data_size, batch_size):
-		pbar.update(batch_start)
-		batch_end = batch_start + batch_size
-		pe = sess.run(feat_layer, {im_layer: im_data[batch_start:batch_end, ...]})
-		im_feat[batch_start:batch_end, ...] = pe.reshape((-1, feat_size))
-	return im_feat
+def blur_images_levels(imgs, blur_levels, blur_type='gauss'):
+	if blur_type == 'binomial':
+		return TFutil.get().blur_images_binomial(imgs, blur_levels)
+	else:
+		imgs_blur_list = list()
+		for b in blur_levels:
+			imgs_blur_list.append(blur_images(imgs, b, blur_type))
+		return imgs_blur_list
 
 def blur_images(imgs, sigma, blur_type='gauss'):
 	if sigma==0:
 		return imgs
 	if blur_type == 'avg':
-		return TFutil.get().blur_images(imgs, sigma)
+		return TFutil.get().blur_images_pool(imgs, sigma)
 	### kernel
 	t = np.linspace(-20, 20, 41)
 	#t = np.linspace(-20, 20, 81) ## for 128x128 images
@@ -900,29 +875,63 @@ class TFutil:
 			raise Exception('TFutil is not initialized.')
 		return TFutil.__instance
 	
-	def __init__(self, sess):
+	def __init__(self, sess, inception_input, inception_feat):
 		if TFutil.__instance != None:
 			raise Exception('TFutil is a singleton class.')
 		else:
 			TFutil.__instance = self
 			self.sess = sess
 			self.blur_dict = dict()
+			self.bi_blur_dict = dict()
 			self.im_dict = dict()
 			self.upsample_dict = dict()
+			self.inception_input = inception_input
+			self.inception_feat = inception_feat
+
+	def blur_images_binomial(self, imgs, blur_levels=[0], batch_size=64):
+		imgs_size = imgs.shape[0]
+		### find or construct image placeholder
+		im_key = imgs.shape[1:]
+		if im_key not in self.im_dict:
+			self.im_dict[im_key] = \
+				tf.placeholder(tf.float32, (None,)+imgs.shape[1:])
+		im_layer = self.im_dict[im_key]
+		### find or construct blur levels for the given image placeholder
+		if im_key not in self.bi_blur_dict:
+			bi_outputs = [im_layer]
+			for b in range(10):
+				bi_outputs.append(tf_ganist.tf_binomial_blur(bi_outputs[-1]))
+			self.bi_blur_dict[im_key] = bi_outputs
+		blur_layer_list = self.bi_blur_dict[im_key]
+		blur_layer_list = [blur_layer_list[int(bl)] for bl in blur_levels]
+		### apply
+		imgs_blur = [np.array(imgs) for _ in range(len(blur_layer_list))]
+		for batch_start in range(0, imgs_size, batch_size):
+			batch_end = min(batch_start+batch_size, imgs_size)
+			batch_blurs = self.sess.run(blur_layer_list, 
+				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
+			for i, imb in enumerate(batch_blurs):
+				imgs_blur[i][batch_start:batch_end] = imb
+		return imgs_blur
 	
-	def blur_images(self, imgs, ksize, batch_size=64):
+	def blur_images_pool(self, imgs, ksize, batch_size=64):
 		if ksize == 1 or ksize == 0:
 			return imgs
 		imgs_size = imgs.shape[0]
 		imgs_blur = np.array(imgs)
-		if imgs.shape[1:] not in self.im_dict:
-			self.im_dict[imgs.shape[1:]] = \
+		### find or construct image placeholder
+		im_key = imgs.shape[1:]
+		if im_key not in self.im_dict:
+			self.im_dict[im_key] = \
 				tf.placeholder(tf.float32, (None,)+imgs.shape[1:])
-		im_layer = self.im_dict[imgs.shape[1:]]
-		if ksize not in self.blur_dict:
-			self.blur_dict[ksize] = tf.nn.avg_pool(im_layer, 
+		im_layer = self.im_dict[im_key]
+		### find or construct pooling for the given image placeholder
+		f_key = im_key + (ksize,)
+		if f_key not in self.blur_dict:
+			self.blur_dict[f_key] = tf.nn.avg_pool(im_layer, 
 				ksize=[1, ksize, ksize, 1], strides=[1, 1, 1, 1], padding='SAME')
-		blur_layer = self.blur_dict[ksize]
+		blur_layer = self.blur_dict[f_key]
+		### apply
 		for batch_start in range(0, imgs_size, batch_size):
 			batch_end = min(batch_start+batch_size, imgs_size)
 			imgs_blur[batch_start:batch_end, ...] = self.sess.run(blur_layer, 
@@ -932,25 +941,75 @@ class TFutil:
 	def upsample(self, imgs, times=1, batch_size=64):
 		imgs_size, h, w, c = imgs.shape
 		imgs_us = np.zeros((imgs_size, h*2**times, w*2**times, c))
+		### find or construct image placeholder
 		im_key = imgs.shape[1:]
 		if im_key not in self.im_dict:
 			self.im_dict[im_key] = \
 				tf.placeholder(tf.float32, (None,)+imgs.shape[1:])
 		im_layer = self.im_dict[im_key]
-		
-		us_key = imgs.shape[1:]+(times,)
+		### find or construct upsampling for the given image placeholder
+		us_key = im_key + (times,)
 		if us_key not in self.upsample_dict:
 			im_x = im_layer
 			for i in range(times):
 				im_x = tf_ganist.tf_upsample(im_x)
 			self.upsample_dict[us_key] = im_x
 		us_layer = self.upsample_dict[us_key]
-		
+		### apply
 		for batch_start in range(0, imgs_size, batch_size):
 			batch_end = min(batch_start+batch_size, imgs_size)
 			imgs_us[batch_start:batch_end, ...] = self.sess.run(us_layer, 
 				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
 		return imgs_us
+
+	def extract_feats(self, im_data, sample_size, blur_levels=[0], 
+			ganist=None, im_paths=None, batch_size=1024, im_size=128, center_crop=None):
+		feat_size = self.inception_feat.get_shape().as_list()[-1]
+		feat_list = [np.zeros((sample_size, feat_size)) for _ in range(len(blur_levels))]
+		for batch_start in range(0, sample_size, batch_size):
+			batch_end = min(batch_start + batch_size, sample_size)
+			batch_len = batch_end - batch_start
+			### collect images
+			if im_data is None:
+				im = sample_ganist(ganist, batch_len) if ganist is not None else \
+					readim_from_path(im_paths[batch_start:batch_end], im_size, center_crop=center_crop)
+			else:
+				im = im_data[batch_start:batch_end]
+			### blur images
+			im_blurs = blur_images_levels(im, blur_levels)
+			### extract features
+			for i, imb in enumerate(im_blurs):
+				feat_list[i][batch_start:batch_end] = \
+					extract_network_feat(self.sess, self.inception_feat, self.inception_input, imb)
+		return feat_list
+
+'''
+Extract inception final pool features from pretrained inception v3 model on imagenet
+'''
+def extract_network_feat(sess, feat_layer, im_layer, im_data):
+	data_size = im_data.shape[0]
+	batch_size = 64
+	feat_size = feat_layer.get_shape().as_list()[-1]
+	im_feat = np.zeros((data_size, feat_size))
+	for batch_start in range(0, data_size, batch_size):
+		batch_end = batch_start + batch_size
+		pe = sess.run(feat_layer, {im_layer: im_data[batch_start:batch_end, ...]})
+		im_feat[batch_start:batch_end, ...] = pe.reshape((-1, feat_size))
+	return im_feat
+
+'''
+Calculate FID score between two set of image Inception features.
+Shape (N, 2048)
+'''
+def compute_fid(feat1, feat2):
+	num = feat1.shape[0]
+	m1 = np.mean(feat1, axis=0)
+	m2 = np.mean(feat2, axis=0)
+	cov1 = (feat1 - m1).T.dot(feat1 - m1) / (num - 1.)
+	cov2 = (feat2 - m2).T.dot(feat2 - m2) / (num - 1.)
+	csqrt = scipy.linalg.sqrtm(cov1.dot(cov2))
+	fid2 = np.sum(np.square(m1 - m2)) + np.trace(cov1 + cov2 - 2.*csqrt)
+	return np.sqrt(fid2)
 
 '''
 Evaluate fid on data
@@ -968,6 +1027,19 @@ def eval_fid_levels(sess, im_r, im_g, blur_levels):
 	for b in blur_levels:
 		print('>>> Computing FID Level {}'.format(b))
 		fid_list.append(eval_fid(sess, im_r, im_g, b))
+	return fid_list
+
+'''
+Compute FID between pairs of features from feat_r and feat_g.
+feat_r, feat_g: equal sized lists containing image features.
+'''
+def compute_fid_levels(feat_r, feat_g):
+	fid_list = list()
+	b = 0
+	for fr, fg in zip(feat_r, feat_g):
+		print('>>> Computing FID Level {}'.format(b))
+		fid_list.append(compute_fid(fr, fg))
+		b += 1
 	return fid_list
 
 '''
@@ -1011,20 +1083,20 @@ def eval_en_acc(ganist, im_data, im_label, batch_size=64):
 '''
 Returns the energy distance of a trained GANist, and draws block images of GAN samples
 '''
-def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
+def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None):
 	### sample and batch size
-	sample_size = 1000
+	sample_size = eval_feats[0].shape[0]
 	batch_size = 64
 	draw_size = 5
 	sampler = sampler if sampler is not None else ganist.step
 	
 	### collect real and gen samples **mt**
-	r_samples = im_data[0:sample_size, ...]
-	g_samples = sample_ganist(ganist, sample_size, sampler=sampler)
+	g_samples = sample_ganist(ganist, draw_size**2, sampler=sampler)
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=[0], ganist=ganist)
 
 	### draw block image of gen samples
 	if draw_path is not None:
-		g_samples = g_samples.reshape((-1,) + im_data.shape[1:])
+		g_samples = g_samples.reshape([-1] + ganist.data_dim)
 		im_block_draw(g_samples, draw_size, draw_path+'.png', border=True)
 		sample_pyramid(ganist, draw_path+'_pyramid.png', 10)
 
@@ -1032,7 +1104,7 @@ def eval_ganist(ganist, im_data, draw_path=None, sampler=None):
 	net_stats = ganist.step(None, None, stats_only=True)
 
 	### fid
-	fid = eval_fid(ganist.sess, r_samples, g_samples)
+	fid = compute_fid(g_feats[0], eval_feats[0])
 	#fid = 0
 
 	return fid, net_stats
@@ -1409,7 +1481,59 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_sum_vae)
 
 	### read and process data
-	sample_size = 1000
+	sample_size = 2000
+	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	#blur_levels = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
+
+	'''
+	TENSORFLOW SETUP
+	'''
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	config.gpu_options.allow_growth = True
+	sess = tf.Session(config=config)
+	### create a ganist instance
+	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	### create mnist classifier
+	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
+	### init variables
+	sess.run(tf.global_variables_initializer())
+	### save network initially
+	#ganist.save(log_path_snap+'/model_0_0.h5')
+	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
+		print >>fs, '>>> g_vars: %d --- d_vars: %d' \
+			% (ganist.g_vars_count, ganist.d_vars_count)
+
+	'''
+	INCEPTION SETUP
+	'''
+	fid_im_size = 128
+	inception_dir = '/media/evl/Public/Mahyar/Data/models/research/slim'
+	ckpt_path = '/media/evl/Public/Mahyar/Data/inception_v3_model/kaggle/inception_v3.ckpt'
+	sys.path.insert(0, inception_dir)
+
+	#from inception.slim import slim
+	import nets.inception_v3 as inception
+	from nets.inception_v3 import inception_v3_arg_scope
+
+	### images should be N*299*299*3 of values (-1,1)
+	images_pl = tf.placeholder(tf_ganist.tf_dtype, [None, fid_im_size, fid_im_size, 3], name='input_proc_images')
+	images_pl_re = tf.image.resize_bilinear(images_pl, [299, 299], align_corners=False)
+
+	### build model
+	with tf.contrib.slim.arg_scope(inception_v3_arg_scope()):
+		logits, endpoints = inception.inception_v3(images_pl_re, is_training=False, num_classes=1001)
+	
+	### load trained model
+	variables_to_restore = tf.contrib.slim.get_variables_to_restore(include=['InceptionV3'])
+	saver = tf.train.Saver(variables_to_restore)
+	saver.restore(sess, ckpt_path)
+
+	inception_im_layer = images_pl
+	inception_feat_layer = endpoints['AvgPool_1a']
+
+	### init TFutil
+	tfutil = TFutil(sess, inception_im_layer, inception_feat_layer)
 
 	'''
 	DATASET LOADING AND DRAWING
@@ -1547,35 +1671,30 @@ if __name__ == '__main__':
 	### read celeba 128
 	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
 	im_size = 128
-	dataset_size = 2000
+	train_size = 1000
 	im_paths = readim_path_from_dir(im_dir)
 	np.random.shuffle(im_paths)
-	im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
-	all_imgs_stack = im_data
-	train_imgs = im_data[sample_size:, ...]
+	### prepare test features
+	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
+		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
+	### prepare train images and features
+	im_data = readim_from_path(im_paths[:train_size], 
+		im_size, center_crop=(121, 89))
+	#train_feats = TFutil.get().extract_feats(im_data, blur_levels=blur_levels)
+	train_imgs = im_data
 	train_labs = None
-	print all_imgs_stack.shape
-	im_block_draw(all_imgs_stack[:25], 5, log_path+'/true_samples.png', border=True)
+	print('>>> Shape of training images: {}'.format(train_imgs.shape))
+	print('>>> Shape of test features: {}'.format(test_feats[0].shape))
+	im_block_draw(train_imgs[:25], 5, log_path+'/true_samples.png', border=True)
 
 	'''
-	TENSORFLOW SETUP
+	DATASET INITIAL EVALS
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	sess = tf.Session(config=config)
-	### init TFutil
-	tfutil = TFutil(sess)
-	### create a ganist instance
-	ganist = tf_ganist.Ganist(sess, log_path_sum)
-	### create mnist classifier
-	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
-	### init variables
-	sess.run(tf.global_variables_initializer())
-	### save network initially
-	#ganist.save(log_path_snap+'/model_0_0.h5')
-	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
-		print >>fs, '>>> g_vars: %d --- d_vars: %d' \
-			% (ganist.g_vars_count, ganist.d_vars_count)
+	### draw blurred images
+	blur_draw_size = 10
+	blur_im_list = blur_images_levels(train_imgs[:blur_draw_size], blur_levels)
+	blur_im = np.stack(blur_im_list, axis=0)
+	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
 	### draw filtered real samples (blurred)
 	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='rec'), 5, 
 	#	log_path_draw+'/real_samples_rec.png', border=True)
@@ -1584,34 +1703,6 @@ if __name__ == '__main__':
 	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='l2'), 5, 
 	#	log_path_draw+'/real_samples_mal2.png', border=True)
 
-	'''
-	INCEPTION SETUP
-	'''
-	fid_im_size = 128
-	inception_dir = '/media/evl/Public/Mahyar/Data/models/research/slim'
-	ckpt_path = '/media/evl/Public/Mahyar/Data/inception_v3_model/kaggle/inception_v3.ckpt'
-	sys.path.insert(0, inception_dir)
-
-	#from inception.slim import slim
-	import nets.inception_v3 as inception
-	from nets.inception_v3 import inception_v3_arg_scope
-
-	### images should be N*299*299*3 of values (-1,1)
-	images_pl = tf.placeholder(tf_ganist.tf_dtype, [None, fid_im_size, fid_im_size, 3], name='input_proc_images')
-	images_pl_re = tf.image.resize_bilinear(images_pl, [299, 299], align_corners=False)
-
-	### build model
-	with tf.contrib.slim.arg_scope(inception_v3_arg_scope()):
-		logits, endpoints = inception.inception_v3(images_pl_re, is_training=False, num_classes=1001)
-	
-	### load trained model
-	variables_to_restore = tf.contrib.slim.get_variables_to_restore(include=['InceptionV3'])
-	saver = tf.train.Saver(variables_to_restore)
-	saver.restore(sess, ckpt_path)
-
-	inception_im_layer = images_pl
-	inception_feat_layer = endpoints['AvgPool_1a']
-
 	#fid_test = eval_fid(sess, train_imgs[:5000], train_imgs[5000:10000])
 	#print '>>> FID TEST: ', fid_test
 
@@ -1619,7 +1710,7 @@ if __name__ == '__main__':
 	GAN SETUP SECTION
 	'''
 	### train ganist
-	train_ganist(ganist, train_imgs, train_labs)
+	train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
 	load_path = log_path_snap+'/model_best.h5'
@@ -1633,11 +1724,12 @@ if __name__ == '__main__':
 	gan_model = ganist#vae
 	sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(gan_model, sample_size, sampler=sampler)
+	g_samples = sample_ganist(gan_model, 1000, sampler=sampler)
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
 	print '>>> g_samples shape: ', g_samples.shape
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
 	im_separate_draw(g_samples[:1000], log_path_sample)
-	sample_pyramid(ganist, log_path+'/gen_samples_pyramid.png')
+	sample_pyramid(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
 	#sys.exit(0)
 
 	'''
@@ -1704,18 +1796,9 @@ if __name__ == '__main__':
 	'''
 	Multi Level FID
 	'''
-	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
-	#blur_levels = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
-	### draw blurred images
-	blur_im_list = list()
-	blur_draw_size = 10
-	for b in blur_levels:
-		blur_im_list.append(blur_images(all_imgs_stack[:blur_draw_size], b))
-	blur_im = np.stack(blur_im_list, axis=0)
-	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
 	### compute multi level fid (second line for real data fid levels)
-	fid_list = eval_fid_levels(sess, g_samples, all_imgs_stack[:sample_size], blur_levels)
-	#fid_list = eval_fid_levels(sess, all_imgs_stack[:sample_size], all_imgs_stack[sample_size:2*sample_size], blur_levels)
+	fid_list = compute_fid_levels(g_feats, test_feats)
+	#fid_list = compute_fid_levels(sess, train_feats, test_feats)
 	### plot fid_levels
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()

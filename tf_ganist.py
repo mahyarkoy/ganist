@@ -160,8 +160,8 @@ def compute_layer_sim(layer_list, net_vars):
 			non_zero_list = list()
 			for v in net_vars:
 				if ln in v.name and 'kernel' in v.name:
-					print '>>> VAR: ' + ln
-					print v.get_shape().as_list()
+					#print '>>> VAR: ' + ln
+					#print v.get_shape().as_list()
 					vars_pre[v.name] = tf.get_variable(v.name.split(':')[0], shape=v.shape, trainable=False)
 					vars_pre_ops.append(tf.assign(vars_pre[v.name], v))
 					sim_list.append(tf.reshape(cos_sim(vars_pre[v.name], v), [-1]))
@@ -427,10 +427,10 @@ class Ganist:
 
 			### collect d loss
 			self.rg_grad_norm_output = (rg_grad_norm_output_l0 + rg_grad_norm_output_l1 + \
-				rg_grad_norm_output_l2 + rg_grad_norm_output_rec + \
-				rg_grad_norm_output_rec_mal1 + rg_grad_norm_output_rec_mal2) / 6.
-			self.d_loss_total = d_loss_l0 + d_loss_l1 + d_loss_l2 + \
-				(d_loss_rec + d_loss_rec_mal1 + d_loss_rec_mal2) / 3.
+				rg_grad_norm_output_l2 + rg_grad_norm_output_rec) / 4.# + \
+				#rg_grad_norm_output_rec_mal1 + rg_grad_norm_output_rec_mal2) / 6.
+			self.d_loss_total = d_loss_l0 + d_loss_l1 + d_loss_l2 + d_loss_rec #+ \
+				#(d_loss_rec + d_loss_rec_mal1 + d_loss_rec_mal2) / 3.
 
 			### d opt total
 			self.d_opt_handle = \
@@ -450,7 +450,7 @@ class Ganist:
 			self.bn_moving_vars = [v for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES) \
 				if 'BatchNorm' in v.name and \
 				('moving_mean' in v.name or 'moving_variance' in  v.name)]
-			print '>>> bn vars:', self.bn_moving_vars
+			#print '>>> bn vars:', self.bn_moving_vars
 
 			### collect opt
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -567,12 +567,13 @@ class Ganist:
 					h0 = tf.reshape(z_fc, [-1, 4, 4, 256])
 					h1 = h0
 				elif im_size == 64:
-					z_fc = act(bn(dense(zi, 8*8*512, scope='fcz'),
+					z_fc = act(bn(dense(zi, 8*8*256, scope='fcz'),
 						is_training=train_phase))
-					h0 = tf.reshape(z_fc, [-1, 8, 8, 512])
-					h0_us = tf.image.resize_nearest_neighbor(h0, [16, 16], name='us0')
-					h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
-						is_training=train_phase))
+					h0 = tf.reshape(z_fc, [-1, 8, 8, 256])
+					h1 = h0
+					#h0_us = tf.image.resize_nearest_neighbor(h0, [8, 8], name='us0')
+					#h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
+					#	is_training=train_phase))
 				elif im_size == 128:
 					z_fc = act(bn(dense(zi, 8*8*512, scope='fcz'),
 						is_training=train_phase))
