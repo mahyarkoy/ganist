@@ -636,7 +636,7 @@ class Ganist:
 				if im_size == 32:
 					h3 = h2
 				elif im_size == 64:
-					h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+					h3 = h2 #act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 				elif im_size == 128:
 					h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 				else:
