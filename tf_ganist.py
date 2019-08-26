@@ -615,7 +615,7 @@ class Ganist:
 						is_training=train_phase))
 					h0 = tf.reshape(z_fc, [-1, 8, 8, 256])
 					h1 = h0
-					#h0_us = tf.image.resize_nearest_neighbor(h0, [8, 8], name='us0')
+					#h0_us = tf.image.resize_nearest_neighbor(h0, [16, 16], name='us0')
 					#h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
 					#	is_training=train_phase))
 				elif im_size == 128:

@@ -690,7 +690,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 				ax.set_title('FID')
 				ax.set_xlabel('Iterations')
 				ax.set_ylabel('Values')
-				ax.legend(loc=0)
+				#ax.legend(loc=0)
 				fig.savefig(log_path+'/fid_dist.png', dpi=300)
 				plt.close(fig)
 				### save eval_logs
