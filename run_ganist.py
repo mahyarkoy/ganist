@@ -398,32 +398,37 @@ def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
 
 '''
 Draws the given layers of the pyramid.
+if im_shape is provided, it assumes that as the shape of final output, otherwise uses reconst.
 pyramid: [l0, l1, ..., reconst] each shape [b, h, w, c] with values (-1,1)
 '''
-def pyramid_draw(pyramid, path):
-	n, h, w, c = pyramid[-1].shape
-	im_l0 = TFutil.get().upsample(pyramid[0], times=2)
-	im_l1 = TFutil.get().upsample(pyramid[1])
-	im_l2 = pyramid[2]
-	im_rec = pyramid[-1]
-	im_comb = np.zeros((n, 4, h, w, c))
-	im_comb[:, 0, ...] = im_l0
-	im_comb[:, 1, ...] = im_l1
-	im_comb[:, 2, ...] = im_l2
-	im_comb[:, 3, ...] = im_rec
+def pyramid_draw(pyramid, path, im_shape=None):
+	n, h, w, c = pyramid[-1].shape if im_shape is None else im_shape
+	im_comb = np.zeros((n, len(pyramid), h, w, c))
+	for i, pi in enumerate(pyramid):
+		im_comb[:, i, ...] = \
+			TFutil.get().upsample(pi, times=int(np.log2(h//pi.shape[1])))
 	block_draw(im_comb, path, border=True)
 
 '''
 Samples from all layers of the generator pyramid and draws them if path is specified.
+if im_data is provided, filters the im_data using ganist.
 '''
-def sample_pyramid(ganist, path=None, sample_size=10):
+def sample_pyramid(ganist, path=None, sample_size=10, im_data=None):
 	zi = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
 		size=[sample_size, ganist.z_dim]).astype(tf_ganist.np_dtype)
-	samples_l0 = sample_ganist(ganist, sample_size, zi_data=zi, output_type='l0')
-	samples_l1 = sample_ganist(ganist, sample_size, zi_data=zi, output_type='l1')
-	samples_l2 = sample_ganist(ganist, sample_size, zi_data=zi, output_type='l2')
-	samples_rec = sample_ganist(ganist, sample_size, zi_data=zi, output_type='rec')
-	pyramid = [samples_l0, samples_l1, samples_l2, samples_rec]
+
+	filter_only = False if im_data is None else True
+	samples_l0 = sample_ganist(ganist, sample_size, 
+		zi_data=zi, output_type='l0', z_im=im_data, filter_only=filter_only)
+	samples_l1 = sample_ganist(ganist, sample_size, 
+		zi_data=zi, output_type='l1', z_im=im_data, filter_only=filter_only)
+	samples_l2 = sample_ganist(ganist, sample_size, 
+		zi_data=zi, output_type='l2', z_im=im_data, filter_only=filter_only)
+	samples_l3 = sample_ganist(ganist, sample_size, 
+		zi_data=zi, output_type='l3', z_im=im_data, filter_only=filter_only)
+	samples_rec = sample_ganist(ganist, sample_size, 
+		zi_data=zi, output_type='rec', z_im=im_data, filter_only=filter_only)
+	pyramid = [samples_l0, samples_l1, samples_l2, samples_l3, samples_rec]
 	if path is not None:
 		pyramid_draw(pyramid, path)
 	return pyramid
@@ -447,6 +452,7 @@ def block_draw(im_data, path, separate_channels=False, border=False):
 	im_draw = im_draw.reshape([cols, imh*rows, imw, imc])
 	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
 	im_draw = (im_draw + 1.0) / 2.0
+	im_draw = im_draw if imc == 3 else np.repeat(im_draw[:,:,:,:1], imc, axis=3)
 	
 	### new draw without matplotlib
 	images = np.clip(np.rint(im_draw * 255.0), 0.0, 255.0).astype(np.uint8)
@@ -810,24 +816,30 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 Sample sample_size data points from ganist.
 '''
 def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, 
-	z_data=None, zi_data=None, z_im=None, output_type='rec'):
+	z_data=None, zi_data=None, z_im=None, output_type='rec', filter_only=False):
 	sampler = sampler if sampler is not None else ganist.step
 	if output_type == 'l0':
-		g_samples = np.zeros([sample_size, 32, 32, 3])
-	elif output_type == 'l1':
 		g_samples = np.zeros([sample_size, 64, 64, 3])
-	else:
+	elif output_type == 'l1':
+		#g_samples = np.zeros([sample_size, 64, 64, 3])
+		g_samples = np.zeros([sample_size, 64, 64, 3])
+	elif output_type == 'l2':
+		#g_samples = np.zeros([sample_size, 128, 128, 3])
+		g_samples = np.zeros([sample_size, 64, 64, 3])
+	elif output_type == 'l3':
+		g_samples = np.zeros([sample_size, 64, 64, 3])
+	elif output_type == 'rec':
 		g_samples = np.zeros([sample_size, 128, 128, 3])
 	
 	for batch_start in range(0, sample_size, batch_size):
-		batch_end = batch_start + batch_size
-		batch_len = g_samples[batch_start:batch_end, ...].shape[0]
+		batch_end = min(batch_start + batch_size, sample_size)
+		batch_len = batch_end - batch_start
 		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
 		batch_zi = zi_data[batch_start:batch_end, ...] if zi_data is not None else None
 		batch_im = z_im[batch_start:batch_end, ...] if z_im is not None else None
 		g_samples[batch_start:batch_end, ...] = \
 			sampler(batch_im, batch_len, 
-				gen_only=True, z_data=batch_z, zi_data=batch_zi, output_type=output_type)
+				gen_only=True, z_data=batch_z, zi_data=batch_zi, output_type=output_type, filter_only=filter_only)
 	return g_samples
 
 def blur_images_levels(imgs, blur_levels, blur_type='gauss'):
@@ -905,7 +917,8 @@ class TFutil:
 		if im_key not in self.bi_blur_dict:
 			bi_outputs = [im_layer]
 			for b in range(10):
-				bi_outputs.append(tf_ganist.tf_binomial_blur(bi_outputs[-1]))
+				bi_outputs.append(tf_ganist.tf_binomial_blur(
+					bi_outputs[-1]), kernel=[1., 4., 6., 4., 1.] / 16)
 			self.bi_blur_dict[im_key] = bi_outputs
 		blur_layer_list = self.bi_blur_dict[im_key]
 		blur_layer_list = [blur_layer_list[int(bl)] for bl in blur_levels]
@@ -977,8 +990,10 @@ class TFutil:
 		us_key = im_key + (times,)
 		if us_key not in self.upsample_dict:
 			im_x = im_layer
+			kernel = 2. * tf_ganist.make_winsinc_blackman(fc=1./4)
 			for i in range(times):
-				im_x = tf_ganist.tf_upsample(im_x)
+				im_x = tf_ganist.tf_binomial_blur(
+					tf_ganist.tf_upsample(im_x), kernel=kernel)
 			self.upsample_dict[us_key] = im_x
 		us_layer = self.upsample_dict[us_key]
 		### apply
@@ -988,6 +1003,10 @@ class TFutil:
 				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
 		return imgs_us
 
+	'''
+	If im_data is None: if ganist is provided then samples from it otherwise reads from im_paths
+	If im_data is provided: if ganist is provided then filters with ganist (filter only) else selects from im_data
+	'''
 	def extract_feats(self, im_data, sample_size, blur_levels=[0], 
 			ganist=None, im_paths=None, batch_size=1024, im_size=128, center_crop=None):
 		feat_size = self.inception_feat.get_shape().as_list()[-1]
@@ -1005,7 +1024,8 @@ class TFutil:
 				im = sample_ganist(ganist, batch_len) if ganist is not None else \
 					readim_from_path(im_paths[batch_start:batch_end], im_size, center_crop=center_crop)
 			else:
-				im = im_data[batch_start:batch_end]
+				im = im_data[batch_start:batch_end] if ganist is None else \
+					sample_ganist(ganist, batch_size, z_im=im_data[batch_start:batch_end], filter_only=True, output_type='rec')
 			### blur images
 			im_blurs = blur_images_levels(im, blur_levels)
 			### extract features
@@ -1701,7 +1721,7 @@ if __name__ == '__main__':
 	### read celeba 128
 	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
 	im_size = 128
-	train_size = 1000
+	train_size = 2000
 	im_paths = readim_path_from_dir(im_dir)
 	np.random.shuffle(im_paths)
 	### prepare test features
@@ -1714,7 +1734,7 @@ if __name__ == '__main__':
 	train_imgs = im_data
 	train_labs = None
 	print('>>> Shape of training images: {}'.format(train_imgs.shape))
-	print('>>> Shape of test features: {}'.format(test_feats[0].shape))
+	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
 	im_block_draw(train_imgs[:25], 5, log_path+'/true_samples.png', border=True)
 
 	'''
@@ -1726,7 +1746,8 @@ if __name__ == '__main__':
 	blur_im = np.stack(blur_im_list, axis=0)
 	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
 	### draw filtered real samples (blurred)
-	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='rec'), 5, 
+	sample_pyramid(ganist, log_path+'/real_samples_pyramid.png', sample_size=10, im_data=train_imgs[:10])
+	#im_block_draw(sample_ganist(ganist, 25, z_im=train_imgs[:25], filter_only=True, output_type='rec'), 5, 
 	#	log_path_draw+'/real_samples_rec.png', border=True)
 	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='l1'), 5, 
 	#	log_path_draw+'/real_samples_mal1.png', border=True)
@@ -1751,10 +1772,8 @@ if __name__ == '__main__':
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
-	gan_model = ganist#vae
-	sampler = ganist.step#vae.step
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(gan_model, 1000, sampler=sampler)
+	g_samples = sample_ganist(ganist, 1000)
 	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
 	print '>>> g_samples shape: ', g_samples.shape
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
@@ -1822,6 +1841,12 @@ if __name__ == '__main__':
 
 	#g_samples = apply_lap_pyramid(all_imgs_stack[sample_size:2*sample_size])
 	#im_block_draw(g_samples, 5, log_path+'/lap_samples.png', border=True)
+
+	'''
+	Reconstructed real data
+	'''
+	#g_feats = TFutil.get().extract_feats(train_imgs[:sample_size], sample_size, 
+	#	blur_levels=blur_levels, ganist=ganist)
 
 	'''
 	Multi Level FID

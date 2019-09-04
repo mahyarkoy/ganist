@@ -177,10 +177,10 @@ def compute_layer_sim(layer_list, net_vars):
 	return backup_op, layer_sim, layer_non_zero
 
 '''
-tf image upsampling with smoothing.
+tf image upsampling.
 im: shape [b, h, w, c]
 '''
-def tf_upsample(im, smooth=True):
+def tf_upsample(im):
 	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	_, h, w, c = im.get_shape().as_list()
 	#us_x = tf.tile(tf.reshape(im, [-1, h*w, 1, c]), [1, 1, 2, 1])
@@ -192,9 +192,9 @@ def tf_upsample(im, smooth=True):
 		im_us = im_us[:, :-1, :, :]
 	if w%2 == 1:
 		im_us = im_us[:, :, :-1, :]
-	output = tf_binomial_blur(im_us, kernel=np.array([1., 2., 1.])/2.) if smooth == True else im_us
+	#output = tf_binomial_blur(im_us, kernel=np.array([1., 2., 1.])/2.) if smooth == True else im_us
 	#print '>>> tf upsample shape: ', output.get_shape().as_list()
-	return output
+	return im_us
 
 '''
 tf image downsampling.
@@ -210,7 +210,7 @@ def tf_downsample(im):
 tf applies binomial blur to approximate gaussian blurring.
 im: shape [b, h, w, c]
 '''
-def tf_binomial_blur(im, kernel=np.array([1., 4., 6., 4., 1.])/16.):
+def tf_binomial_blur(im, kernel):
 	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	kernel = tf.convert_to_tensor(kernel, dtype=tf_dtype)
 	c = tf.shape(im)[3]
@@ -244,40 +244,71 @@ def tf_gauss_blur(im, sigma, krange=20):
 	return output
 
 '''
-Shifts im frequencies with half a sampling frequency amount.
-im: shape [b, h, w, c]
+Makes a windowed sinc filter using Blackman window.
+fc: cutoff frequency
+ksize: filter sample size
+stack: number of times to convolve filter with itself (improves stop band)
 '''
-def tf_freq_shift(im):
+def make_winsinc_blackman(fc=1./4, ksize=40, stack=1):
+	x = np.arange(ksize+1)
+	x[ksize//2] = 0
+	kernel = np.sin(2.* np.pi * fc * (x - ksize//2)) / (x - ksize//2)
+	kernel = kernel * (0.42 - 0.5*np.cos(2. * np.pi * x / ksize) + 0.08*np.cos(4. * np.pi * x) / ksize)
+	kernel[ksize//2] = 2. * np.pi * fc
+	kernel = kernel / np.sum(kernel)
+	kernel_stack = kernel
+	for _ in range(stack):
+		kernel_stack = np.convolve(kernel_stack, kernel, 'full')
+	return kernel_stack
+
+'''
+Shifts im frequencies with fc and returns cos and sin components.
+im: shape [b, h, w, c]
+fc: f_center/f_sample which must be in (0, 0.5)
+'''
+def tf_freq_shift(im, fc=0.5):
 	im = tf.convert_to_tensor(im, dtype=tf_dtype)
 	im_size = im.get_shape().as_list()[1]
-	kernel = np.tile([1., -1.], [im_size//2+1])[:im_size]
-	kernel = tf.convert_to_tensor(kernel, dtype=tf_dtype)
-	kernel_x = tf.reshape(kernel, (1, 1, im_size, 1))
-	kernel_y = tf.reshape(kernel, (1, im_size, 1, 1))
-	output_x = im * kernel_x
-	return output_x * kernel_y
+
+	kernel_loc = np.arange(im_size).reshape((1, 1, im_size, 1)) + \
+		np.arange(im_size).reshape((1, im_size, 1, 1))
+	kernel_cos = np.cos(2. * np.pi * fc * kernel_loc)
+	kernel_sin = np.sin(2. * np.pi * fc * kernel_loc)
+	kernel_cos = tf.convert_to_tensor(kernel_cos, dtype=tf_dtype)
+	kernel_sin = tf.convert_to_tensor(kernel_sin, dtype=tf_dtype)
+	return im * kernel_cos, im * kernel_sin
 
 '''
 tf constructs a laplacian pyramid as a list [layer0, layer1, ...].
 im: shape [b, h, w, c]
 levels: number of layers of the pyramid
 '''
-def tf_make_lap_pyramid(im, levels=3, freq_shift=False):
+def tf_make_lap_pyramid(im, levels=3, freq_shift=False, resize=True):
 	im = tf.convert_to_tensor(im, dtype=tf_dtype)
+	kernel = make_winsinc_blackman(fc=1/5.)
+	#kernel = np.array([1., 4., 6., 4., 1.])/16.
 	pyramid = list()
 	for l in range(levels):
 		if l == levels-1:
 			pyramid.append(im)
 		else:
-			im_blur = tf_binomial_blur(im)
+			im_blur = tf_binomial_blur(im, kernel=kernel)
 			im_ds = tf_downsample(im_blur)
-			im_us = tf_upsample(im_ds)
+			im_us = tf_binomial_blur(tf_upsample(im_ds), kernel=2.*kernel)
 			pyramid.append(im - im_us)
 			im = im_ds
 	
 	pyramid_re = pyramid[::-1]
 	if freq_shift:
-		pyramid_re = [tf_freq_shift(pi) if i > 0 else pi for i, pi in enumerate(pyramid_re)]
+		pyramid_re = [tf_freq_shift(pi)[0] if i > 0 else pi for i, pi in enumerate(pyramid_re)]
+	
+	if resize:
+		for i, pi in enumerate(pyramid_re):
+			pi_ds = pi
+			#for _ in range(i):
+			#	pi_ds = tf_downsample(tf_binomial_blur(pi_ds))
+			pyramid_re[i] = tf_binomial_blur(pi_ds) if i > 0 else pi_ds
+			#pyramid_re[i] = pi_ds
 
 	return pyramid_re
 
@@ -285,15 +316,55 @@ def tf_make_lap_pyramid(im, levels=3, freq_shift=False):
 tf reconstruct original images from the given laplacian pyramid.
 pyramid: list of [layer0, layer1, ...] of the gaussian pyramid where each layer [b, h, w, c]
 '''
-def tf_reconst_lap_pyramid(pyramid, freq_shift=False):
-	if freq_shift:
-		pyramid = [tf_freq_shift(pi) if i > 0 else pi for i, pi in enumerate(pyramid)]
+def tf_reconst_lap_pyramid(pyramid, freq_shift=False, resize=False):
+	pyramid_re = list(pyramid)
+	kernel = make_winsinc_blackman(fc=1./4)
+	if resize:
+		for i, pi in enumerate(pyramid_re):
+			pi_us = pi
+			for _ in range(i):
+				pi_us = im_us = tf_binomial_blur(tf_upsample(pi_us), kernel=2.*kernel)
+			pyramid_re[i] = pi_us
 
-	reconst = pyramid[0]
-	for im in pyramid[1:]:
-		im_us = tf_upsample(reconst)
+	if freq_shift:
+		pyramid_re = [tf_freq_shift(pi)[0] if i > 0 else pi for i, pi in enumerate(pyramid_re)]
+
+	reconst = pyramid_re[0]
+	for im in pyramid_re[1:]:
+		im_us = tf_binomial_blur(tf_upsample(reconst), kernel=2.*kernel)
 		reconst = im_us + im
 	return reconst
+
+'''
+splits the im into 4 images.
+'''
+def tf_split(im):
+	im = tf.convert_to_tensor(im, dtype=tf_dtype)
+	_, h, w, c = im.get_shape().as_list()
+	im_tl = im[:, :h//2, :w//2, :]
+	im_tr = im[:, :h//2, w//2:w, :]
+	im_bl = im[:, h//2:h, :w//2, :]
+	im_br = im[:, h//2:h, w//2:w, :]
+	return im_tl, im_tr, im_bl, im_br
+
+'''
+reconstructs the full size image by connecting the split.
+split: a list of image tensors (b, h, w, c) with the order (tl, tr, bl, br)
+'''
+def tf_reconst_split(split):
+	im_top = tf_join_rows(split[:2])
+	im_bottom = tf_join_rows(split[2:4])
+	return tf_join_cols([im_top, im_bottom])
+
+def tf_join_rows(split):
+	_, h, _, c = split[0].get_shape().as_list()
+	w = sum(im.get_shape().as_list()[2] for im in split)
+	return tf.reshape(tf.stack(split, axis=2), (-1, h, w, c))
+
+def tf_join_cols(split):
+	_, _, w, c = split[0].get_shape().as_list()
+	h = sum(im.get_shape().as_list()[1] for im in split)
+	return tf.reshape(tf.concat(split, axis=1), (-1, h, w, c))
 
 ### GAN Class definition
 class Ganist:
@@ -367,43 +438,56 @@ class Ganist:
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
 			### apply pyramid for real images
-			self.im_input_l0, self.im_input_l1, self.im_input_l2 = \
-				tf_make_lap_pyramid(self.im_input, levels=3, freq_shift=True)
-			self.im_input_rec = tf_reconst_lap_pyramid(
-				[self.im_input_l0, self.im_input_l1, self.im_input_l2], freq_shift=True)
+			#self.im_input_l0, self.im_input_l1, self.im_input_l2 = \
+			#	tf_make_lap_pyramid(self.im_input, levels=3)
+			#self.im_input_rec = tf_reconst_lap_pyramid(
+			#	[self.im_input_l0, self.im_input_l1, self.im_input_l2])
+
+			### apply split for real images
+			self.im_input_l0, self.im_input_l1, self.im_input_l2, self.im_input_l3 = \
+				tf_split(self.im_input)
+			self.im_input_rec = tf_reconst_split(
+				[self.im_input_l0, self.im_input_l1, self.im_input_l2, self.im_input_l3])			
 			
 			### reconstruct from misaligned pyramids
-			self.im_input_rec_mal1 = tf_reconst_lap_pyramid(
-				[self.im_input_l0, tf.reverse(self.im_input_l1, [0]), self.im_input_l2], freq_shift=True)
-			self.im_input_rec_mal2 = tf_reconst_lap_pyramid(
-				[self.im_input_l0, self.im_input_l1, tf.reverse(self.im_input_l2, [0])], freq_shift=True)
+			#self.im_input_rec_mal1 = tf_reconst_lap_pyramid(
+			#	[self.im_input_l0, tf.reverse(self.im_input_l1, [0]), self.im_input_l2])
+			#self.im_input_rec_mal2 = tf_reconst_lap_pyramid(
+			#	[self.im_input_l0, self.im_input_l1, tf.reverse(self.im_input_l2, [0])])
 
 			### build generators at each pyramid level
 			batch_size = tf.shape(self.zi_input)[0]
 			#zi = tf.random_uniform([batch_size, self.z_dim], 
 			#		minval=-self.z_range, maxval=self.z_range, dtype=tf_dtype)
 			self.g_layer_l0 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
-				im_size=32, sub_scope='l0')
+				im_size=64, sub_scope='l0')
 			self.g_layer_l1 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
 				im_size=64, sub_scope='l1')
 			self.g_layer_l2 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
-				im_size=128, sub_scope='l2')
+				im_size=64, sub_scope='l2')
+			self.g_layer_l3 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
+				im_size=64, sub_scope='l3')
 			self.g_vars_l0 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l0')
 			self.g_vars_l1 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l1')
 			self.g_vars_l2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l2')
+			self.g_vars_l3 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l3')
 
 			### reconst from generated pyramid
-			self.g_layer_rec = tf_reconst_lap_pyramid(
-				[self.g_layer_l0, self.g_layer_l1, self.g_layer_l2], freq_shift=True)
+			#self.g_layer_rec = tf_reconst_lap_pyramid(
+			#	[self.g_layer_l0, self.g_layer_l1, self.g_layer_l2])
+
+			### reconst from generated split
+			self.g_layer_rec = tf_reconst_split(
+				[self.g_layer_l0, self.g_layer_l1, self.g_layer_l2, self.g_layer_l3])
 
 			### collect g vars
-			self.g_vars = self.g_vars_l0 + self.g_vars_l1 + self.g_vars_l2
+			self.g_vars = self.g_vars_l0 + self.g_vars_l1 + self.g_vars_l2 + self.g_vars_l3
 
 			### build discriminator pyramid l0
 			### build model
 			self.r_logits_l0, self.g_logits_l0, self.rg_logits_l0, self.rg_layer_l0 = \
 				self.build_dis_logits(self.im_input_l0, self.g_layer_l0, 
-					self.train_phase, im_size=32, sub_scope='l0')
+					self.train_phase, im_size=64, sub_scope='l0')
 			self.d_vars_l0 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd_net/l0')
 			### d loss l0
 			d_loss_l0, rg_grad_norm_output_l0 = \
@@ -427,7 +511,7 @@ class Ganist:
 			### build discriminator pyramid l2
 			self.r_logits_l2, self.g_logits_l2, self.rg_logits_l2, self.rg_layer_l2 = \
 				self.build_dis_logits(self.im_input_l2, self.g_layer_l2, 
-					self.train_phase, im_size=128, sub_scope='l2')
+					self.train_phase, im_size=64, sub_scope='l2')
 			self.d_vars_l2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd_net/l2')
 			### d loss l2
 			d_loss_l2, rg_grad_norm_output_l2 = \
@@ -435,6 +519,18 @@ class Ganist:
 					self.rg_logits_l2, self.rg_layer_l2)
 			### g loss l2
 			g_loss_l2 = self.build_gen_loss(self.g_logits_l2)
+
+			### build discriminator pyramid l3
+			self.r_logits_l3, self.g_logits_l3, self.rg_logits_l3, self.rg_layer_l3 = \
+				self.build_dis_logits(self.im_input_l3, self.g_layer_l3, 
+					self.train_phase, im_size=64, sub_scope='l3')
+			self.d_vars_l3 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'd_net/l3')
+			### d loss l3
+			d_loss_l3, rg_grad_norm_output_l3 = \
+				self.build_dis_loss(self.r_logits_l3, self.g_logits_l3, 
+					self.rg_logits_l3, self.rg_layer_l3)
+			### g loss l3
+			g_loss_l3 = self.build_gen_loss(self.g_logits_l3)
 
 			### build discriminator pyramid reconst
 			self.r_logits_rec, self.g_logits_rec, self.rg_logits_rec, self.rg_layer_rec = \
@@ -449,31 +545,32 @@ class Ganist:
 			g_loss_rec = self.build_gen_loss(self.g_logits_rec)
 
 			### build discriminator pyramid reconst on misaligned l1 real images
-			_, self.g_logits_rec_mal1, self.rg_logits_rec_mal1, self.rg_layer_rec_mal1 = \
-				self.build_dis_logits(self.im_input, self.im_input_rec_mal1,
-					self.train_phase, im_size=128, sub_scope='rec', reuse=True)
+			#_, self.g_logits_rec_mal1, self.rg_logits_rec_mal1, self.rg_layer_rec_mal1 = \
+			#	self.build_dis_logits(self.im_input, self.im_input_rec_mal1,
+			#		self.train_phase, im_size=128, sub_scope='rec', reuse=True)
 			### d loss rec mal1
-			d_loss_rec_mal1, rg_grad_norm_output_rec_mal1 = \
-				self.build_dis_loss(self.r_logits_rec, self.g_logits_rec_mal1, 
-					self.rg_logits_rec_mal1, self.rg_layer_rec_mal1)
+			#d_loss_rec_mal1, rg_grad_norm_output_rec_mal1 = \
+			#	self.build_dis_loss(self.r_logits_rec, self.g_logits_rec_mal1, 
+			#		self.rg_logits_rec_mal1, self.rg_layer_rec_mal1)
 
 			### build discriminator pyramid reconst on misaligned l2 real images
-			_, self.g_logits_rec_mal2, self.rg_logits_rec_mal2, self.rg_layer_rec_mal2 = \
-				self.build_dis_logits(self.im_input, self.im_input_rec_mal2,
-					self.train_phase, im_size=128, sub_scope='rec', reuse=True)
+			#_, self.g_logits_rec_mal2, self.rg_logits_rec_mal2, self.rg_layer_rec_mal2 = \
+			#	self.build_dis_logits(self.im_input, self.im_input_rec_mal2,
+			#		self.train_phase, im_size=128, sub_scope='rec', reuse=True)
 			### d loss rec mal2
-			d_loss_rec_mal2, rg_grad_norm_output_rec_mal2 = \
-				self.build_dis_loss(self.r_logits_rec, self.g_logits_rec_mal2, 
-					self.rg_logits_rec_mal2, self.rg_layer_rec_mal2)
+			#d_loss_rec_mal2, rg_grad_norm_output_rec_mal2 = \
+			#	self.build_dis_loss(self.r_logits_rec, self.g_logits_rec_mal2, 
+			#		self.rg_logits_rec_mal2, self.rg_layer_rec_mal2)
 
 			### collect d vars
-			self.d_vars = self.d_vars_l0 + self.d_vars_l1 + self.d_vars_l2 + self.d_vars_rec
+			self.d_vars = self.d_vars_l0 + self.d_vars_l1 + self.d_vars_l2 + self.d_vars_l3 + \
+				self.d_vars_rec
 
 			### collect d loss
 			self.rg_grad_norm_output = (rg_grad_norm_output_l0 + rg_grad_norm_output_l1 + \
-				rg_grad_norm_output_l2 + rg_grad_norm_output_rec) / 4.# + \
+				rg_grad_norm_output_l2 + rg_grad_norm_output_l2 + rg_grad_norm_output_rec) / 5.# + \
 				#rg_grad_norm_output_rec_mal1 + rg_grad_norm_output_rec_mal2) / 6.
-			self.d_loss_total = d_loss_l0 + d_loss_l1 + d_loss_l2 + d_loss_rec #+ \
+			self.d_loss_total = d_loss_l0 + d_loss_l1 + d_loss_l2 + d_loss_l3 + d_loss_rec #+ \
 				#(d_loss_rec + d_loss_rec_mal1 + d_loss_rec_mal2) / 3.
 
 			### d opt total
@@ -483,7 +580,7 @@ class Ganist:
 			self.d_opt_total = self.d_opt_handle.apply_gradients(d_grads_vars)
 			
 			### collect g loss
-			self.g_loss_total = g_loss_l0 + g_loss_l1 + g_loss_l2 + g_loss_rec
+			self.g_loss_total = g_loss_l0 + g_loss_l1 + g_loss_l2 + g_loss_l3 + g_loss_rec
 
 			### g opt total
 			self.g_opt_handle = tf.train.AdamOptimizer(self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2)
@@ -529,10 +626,12 @@ class Ganist:
 
 			### compute conv layer learning variation
 			self.g_sim_layer_list = ['conv0', 'conv1', 'conv2', 'conv3', 'fcz']
-			self.g_backup, self.g_layer_sim, self.g_layer_non_zero = compute_layer_sim(self.g_sim_layer_list, self.g_vars_l0)
+			self.g_backup, self.g_layer_sim, self.g_layer_non_zero = \
+				compute_layer_sim(self.g_sim_layer_list, self.g_vars_l0)
 
 			self.d_sim_layer_list = ['conv0', 'conv1', 'conv2', 'conv3', 'fco']
-			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = compute_layer_sim(self.d_sim_layer_list, self.d_vars_l0)
+			self.d_backup, self.d_layer_sim, self.d_layer_non_zero  = \
+				compute_layer_sim(self.d_sim_layer_list, self.d_vars_l0)
 
 			### summaries **g_num**
 			g_loss_sum = tf.summary.scalar("g_loss", self.g_loss_total)
@@ -611,13 +710,13 @@ class Ganist:
 					h0 = tf.reshape(z_fc, [-1, 4, 4, 256])
 					h1 = h0
 				elif im_size == 64:
-					z_fc = act(bn(dense(zi, 8*8*256, scope='fcz'),
+					z_fc = act(bn(dense(zi, 4*4*512, scope='fcz'),
 						is_training=train_phase))
-					h0 = tf.reshape(z_fc, [-1, 8, 8, 256])
-					h1 = h0
-					#h0_us = tf.image.resize_nearest_neighbor(h0, [16, 16], name='us0')
-					#h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
-					#	is_training=train_phase))
+					h0 = tf.reshape(z_fc, [-1, 4, 4, 512])
+					#h1 = h0
+					h0_us = tf.image.resize_nearest_neighbor(h0, [8, 8], name='us0')
+					h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
+						is_training=train_phase))
 				elif im_size == 128:
 					z_fc = act(bn(dense(zi, 8*8*512, scope='fcz'),
 						is_training=train_phase))
@@ -680,7 +779,7 @@ class Ganist:
 				if im_size == 32:
 					h3 = h2
 				elif im_size == 64:
-					h3 = h2 #act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+					h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 				elif im_size == 128:
 					h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
 				else:
@@ -753,6 +852,22 @@ class Ganist:
 
 			return sim_dict, non_zero_dict
 
+		### only filter
+		if filter_only:
+			feed_dict = {self.im_input:batch_data, self.train_phase: False}
+			if output_type == 'l0':
+				go_layer = self.im_input_l0
+			elif output_type == 'l1':
+				go_layer = self.im_input_l1
+			elif output_type == 'l2':
+				go_layer = self.im_input_l2
+			elif output_type == 'l3':
+				go_layer = self.im_input_l3
+			else:
+				go_layer = self.im_input_rec
+			imo_layer = self.sess.run(go_layer, feed_dict=feed_dict)
+			return imo_layer
+
 		### sample z from uniform (-1,1)
 		if zi_data is None:
 			zi_data = np.random.uniform(low=-self.z_range, high=self.z_range, 
@@ -776,22 +891,10 @@ class Ganist:
 				go_layer = self.g_layer_l1
 			elif output_type == 'l2':
 				go_layer = self.g_layer_l2
+			elif output_type == 'l3':
+				go_layer = self.g_layer_l3
 			else:
 				go_layer = self.g_layer_rec
-			imo_layer = self.sess.run(go_layer, feed_dict=feed_dict)
-			return imo_layer
-
-		### only filter
-		if filter_only:
-			feed_dict = {self.im_input:batch_data, self.train_phase: False}
-			if output_type == 'l0':
-				go_layer = self.im_input_l0
-			elif output_type == 'l1':
-				go_layer = self.im_input_l1
-			elif output_type == 'l2':
-				go_layer = self.im_input_l2
-			else:
-				go_layer = self.im_input_rec
 			imo_layer = self.sess.run(go_layer, feed_dict=feed_dict)
 			return imo_layer
 
