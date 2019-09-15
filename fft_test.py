@@ -10,7 +10,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 import glob
-from run_ganist import read_imagenet
 import sys
 
 def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_crop=None):

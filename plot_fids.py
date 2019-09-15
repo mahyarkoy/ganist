@@ -25,9 +25,11 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/33_logs_gansd_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
 	'/media/evl/Public/Mahyar/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lap_logs/0_logs_wganbn_lap3_celeba128cc/fid50/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lap_logs/temp/logs_wganbn_lap3_gd334_celeba128cc_fid50/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lap_logs/temp/logs_wganbn_lap3_gd334_fshift_celeba128cc_fid50/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/10_logs_wganbn_conv3_celeba128cc_fid50/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/0_logs_wganbn_lap3_celeba128cc/fid50/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lap_logs/7_logs_wganbn_lap3_gd334_celeba128cc_fid50/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/8_logs_wganbn_lap3_gd334_fshift_celeba128cc_fid50/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/9_logs_wganbn_lap3_gd344_celeba128cc_fid50/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/2_logs_wganbn_lap3_celeba128cc_popos/fid50/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/temp/logs_wganbn_lap3_celeba128cc_newshuffle/run_0/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
@@ -87,10 +89,10 @@ if __name__ == '__main__':
 	ax.set_title('CelebA 128: WGAN-BN')
 
 	### plot
-	pnames = ['real', 'wganbn', 'lap3', 'gd334', 'gd334_fshift']
-	pcolors = [0, 1, 2, 3, 4] ## add 0 for real
+	pnames = ['real', 'wganbn', 'lap3_gd334']
+	pcolors = [0, 1, 2] ## add 0 for real
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_lap3_gd334_fshift_celeba128cc_temp.pdf')
+	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_lap3gd334_celeba128cc.pdf')

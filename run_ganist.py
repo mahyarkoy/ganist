@@ -34,6 +34,7 @@ from PIL import Image
 from scipy.stats import beta as beta_dist
 from scipy import signal
 import tf_ganist
+from fft_test import apply_fft_images
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
@@ -66,13 +67,19 @@ def im_process(im_data, im_size=28):
 def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_crop=None):
 	im = Image.open(im_path)
 	w, h = im.size
+	crop_size = 128
 	### celebA specific center crop: im_size cut around center
 	if center_crop is not None:
 		cy, cx = center_crop
 		im_array = np.asarray(im)
-		im_crop = im_array[cy-im_size//2:cy+im_size//2, cx-im_size//2:cx+im_size//2]
+		im_crop = im_array[cy-crop_size//2:cy+crop_size//2, cx-crop_size//2:cx+crop_size//2]
 		im.close()
-		im_o = (im_crop / 255.0) * 2.0 - 1.0
+		im_re = im_crop
+		if im_size != crop_size:
+			im_pil = Image.fromarray(im_crop)
+			im_re_pil = im_pil.resize((im_size, im_size), Image.BILINEAR)
+			im_re = np.asarray(im_re_pil)
+		im_o = (im_re / 255.0) * 2.0 - 1.0
 		im_o = im_o[:, :, :3]
 		return im_o if not verbose else (im_o, w, h)
 	### crop and resize for all other datasets
@@ -266,7 +273,7 @@ def gset_block_draw(ganist, sample_size, path, en_color=True, border=False):
 	im_size = ganist.data_dim[0]
 	for g in range(ganist.g_num):
 		z_data[g*sample_size:(g+1)*sample_size] = g * np.ones(sample_size, dtype=np.int32)
-		im_draw[g, ...] = sample_ganist(ganist, sample_size, z_data=z_data[g*sample_size:(g+1)*sample_size])
+		im_draw[g, ...] = sample_ganist(ganist, sample_size, z_data=z_data[g*sample_size:(g+1)*sample_size])[0]
 	#im_draw = (im_draw + 1.0) / 2.0
 	if border:
 		im_draw = im_color_borders(im_draw.reshape([-1]+ganist.data_dim), z_data)
@@ -291,7 +298,7 @@ def gset_block_draw_top(ganist, sample_size, path, pr_th=0.05, en_color=False, g
 		if g_pr[g] <= pr_th:
 			continue
 		z_data[i, ...] = g * np.ones(sample_size, dtype=np.int32)
-		im_draw[i, ...] = sample_ganist(ganist, sample_size, z_data=z_data[i, ...])
+		im_draw[i, ...] = sample_ganist(ganist, sample_size, z_data=z_data[i, ...])[0]
 		i += 1
 	#im_draw = (im_draw + 1.0) / 2.0
 	if g_color is True:
@@ -418,20 +425,35 @@ def sample_pyramid(ganist, path=None, sample_size=10, im_data=None):
 		size=[sample_size, ganist.z_dim]).astype(tf_ganist.np_dtype)
 
 	filter_only = False if im_data is None else True
-	samples_l0 = sample_ganist(ganist, sample_size, 
-		zi_data=zi, output_type='l0', z_im=im_data, filter_only=filter_only)
-	samples_l1 = sample_ganist(ganist, sample_size, 
-		zi_data=zi, output_type='l1', z_im=im_data, filter_only=filter_only)
-	samples_l2 = sample_ganist(ganist, sample_size, 
-		zi_data=zi, output_type='l2', z_im=im_data, filter_only=filter_only)
-	samples_l3 = sample_ganist(ganist, sample_size, 
-		zi_data=zi, output_type='l3', z_im=im_data, filter_only=filter_only)
+	samples_gens = sample_ganist(ganist, sample_size, 
+		zi_data=zi, output_type='collect', z_im=im_data, filter_only=filter_only)
 	samples_rec = sample_ganist(ganist, sample_size, 
-		zi_data=zi, output_type='rec', z_im=im_data, filter_only=filter_only)
-	pyramid = [samples_l0, samples_l1, samples_l2, samples_l3, samples_rec]
+		zi_data=zi, output_type='rec', z_im=im_data, filter_only=filter_only)[0]
+	pyramid = samples_gens + [samples_rec]
+	if im_data is not None:
+		pyramid.append(im_data)
+		pyramid.append(im_data-samples_rec)
 	if path is not None:
-		pyramid_draw(pyramid, path)
+		pyramid_draw(pyramid, path, im_shape=(pyramid[0].shape[0], 128, 128, 3))
 	return pyramid
+
+def sample_pyramid_with_fft(ganist, path=None, sample_size=10, im_data=None):
+	pyramid = sample_pyramid(ganist, path=None, sample_size=sample_size, im_data=im_data)
+	pyramid_fft = list()
+	for p in pyramid:
+		print('>>> pyramid shape: {}'.format(p.shape))
+		pfft, _ = apply_fft_images(p, reshape=True)
+		pyramid_fft.append(np.log(pfft)/5. - 0.5)
+
+	fft_c, _ = apply_fft_images(pyramid[0]+1j*pyramid[1], reshape=True)
+	pyramid_fft.append(np.log(fft_c)/5. - 0.5)
+	fft_op_c, _ = apply_fft_images(pyramid[2]+1j*pyramid[3], reshape=True)
+	pyramid_fft.append(np.log(fft_op_c)/5. - 0.5)
+
+	pyramid_collect = pyramid + pyramid_fft
+	if path is not None:
+		pyramid_draw(pyramid_collect, path, im_shape=(pyramid[0].shape[0], 128, 128, 3))
+	return pyramid_collect
 
 '''
 im_data should be a (columns, rows, imh, imw, imc).
@@ -791,7 +813,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 
 		### discriminator update
 		if d_update_flag is True:
-			batch_sum, batch_g_data = ganist.step(batch_data, 
+			batch_sum = ganist.step(batch_data, 
 				batch_size=None, gen_update=False, run_count=itr_total)
 			ganist.write_sum(batch_sum, itr_total)
 			d_itr += 1
@@ -801,7 +823,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 		
 		### generator updates: g_updates times for each d_updates of discriminator
 		elif g_updates > 0:
-			batch_sum, batch_g_data = ganist.step(batch_data, 
+			batch_sum = ganist.step(batch_data, 
 				batch_size=None, gen_update=True, run_count=itr_total)
 			ganist.write_sum(batch_sum, itr_total)
 			g_itr += 1
@@ -813,34 +835,24 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 			d_update_flag = True
 
 '''
-Sample sample_size data points from ganist.
+Sample sample_size data points from ganist, returns a list of ndarrays.
+sampler: must return a list.
 '''
 def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, 
 	z_data=None, zi_data=None, z_im=None, output_type='rec', filter_only=False):
 	sampler = sampler if sampler is not None else ganist.step
-	if output_type == 'l0':
-		g_samples = np.zeros([sample_size, 64, 64, 3])
-	elif output_type == 'l1':
-		#g_samples = np.zeros([sample_size, 64, 64, 3])
-		g_samples = np.zeros([sample_size, 64, 64, 3])
-	elif output_type == 'l2':
-		#g_samples = np.zeros([sample_size, 128, 128, 3])
-		g_samples = np.zeros([sample_size, 64, 64, 3])
-	elif output_type == 'l3':
-		g_samples = np.zeros([sample_size, 64, 64, 3])
-	elif output_type == 'rec':
-		g_samples = np.zeros([sample_size, 128, 128, 3])
-	
+	res_list = list()
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = min(batch_start + batch_size, sample_size)
 		batch_len = batch_end - batch_start
 		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
 		batch_zi = zi_data[batch_start:batch_end, ...] if zi_data is not None else None
 		batch_im = z_im[batch_start:batch_end, ...] if z_im is not None else None
-		g_samples[batch_start:batch_end, ...] = \
-			sampler(batch_im, batch_len, 
-				gen_only=True, z_data=batch_z, zi_data=batch_zi, output_type=output_type, filter_only=filter_only)
-	return g_samples
+		res_list.append(sampler(batch_im, batch_len, 
+			gen_only=True, z_data=batch_z, zi_data=batch_zi, 
+			output_type=output_type, filter_only=filter_only))
+
+	return [np.concatenate([s[i] for s in res_list], axis=0) for i in range(len(res_list[0]))]
 
 def blur_images_levels(imgs, blur_levels, blur_type='gauss'):
 	if blur_type == 'binomial':
@@ -990,10 +1002,10 @@ class TFutil:
 		us_key = im_key + (times,)
 		if us_key not in self.upsample_dict:
 			im_x = im_layer
-			kernel = 2. * tf_ganist.make_winsinc_blackman(fc=1./4)
+			kernel = np.array([1., 4., 6., 4., 1.]) / 16 #tf_ganist.make_winsinc_blackman(fc=1./4)
 			for i in range(times):
 				im_x = tf_ganist.tf_binomial_blur(
-					tf_ganist.tf_upsample(im_x), kernel=kernel)
+					tf_ganist.tf_upsample(im_x), kernel=2. * kernel)
 			self.upsample_dict[us_key] = im_x
 		us_layer = self.upsample_dict[us_key]
 		### apply
@@ -1021,11 +1033,13 @@ class TFutil:
 			batch_len = batch_end - batch_start
 			### collect images
 			if im_data is None:
-				im = sample_ganist(ganist, batch_len) if ganist is not None else \
-					readim_from_path(im_paths[batch_start:batch_end], im_size, center_crop=center_crop)
+				im = sample_ganist(ganist, batch_len, output_type='rec')[0] if ganist is not None else \
+					readim_from_path(im_paths[batch_start:batch_end], 
+						im_size, center_crop=center_crop)
 			else:
 				im = im_data[batch_start:batch_end] if ganist is None else \
-					sample_ganist(ganist, batch_size, z_im=im_data[batch_start:batch_end], filter_only=True, output_type='rec')
+					sample_ganist(ganist, batch_size, z_im=im_data[batch_start:batch_end], 
+						filter_only=True, output_type='rec')[0]
 			### blur images
 			im_blurs = blur_images_levels(im, blur_levels)
 			### extract features
@@ -1142,14 +1156,14 @@ def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None):
 	sampler = sampler if sampler is not None else ganist.step
 	
 	### collect real and gen samples **mt**
-	g_samples = sample_ganist(ganist, draw_size**2, sampler=sampler)
+	g_samples = sample_ganist(ganist, draw_size**2, sampler=sampler, output_type='rec')[0]
 	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=[0], ganist=ganist)
 
 	### draw block image of gen samples
 	if draw_path is not None:
 		g_samples = g_samples.reshape([-1] + ganist.data_dim)
 		im_block_draw(g_samples, draw_size, draw_path+'.png', border=True)
-		sample_pyramid(ganist, draw_path+'_pyramid.png', 10)
+		sample_pyramid_with_fft(ganist, draw_path+'_pyramid.png', 10)
 
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
@@ -1313,7 +1327,7 @@ def gset_sample_draw(ganist, block_size):
 	sample_size = block_size ** 2
 	for g in range(ganist.g_num):
 		z_data = g * np.ones(sample_size, dtype=np.int32)
-		samples = sample_ganist(ganist, sample_size, z_data=z_data)
+		samples = sample_ganist(ganist, sample_size, z_data=z_data)[0]
 		im_block_draw(samples, block_size, log_path_draw+'/g_%d_manifold' % g, ganist=ganist)
 
 def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
@@ -1445,7 +1459,7 @@ def eval_fft_layer(val, dft_size=None):
 Computes and plots the fft of each conv layer in ganist.
 dft_size: if not None, will apply dft without assuming continuous signal, using a base freq of 1/dft_size.
 '''
-def eval_fft(ganist, save_dir, dft_size=5):
+def eval_fft(ganist, save_dir, dft_size=None):
 	fft_vars = list()
 	d_vars, g_vars = ganist.get_vars_array()
 	fig = plt.figure(0, figsize=(8,6))
@@ -1454,7 +1468,9 @@ def eval_fft(ganist, save_dir, dft_size=5):
 			scopes = name.split('/')
 			net_name = next(v for v in scopes if 'net' in  v)
 			conv_name = next(v for v in scopes if 'conv' in  v)
-			save_path = '{}/{}_{}'.format(save_dir, net_name, conv_name)
+			full_name = '-'.join(scopes[:-1])
+			#save_path = '{}/{}_{}'.format(save_dir, net_name, conv_name)
+			save_path = '{}/{}'.format(save_dir, full_name)
 			layer_name = '{}_{}'.format(net_name, conv_name)
 			print(name)
 			print(val.shape)
@@ -1479,7 +1495,7 @@ def eval_fft(ganist, save_dir, dft_size=5):
 				ax.set_yticklabels(ticks[::-1])
 			fig.colorbar(pa)
 			fig.savefig(save_path+'.png', dpi=300)
-			fft_vars.append((fft_mean, layer_name))
+			fft_vars.append((fft_mean, full_name))
 	with open('{}/eval_fft.cpk'.format(save_dir), 'wb+') as fs:
 		pk.dump(fft_vars, fs)
 
@@ -1746,16 +1762,8 @@ if __name__ == '__main__':
 	blur_im = np.stack(blur_im_list, axis=0)
 	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
 	### draw filtered real samples (blurred)
-	sample_pyramid(ganist, log_path+'/real_samples_pyramid.png', sample_size=10, im_data=train_imgs[:10])
-	#im_block_draw(sample_ganist(ganist, 25, z_im=train_imgs[:25], filter_only=True, output_type='rec'), 5, 
-	#	log_path_draw+'/real_samples_rec.png', border=True)
-	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='l1'), 5, 
-	#	log_path_draw+'/real_samples_mal1.png', border=True)
-	#im_block_draw(ganist.step(all_imgs_stack[:25], 25, filter_only=True, output_type='l2'), 5, 
-	#	log_path_draw+'/real_samples_mal2.png', border=True)
-
-	#fid_test = eval_fid(sess, train_imgs[:5000], train_imgs[5000:10000])
-	#print '>>> FID TEST: ', fid_test
+	sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
+		sample_size=10, im_data=train_imgs[:10])
 
 	'''
 	GAN SETUP SECTION
@@ -1765,7 +1773,7 @@ if __name__ == '__main__':
 
 	### load ganist
 	load_path = log_path_snap+'/model_best.h5'
-	#load_path = '/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_{}/snapshots/model_best.h5'
+	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
 	ganist.load(load_path.format(run_seed))
 
 	'''
@@ -1773,12 +1781,12 @@ if __name__ == '__main__':
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(ganist, 1000)
+	g_samples = sample_ganist(ganist, 1000, output_type='rec')[0]
 	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
 	print '>>> g_samples shape: ', g_samples.shape
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
-	im_separate_draw(g_samples[:1000], log_path_sample)
-	sample_pyramid(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
+	#im_separate_draw(g_samples[:1000], log_path_sample)
+	sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
 	#sys.exit(0)
 
 	'''

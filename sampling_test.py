@@ -29,14 +29,12 @@ np.random.shuffle(im_paths)
 im_data = readim_from_path(im_paths[:dataset_size], im_size, center_crop=(121, 89))
 
 ### 1d filter test
-impulse = np.zeros(128)
-impulse[128//2] = 1.
-kernel = np.array([1., 4., 6., 4., 1.])
-kernel = kernel / np.sum(kernel)
+impulse = np.zeros(im_size)
+impulse[im_size//2] = 1.
 
 ### windowed sinc (Blackman)
 fc = 1. / 4
-ksize = 40
+ksize = 30
 x = np.arange(ksize+1)
 x[ksize//2] = 0
 kernel = np.sin(2.* np.pi * fc * (x - ksize//2)) / (x - ksize//2)
@@ -44,6 +42,12 @@ kernel = kernel * (0.42 - 0.5*np.cos(2. * np.pi * x / ksize) + 0.08*np.cos(4. * 
 kernel[ksize//2] = 2. * np.pi * fc
 kernel = kernel / np.sum(kernel)
 kernel = np.convolve(kernel, kernel, 'full')
+
+### gaussian
+#kernel = tfg.make_gauss(sigma=1., ksize=40)
+
+### binomial
+kernel_bi = np.array([1., 4., 6., 4., 1.]) / 16
 
 output = np.convolve(impulse, kernel, 'same')
 imf = np.fft.fftn(output)
@@ -68,36 +72,66 @@ plt.show()
 #im_ds = tf_downsample(im_data)
 #im_us = tf_upsample(im_data)
 #im_blur = tf_binomial_blur(im_data, kernel=kernel)
+im_ds = tf_downsample(tf_binomial_blur(im_data, kernel=kernel))
 kernel_us = 2. * kernel
 im_blur = tf_binomial_blur(tf_upsample(
-	tf_downsample(tf_binomial_blur(im_data, kernel=kernel))), kernel=kernel_us)
-#pyramid = tf_make_lap_pyramid(im_data, freq_shift=True)
-#reconst = tf_reconst_lap_pyramid(pyramid, freq_shift=True)
-im_diff = im_data - im_blur
-fc = 1. / 4
+	tf_downsample(tf_binomial_blur(im_ds, kernel=kernel))), kernel=kernel_us)
+pyramid = tf_make_lap_pyramid(im_data, freq_shift=True)
+reconst = tf_reconst_lap_pyramid(pyramid, freq_shift=True)
+im_diff = im_ds - im_blur
+fc = 1. / 2
 im_shift, im_shifti = tf_freq_shift(im_diff, fc=fc)
-kernel_sh = make_winsinc_blackman(fc=1./3)
-im_shift_blur = tf_binomial_blur(im_shift, kernel=kernel_sh)
-im_shifti_blur = tf_binomial_blur(im_shifti, kernel=kernel_sh)
-im_diff_blur = tf_binomial_blur(im_diff, kernel=kernel_sh)
+kernel_co = make_winsinc_blackman(fc=1./3)
+im_shift_blur = tf_binomial_blur(im_shift, kernel=kernel_co)
+im_shifti_blur = tf_binomial_blur(im_shifti, kernel=kernel_co)
+im_diff_blur = tf_binomial_blur(im_diff, kernel=kernel_co)
 im_shift_rec = tf_freq_shift(im_shift, fc=fc)[0] + tf_freq_shift(im_shifti, fc=fc)[1]
 im_shift_blur_rec = tf_freq_shift(im_shift_blur, fc=fc)[0] + \
 	tf_freq_shift(im_shifti_blur, fc=fc)[1]
+
+im_sum = im_shift + im_shifti
+im_sum_rec = sum(tf_freq_shift(im_sum, fc=fc)) ### devide by 1. + sin.cos
+im_sum_blur = tf_binomial_blur(im_sum, kernel=kernel_co)
+im_sum_blur_rec = sum(tf_freq_shift(im_sum_blur, fc=fc)) ### devide by 1. + sin.cos
+im_re_sum = im_sum_rec + im_blur
+im_re_sum_blur = im_sum_blur_rec + im_blur
+im_re_blur = im_diff_blur + im_blur
 
 ### apply sampling
 #im_dso, im_uso, im_bluro, pyramid, reconst = sess.run([im_ds, im_us, im_blur, pyramid, reconst])
 #im_diff = im_data - reconst
 #pyramid_full = pyramid + [reconst]
 
-#im_blur, im_diff, im_shift, im_diff_blur, im_shift_blur, im_shift_rec, im_shift_blur_rec = \
-#	sess.run([im_blur, im_diff, im_shift, im_diff_blur, im_shift_blur, 
-#		im_shift_rec, im_shift_blur_rec])
+im_blur, im_diff, im_shift, im_diff_blur, im_shift_blur, im_shift_rec, im_shift_blur_rec = \
+	sess.run([im_blur, im_diff, im_shift, im_diff_blur, im_shift_blur, 
+		im_shift_rec, im_shift_blur_rec])
+pyramid, reconst = sess.run([pyramid, reconst])
+im_ds, im_sum, im_sum_rec, im_sum_blur, im_sum_blur_rec, im_re_sum, im_re_sum_blur, im_re_blur = \
+	sess.run([im_ds, im_sum, im_sum_rec, im_sum_blur, im_sum_blur_rec, 
+		im_re_sum, im_re_sum_blur, im_re_blur])
 
 ### apply fft
-#im_diff_fft, im_diff_grey = apply_fft_images(im_diff, reshape=True)
-#im_shift_fft, im_shift_grey = apply_fft_images(im_shift, reshape=True)
-#im_diffb_fft, im_diffb_grey = apply_fft_images(im_diff_blur, reshape=True)
-#im_shiftb_fft, im_shiftb_grey = apply_fft_images(im_shift_blur, reshape=True)
+im_diff_fft, im_diff_grey = apply_fft_images(im_diff, reshape=True)
+im_shift_fft, im_shift_grey = apply_fft_images(im_shift, reshape=True)
+im_diffb_fft, im_diffb_grey = apply_fft_images(im_diff_blur, reshape=True)
+im_shiftb_fft, im_shiftb_grey = apply_fft_images(im_shift_blur, reshape=True)
+im_sum_fft, im_sum_grey = apply_fft_images(im_sum, reshape=True)
+im_sumb_fft, im_sumb_grey = apply_fft_images(im_sum_blur, reshape=True)
+
+### draw image fft pyramid simple
+norm = 5.
+pyramid_draw([im_data, im_diff_grey, im_diffb_grey,
+	#im_shift_grey, im_shiftb_grey,
+	im_sum, im_sum_blur,
+	im_sum_rec, im_sum_blur_rec,
+	im_re_sum, im_re_sum_blur,
+	im_re_blur,
+	np.log(im_diff_fft)/norm-0.5, np.log(im_diffb_fft)/norm-0.5, 
+	np.log(im_sum_fft)/norm-0.5, np.log(im_sumb_fft)/norm-0.5], 
+	path='logs/fft_pyramid_winsinc.png', im_shape=(10, im_size, im_size, 3))
+
+### real pyramid draw
+#pyramid_draw(pyramid+[reconst], path='logs/real_samples_pyramid.png', im_shape=(10, 128, 128, 3))
 
 ### draw image fft pyramid
 #norm = 5.
@@ -108,23 +142,23 @@ im_shift_blur_rec = tf_freq_shift(im_shift_blur, fc=fc)[0] + \
 #	path='logs/fft_pyramid_winsinc.png', im_shape=(10, 128, 128, 3))
 
 ### split setup
-split = tfg.tf_split(im_data)
-im_rec = tfg.tf_reconst_split(split)
-split, im_rec = sess.run([split, im_rec])
-
-im_fft, _ = apply_fft_images(im_data, reshape=True)
-im_rec_fft, _ = apply_fft_images(im_rec, reshape=True)
-split_l0_fft, _ = apply_fft_images(split[0], reshape=True)
-split_l1_fft, _ = apply_fft_images(split[1], reshape=True)
-split_l2_fft, _ = apply_fft_images(split[2], reshape=True)
-split_l3_fft, _ = apply_fft_images(split[3], reshape=True)
-
-norm = 5.
-pyramid_draw([im_data, im_rec, split[0], split[1], split[2], split[3], 
-	np.log(im_fft)/norm-0.5, np.log(im_rec_fft)/norm-0.5, 
-	np.log(split_l0_fft)/norm-0.5, np.log(split_l1_fft)/norm-0.5,
-	np.log(split_l2_fft)/norm-0.5, np.log(split_l3_fft)/norm-0.5], 
-	path='logs/fft_split.png', im_shape=(10, 128, 128, 3))
+#split = tfg.tf_split(im_data)
+#im_rec = tfg.tf_reconst_split(split)
+#split, im_rec = sess.run([split, im_rec])
+#
+#im_fft, _ = apply_fft_images(im_data, reshape=True)
+#im_rec_fft, _ = apply_fft_images(im_rec, reshape=True)
+#split_l0_fft, _ = apply_fft_images(split[0], reshape=True)
+#split_l1_fft, _ = apply_fft_images(split[1], reshape=True)
+#split_l2_fft, _ = apply_fft_images(split[2], reshape=True)
+#split_l3_fft, _ = apply_fft_images(split[3], reshape=True)
+#
+#norm = 5.
+#pyramid_draw([im_data, im_rec, split[0], split[1], split[2], split[3], 
+#	np.log(im_fft)/norm-0.5, np.log(im_rec_fft)/norm-0.5, 
+#	np.log(split_l0_fft)/norm-0.5, np.log(split_l1_fft)/norm-0.5,
+#	np.log(split_l2_fft)/norm-0.5, np.log(split_l3_fft)/norm-0.5], 
+#	path='logs/fft_split.png', im_shape=(10, 128, 128, 3))
 
 #pyramid_sh = list()
 #for pi in pyramid_full:
