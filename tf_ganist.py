@@ -491,15 +491,16 @@ class Ganist:
 					d_loss_list, g_loss_list, rg_grad_norm_list)
 				g_layer_list.append(comb_list[-1])
 		else:
-			for i in range(4):
+			for i in range(2):
 				g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
 					im_size=gen_size, sub_scope='level_{}_{}'.format(scope, i))
-				gen_collect.append(g_layer)
+				gen_collect.append(g_layer[:, :, :, 0:3])
+				gen_collect.append(g_layer[:, :, :, 3:6])
 				g_layer_list.append(g_layer)
 		
 		### build delta generator
 		g_delta = self.build_gen(zi_input, self.g_act, self.train_phase, 
-			im_size=gen_size, sub_scope='level_{}_delta'.format(scope))
+			im_size=gen_size, sub_scope='level_{}_delta'.format(scope))[:, :, :, 0:3]
 		gen_collect.append(g_delta)
 
 		### apply low pass filter on g_layer and build discriminators
@@ -507,14 +508,17 @@ class Ganist:
 		for i, gl in enumerate(g_layer_list):
 			g_lp_list.append(tf_binomial_blur(gl, blur_kernel))
 			d_loss, g_loss, rg_grad_norm_output = \
-				self.build_gan_loss(im_lp_list[i], g_lp_list[-1], im_size, scope='level_{}_{}'.format(scope, i))
+				self.build_gan_loss(tf.concat([im_lp_list[2*i], im_lp_list[2*i+1]], axis=3),
+					g_lp_list[-1], im_size, scope='level_{}_{}'.format(scope, i))
 			d_loss_list.append(d_loss)
 			g_loss_list.append(g_loss)
 			rg_grad_norm_list.append(rg_grad_norm_output)
 
 		### build output combination
-		g_r, _ = tf_freq_shift_complex(g_layer_list[0], g_layer_list[1], -fc_x, -fc_y)
-		g_r_op, _ = tf_freq_shift_complex(g_layer_list[2], g_layer_list[3], -fc_x, fc_y)
+		g_r, _ = tf_freq_shift_complex(
+			g_lp_list[0][:, :, :, 0:3], g_lp_list[0][:, :, :, 3:6], -fc_x, -fc_y)
+		g_r_op, _ = tf_freq_shift_complex(
+			g_lp_list[1][:, :, :, 0:3], g_lp_list[1][:, :, :, 3:6], -fc_x, fc_y)
 		g_comb = g_r + g_r_op + g_delta
 		comb_list.append(g_comb)
 
@@ -825,7 +829,7 @@ class Ganist:
 					is_training=train_phase))
 			
 				h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
-				h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
+				h4 = conv2d(h3_us, 2*self.data_dim[-1], scope='conv3')
 
 				### resnext version
 				'''
