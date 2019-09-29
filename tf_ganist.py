@@ -457,69 +457,72 @@ class Ganist:
 	def build_shift_gan(self, im_input, zi_input, im_size, gen_size, 
 			scope='0', gen_collect=list(), im_collect=list(), comb_list=list(), 
 			d_loss_list=list(), g_loss_list=list(), rg_grad_norm_list=list()):
-		fc_x = 1. / 4
-		fc_y = 1. / 4
-		fc_blur = 1. / 4
-		blur_kernel = make_winsinc_blackman(fc_blur, ksize=30)
+		#freq_list = [(0.25, 0.), (0., 0.25), (0.25, 0.25), (-0.25, 0.25)]
+		freq_list = [(1./8, 0.), (0., 1./8), (1./8, 1./8), (-1./8, 1./8)]
+		blur_kernel = np.array([1., 4., 6., 4., 1.]) / 16. #make_winsinc_blackman(1./4, ksize=30)
+		
 		### shift the image
-		im_r, im_i = tf_freq_shift(im_input, fc_x, fc_y)
-		### low pass the shifted image
-		im_r_lp = tf_binomial_blur(im_r, blur_kernel)
-		im_i_lp = tf_binomial_blur(im_i, blur_kernel)
-		### shift the image in opposing direction
-		im_r_op, im_i_op = tf_freq_shift(im_input, fc_x, -fc_y)
-		### low pass the oposite direction shifted image
-		im_r_op_lp = tf_binomial_blur(im_r_op, blur_kernel)
-		im_i_op_lp = tf_binomial_blur(im_i_op, blur_kernel)
-		### collect image low pass
-		im_lp_list = [im_r_lp, im_i_lp, im_r_op_lp, im_i_op_lp]
-		im_collect += im_lp_list
-		### reconst im
-		im_rec_r, _ = tf_freq_shift_complex(im_r, im_i, -fc_x, -fc_y)
-		im_op_rec_r, _ = tf_freq_shift_complex(im_r_op, im_i_op, -fc_x, fc_y)
-		im_blur_rec_r, _ = tf_freq_shift_complex(im_r_lp, im_i_lp, -fc_x, -fc_y)
-		im_op_blur_rec_r, _ = tf_freq_shift_complex(im_r_op_lp, im_i_op_lp, -fc_x, fc_y)
+		im_fs_list = list()
+		for i, fc in enumerate(freq_list):
+			im_r, im_i = tf_freq_shift(im_input, -fc[0], -fc[1])
+			im_fs_list += [im_r, im_i]
 
-		im_collect += [im_rec_r, im_op_rec_r, im_blur_rec_r+im_op_blur_rec_r]
+		### low pass the shifted image
+		im_lp_list = [tf_binomial_blur(im, blur_kernel) for im in im_fs_list]
+
+		### reconstruct the shifted image
+		im_rec_list = list()
+		for i, fc in enumerate(freq_list):
+			im_r, _ = tf_freq_shift_complex(im_fs_list[i*2], im_fs_list[i*2+1], fc[0], fc[1])
+			im_rec_list.append(im_r)
+
+		im_collect += im_fs_list + im_rec_list
 
 		### build generators recursively
 		g_layer_list = list()
-		if gen_size < im_size:
-			for i in range(4):
-				build_shift_gan(tf_downsample(im_lp_list[i]), zi_input, im_size//2, gen_size,
-					'{}_{}'.format(scope, i), gen_collect, comb_list, 
-					d_loss_list, g_loss_list, rg_grad_norm_list)
-				g_layer_list.append(comb_list[-1])
-		else:
-			for i in range(2):
-				g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
-					im_size=gen_size, sub_scope='level_{}_{}'.format(scope, i))
-				gen_collect.append(g_layer[:, :, :, 0:3])
-				gen_collect.append(g_layer[:, :, :, 3:6])
-				g_layer_list.append(g_layer)
-		
-		### build delta generator
-		g_delta = self.build_gen(zi_input, self.g_act, self.train_phase, 
-			im_size=gen_size, sub_scope='level_{}_delta'.format(scope))[:, :, :, 0:3]
-		gen_collect.append(g_delta)
+		#if gen_size < im_size:
+		#	for i in range(2*len(freq_list)):
+		#		build_shift_gan(tf_downsample(im_lp_list[i]), zi_input, im_size//2, gen_size,
+		#			'{}_{}'.format(scope, i), gen_collect, comb_list, 
+		#			d_loss_list, g_loss_list, rg_grad_norm_list)
+		#		g_layer_list.append(tf_binomial_blur(tf_upsample(comb_list[-1]), 2.*blur_kernel))
+		#else:
+		for i in range(2*len(freq_list)):
+			g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
+				im_size=gen_size, sub_scope='level_{}_{}'.format(scope, i))
+			g_layer_list.append(g_layer)
+			gen_collect.append(g_layer)
+			#gen_collect.append(g_layer[:, :, :, 0:3])
+			#gen_collect.append(g_layer[:, :, :, 3:6])
 
 		### apply low pass filter on g_layer and build discriminators
-		g_lp_list = list()
-		for i, gl in enumerate(g_layer_list):
-			g_lp_list.append(tf_binomial_blur(gl, blur_kernel))
-			d_loss, g_loss, rg_grad_norm_output = \
-				self.build_gan_loss(tf.concat([im_lp_list[2*i], im_lp_list[2*i+1]], axis=3),
-					g_lp_list[-1], im_size, scope='level_{}_{}'.format(scope, i))
-			d_loss_list.append(d_loss)
-			g_loss_list.append(g_loss)
-			rg_grad_norm_list.append(rg_grad_norm_output)
+		g_lp_list = [tf_binomial_blur(tf_upsample(gl), 2.*blur_kernel) for gl in g_layer_list]
+		#g_lp_list = list()
+		#for i, gl in enumerate(g_layer_list):
+		#	g_lp_list.append(tf_binomial_blur(gl, blur_kernel))
+		#	d_loss, g_loss, rg_grad_norm_output = \
+		#		self.build_gan_loss(tf.concat([im_lp_list[2*i], im_lp_list[2*i+1]], axis=3),
+		#			g_lp_list[-1], im_size, scope='level_{}_{}'.format(scope, i))
+		#	d_loss_list.append(d_loss)
+		#	g_loss_list.append(g_loss)
+		#	rg_grad_norm_list.append(rg_grad_norm_output)
 
-		### build output combination
-		g_r, _ = tf_freq_shift_complex(
-			g_lp_list[0][:, :, :, 0:3], g_lp_list[0][:, :, :, 3:6], -fc_x, -fc_y)
-		g_r_op, _ = tf_freq_shift_complex(
-			g_lp_list[1][:, :, :, 0:3], g_lp_list[1][:, :, :, 3:6], -fc_x, fc_y)
-		g_comb = g_r + g_r_op + g_delta
+		### build delta generator (must use im_size in recursive case)
+		g_delta = self.build_gen(zi_input, self.g_act, self.train_phase, 
+			im_size=im_size, sub_scope='level_{}_delta'.format(scope))#[:, :, :, 0:3]
+		gen_collect.append(g_delta)
+		g_delta_lp = g_delta #tf_binomial_blur(tf_upsample(g_delta), 2.*blur_kernel)
+
+		### build output combination by shifting
+		g_layer_fs_list = list()
+		for i, fc in enumerate(freq_list):
+			g_fs_r, _ = tf_freq_shift_complex(g_lp_list[i*2], g_lp_list[i*2+1], fc[0], fc[1])
+			#g_fs_r, _ = tf_freq_shift_complex(
+			#	g_lp_list[i][:, :, :, 0:3], g_lp_list[i][:, :, :, 3:6], fc[0], fc[1])
+			g_layer_fs_list.append(g_fs_r)
+
+		g_layer_fs_list.append(g_delta_lp)
+		g_comb = sum(g_layer_fs_list)
 		comb_list.append(g_comb)
 
 		### build aligning discriminator
@@ -529,6 +532,8 @@ class Ganist:
 		g_loss_list.append(g_loss)
 		rg_grad_norm_list.append(rg_grad_norm_output)
 		
+		### return collected operators lists
+		gen_collect += g_layer_fs_list
 		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
 
 	def build_gan_loss(self, im_layer, g_layer, im_size, scope):
@@ -556,7 +561,7 @@ class Ganist:
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
 				self.build_shift_gan(self.im_input, self.zi_input, 
-					im_size=self.data_dim[0], gen_size=128)
+					im_size=self.data_dim[0], gen_size=64)
 			self.im_input_rec = self.im_collect[-1]
 
 			### apply pyramid for real images
@@ -658,6 +663,7 @@ class Ganist:
 
 			### collect d loss
 			#self.d_loss_list = [d_loss_l0, d_loss_l1, d_loss_l2, d_loss_rec]
+			#self.rg_grad_norm_list = [rg_grad_norm_output_l0, rg_grad_norm_output_l1, rg_grad_norm_output_l2, rg_grad_norm_output_rec]
 			self.d_loss_total = sum(self.d_loss_list)
 			self.rg_grad_norm_output = sum(self.rg_grad_norm_list) / len(self.rg_grad_norm_list)
 			#self.rg_grad_norm_output = (rg_grad_norm_output_l0 + rg_grad_norm_output_l1 + \
@@ -829,7 +835,7 @@ class Ganist:
 					is_training=train_phase))
 			
 				h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
-				h4 = conv2d(h3_us, 2*self.data_dim[-1], scope='conv3')
+				h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
 
 				### resnext version
 				'''
@@ -963,7 +969,7 @@ class Ganist:
 		### only forward discriminator on batch_data
 		if dis_only:
 			feed_dict = {self.im_input: batch_data, self.zi_input: zi_data, self.train_phase: False}
-			res_list = [self.r_logits_rec, self.rg_grad_norm_output_rec]
+			res_list = [self.r_logits_rec, self.rg_grad_norm_output]
 			res_list = self.sess.run(res_list, feed_dict=feed_dict)
 			return res_list[0].flatten(), res_list[1].flatten()
 

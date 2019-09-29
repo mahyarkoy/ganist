@@ -25,12 +25,17 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/33_logs_gansd_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
 	'/media/evl/Public/Mahyar/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/13_logs_wganbn_celeba128cc_fssetup/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/10_logs_wganbn_conv3_celeba128cc_fid50/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/0_logs_wganbn_lap3_celeba128cc/fid50/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lap_logs/9_logs_wganbn_lap3_gd344_celeba128cc_fid50/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lap_logs/11_logs_wganbn_split4_celeba128_fid50/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/9_logs_wganbn_lap3_gd344_celeba128cc_fid50/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/11_logs_wganbn_split4_celeba128_fid50/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/14_logs_wganbn_celeba128cc_fssetup_fshift/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/8_logs_wganbn_lap3_gd334_fshift_celeba128cc_fid50/run_%d/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lap_logs/9_logs_wganbn_lap3_gd344_celeba128cc_fid50/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/9_logs_wganbn_lap3_gd344_celeba128cc_fid50/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/15_logs_wganbn_lap3_winsinc4_celeba128cc/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lap_logs/16_logs_wganbn_imsize32_celeba128cc/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lap_logs/17_logs_wganbn_imsize32_d32d128_celeba128cc/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/2_logs_wganbn_lap3_celeba128cc_popos/fid50/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/temp/logs_wganbn_lap3_celeba128cc_newshuffle/run_0/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
@@ -90,10 +95,10 @@ if __name__ == '__main__':
 	ax.set_title('CelebA 128: WGAN-BN')
 
 	### plot
-	pnames = ['real', 'wganbn', 'lap3_gd344', 'split4']
+	pnames = ['real', 'wganbn_gd128', 'wganbn_gd32', 'wganbn_g32_d32d128']
 	pcolors = [0, 1, 2, 3] ## add 0 for real
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_lap3gd344_split4_celeba128cc.pdf')
+	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn32x32_d32d128_celeba128cc.pdf')

@@ -441,7 +441,7 @@ def sample_pyramid_with_fft(ganist, path=None, sample_size=10, im_data=None):
 	pyramid = sample_pyramid(ganist, path=None, sample_size=sample_size, im_data=im_data)
 	pyramid_fft = list()
 	for p in pyramid:
-		print('>>> pyramid shape: {}'.format(p.shape))
+		#print('>>> pyramid shape: {}'.format(p.shape))
 		pfft, _ = apply_fft_images(p, reshape=True)
 		pyramid_fft.append(np.log(pfft)/5. - 0.5)
 
