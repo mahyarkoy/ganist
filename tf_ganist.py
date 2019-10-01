@@ -34,14 +34,14 @@ def conv2d_tr(input_, output_dim,
 		   k_h=5, k_w=5, d_h=1, d_w=1, k_init=tf.contrib.layers.xavier_initializer(),
 		   scope=None, reuse=False, 
 		   padding='same', use_bias=True, trainable=True):
-    
-    k_init = tf.truncated_normal_initializer(stddev=0.02)
-    conv_tr = tf.layers.conv2d_transpose(
-            input_, output_dim, [k_h, k_w], strides=[d_h, d_w], 
-            padding=padding, use_bias=use_bias, 
-            kernel_initializer=k_init, name=scope, reuse=reuse, trainable=trainable)
-    
-    return conv_tr
+	
+	k_init = tf.truncated_normal_initializer(stddev=0.02)
+	conv_tr = tf.layers.conv2d_transpose(
+			input_, output_dim, [k_h, k_w], strides=[d_h, d_w], 
+			padding=padding, use_bias=use_bias, 
+			kernel_initializer=k_init, name=scope, reuse=reuse, trainable=trainable)
+	
+	return conv_tr
 
 '''
 Group ResNext.
@@ -469,6 +469,8 @@ class Ganist:
 
 		### low pass the shifted image
 		im_lp_list = [tf_binomial_blur(im, blur_kernel) for im in im_fs_list]
+		im_input_ds = tf_downsample(tf_binomial_blur(
+			tf_downsample(tf_binomial_blur(im_input, blur_kernel)), blur_kernel))
 
 		### reconstruct the shifted image
 		im_rec_list = list()
@@ -476,7 +478,7 @@ class Ganist:
 			im_r, _ = tf_freq_shift_complex(im_fs_list[i*2], im_fs_list[i*2+1], fc[0], fc[1])
 			im_rec_list.append(im_r)
 
-		im_collect += im_fs_list + im_rec_list
+		im_collect += im_fs_list + [im_input_ds] + im_rec_list
 
 		### build generators recursively
 		g_layer_list = list()
@@ -512,6 +514,13 @@ class Ganist:
 			im_size=im_size, sub_scope='level_{}_delta'.format(scope))#[:, :, :, 0:3]
 		gen_collect.append(g_delta)
 		g_delta_lp = g_delta #tf_binomial_blur(tf_upsample(g_delta), 2.*blur_kernel)
+		g_delta_ds = tf_downsample(tf_binomial_blur(
+			tf_downsample(tf_binomial_blur(g_delta, blur_kernel)), blur_kernel))
+		
+		#g_delta_fill = self.build_gen(zi_input, self.g_act, self.train_phase, 
+		#	im_size=im_size, sub_scope='level_{}_delta_fill'.format(scope))#[:, :, :, 0:3]
+		#gen_collect.append(g_delta_fill)
+		#g_delta_hp, _ = tf_freq_shift(g_delta_fill, 0.5, 0.5)
 
 		### build output combination by shifting
 		g_layer_fs_list = list()
@@ -522,6 +531,7 @@ class Ganist:
 			g_layer_fs_list.append(g_fs_r)
 
 		g_layer_fs_list.append(g_delta_lp)
+		#g_layer_fs_list.append(g_delta_hp)
 		g_comb = sum(g_layer_fs_list)
 		comb_list.append(g_comb)
 
@@ -531,9 +541,16 @@ class Ganist:
 		d_loss_list.append(d_loss)
 		g_loss_list.append(g_loss)
 		rg_grad_norm_list.append(rg_grad_norm_output)
+
+		### build low pass discriminator
+		d_loss, g_loss, rg_grad_norm_output = \
+			self.build_gan_loss(im_input_ds, g_delta_ds, im_size//4, scope='level_{}_delta'.format(scope))
+		d_loss_list.append(d_loss)
+		g_loss_list.append(g_loss)
+		rg_grad_norm_list.append(rg_grad_norm_output)
 		
 		### return collected operators lists
-		gen_collect += g_layer_fs_list
+		gen_collect += g_layer_fs_list + [g_delta_ds]
 		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
 
 	def build_gan_loss(self, im_layer, g_layer, im_size, scope):
