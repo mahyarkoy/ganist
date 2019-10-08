@@ -459,7 +459,9 @@ class Ganist:
 			d_loss_list=list(), g_loss_list=list(), rg_grad_norm_list=list()):
 		#freq_list = [(0.25, 0.), (0., 0.25), (0.25, 0.25), (-0.25, 0.25)]
 		freq_list = [(1./8, 0.), (0., 1./8), (1./8, 1./8), (-1./8, 1./8)]
-		blur_kernel = np.array([1., 4., 6., 4., 1.]) / 16. #make_winsinc_blackman(1./4, ksize=30)
+		#blur_kernel = np.array([1., 4., 6., 4., 1.]) / 16. #make_winsinc_blackman(1./4, ksize=30)
+		blur_kernel = np.array([1., 6., 15., 20., 15., 6., 1.])
+		blur_kernel /= np.sum(blur_kernel)
 		
 		### shift the image
 		im_fs_list = list()
@@ -468,17 +470,24 @@ class Ganist:
 			im_fs_list += [im_r, im_i]
 
 		### low pass the shifted image
-		im_lp_list = [tf_binomial_blur(im, blur_kernel) for im in im_fs_list]
+		im_lp_list = [tf_downsample(tf_binomial_blur(
+			tf_downsample(tf_binomial_blur(im, blur_kernel)), blur_kernel)) for im in im_fs_list]
 		im_input_ds = tf_downsample(tf_binomial_blur(
 			tf_downsample(tf_binomial_blur(im_input, blur_kernel)), blur_kernel))
 
 		### reconstruct the shifted image
 		im_rec_list = list()
 		for i, fc in enumerate(freq_list):
-			im_r, _ = tf_freq_shift_complex(im_fs_list[i*2], im_fs_list[i*2+1], fc[0], fc[1])
+			im_fs_r = tf_binomial_blur(tf_upsample(
+				tf_binomial_blur(tf_upsample(im_lp_list[i*2]), 2.*blur_kernel)), 2.*blur_kernel)
+			im_fs_i = tf_binomial_blur(tf_upsample(
+				tf_binomial_blur(tf_upsample(im_lp_list[i*2+1]), 2.*blur_kernel)), 2.*blur_kernel)
+			im_r, _ = tf_freq_shift_complex(im_fs_r, im_fs_i, fc[0], fc[1])
 			im_rec_list.append(im_r)
 
-		im_collect += im_fs_list + [im_input_ds] + im_rec_list
+		im_rec_list.append(tf_binomial_blur(tf_upsample(
+				tf_binomial_blur(tf_upsample(im_input_ds), 2.*blur_kernel)), 2.*blur_kernel))
+		im_collect += im_lp_list + [im_input_ds] + im_rec_list + [sum(im_rec_list)]
 
 		### build generators recursively
 		g_layer_list = list()
@@ -497,17 +506,8 @@ class Ganist:
 			#gen_collect.append(g_layer[:, :, :, 0:3])
 			#gen_collect.append(g_layer[:, :, :, 3:6])
 
-		### apply low pass filter on g_layer and build discriminators
+		### apply upsample and low pass filter on g_layer to bring it to im_size
 		g_lp_list = [tf_binomial_blur(tf_upsample(gl), 2.*blur_kernel) for gl in g_layer_list]
-		#g_lp_list = list()
-		#for i, gl in enumerate(g_layer_list):
-		#	g_lp_list.append(tf_binomial_blur(gl, blur_kernel))
-		#	d_loss, g_loss, rg_grad_norm_output = \
-		#		self.build_gan_loss(tf.concat([im_lp_list[2*i], im_lp_list[2*i+1]], axis=3),
-		#			g_lp_list[-1], im_size, scope='level_{}_{}'.format(scope, i))
-		#	d_loss_list.append(d_loss)
-		#	g_loss_list.append(g_loss)
-		#	rg_grad_norm_list.append(rg_grad_norm_output)
 
 		### build delta generator (must use im_size in recursive case)
 		g_delta = self.build_gen(zi_input, self.g_act, self.train_phase, 
@@ -535,6 +535,15 @@ class Ganist:
 		g_comb = sum(g_layer_fs_list)
 		comb_list.append(g_comb)
 
+		### build band pass discriminators
+		for i, gl in enumerate(g_layer_list):
+			g_layer_ds = tf_downsample(tf_binomial_blur(gl, blur_kernel))
+			d_loss, g_loss, rg_grad_norm_output = \
+				self.build_gan_loss(im_lp_list[i], g_layer_ds, gen_size//2, scope='level_{}_{}'.format(scope, i))
+			d_loss_list.append(d_loss)
+			g_loss_list.append(g_loss)
+			rg_grad_norm_list.append(rg_grad_norm_output)
+
 		### build aligning discriminator
 		d_loss, g_loss, rg_grad_norm_output = \
 			self.build_gan_loss(im_input, g_comb, im_size, scope='level_{}_comb'.format(scope))
@@ -550,7 +559,7 @@ class Ganist:
 		rg_grad_norm_list.append(rg_grad_norm_output)
 		
 		### return collected operators lists
-		gen_collect += g_layer_fs_list + [g_delta_ds]
+		gen_collect += g_layer_fs_list# + [g_delta_ds]
 		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
 
 	def build_gan_loss(self, im_layer, g_layer, im_size, scope):
@@ -922,7 +931,7 @@ class Ganist:
 
 	def start_session(self):
 		self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=100)
-		self.saver_var_only = tf.train.Saver(self.g_vars)#+self.d_vars+self.bn_moving_vars)#+self.e_vars+[self.pg_var, self.pg_q])
+		self.saver_var_only = tf.train.Saver(self.g_vars)#+self.bn_moving_vars)#+self.d_vars+self.bn_moving_vars)#+self.e_vars+[self.pg_var, self.pg_q])
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):
@@ -944,7 +953,7 @@ class Ganist:
 	def step(self, batch_data, batch_size, gen_update=False, 
 		dis_only=False, gen_only=False, stats_only=False, 
 		g_layer_stats=False, d_layer_stats=False,
-		en_only=False, z_data=None, zi_data=None, run_count=0.0, 
+		zi_data=None, run_count=0.0, 
 		filter_only=False, output_type='rec'):
 		batch_size = batch_data.shape[0] if batch_data is not None else batch_size		
 		batch_data = batch_data.astype(np_dtype) if batch_data is not None else None

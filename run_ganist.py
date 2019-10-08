@@ -421,8 +421,9 @@ Samples from all layers of the generator pyramid and draws them if path is speci
 if im_data is provided, filters the im_data using ganist.
 '''
 def sample_pyramid(ganist, path=None, sample_size=10, im_data=None):
+	pool_size = 1024
 	zi = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
-		size=[sample_size, ganist.z_dim]).astype(tf_ganist.np_dtype)
+		size=[pool_size, ganist.z_dim]).astype(tf_ganist.np_dtype)
 
 	filter_only = False if im_data is None else True
 	samples_gens = sample_ganist(ganist, sample_size, 
@@ -838,21 +839,22 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 Sample sample_size data points from ganist, returns a list of ndarrays.
 sampler: must return a list.
 '''
-def sample_ganist(ganist, sample_size, sampler=None, batch_size=64, 
-	z_data=None, zi_data=None, z_im=None, output_type='rec', filter_only=False):
+def sample_ganist(ganist, sample_size, sampler=None, batch_size=64,
+	zi_data=None, z_im=None, output_type='rec', filter_only=False):
 	sampler = sampler if sampler is not None else ganist.step
 	res_list = list()
+	if zi_data is not None and zi_data.shape[0]%batch_size != 0:
+		raise ValueError('zi_data must be a multiple of batch_size for sampling!')
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = min(batch_start + batch_size, sample_size)
-		batch_len = batch_end - batch_start
-		batch_z = z_data[batch_start:batch_end, ...] if z_data is not None else None
-		batch_zi = zi_data[batch_start:batch_end, ...] if zi_data is not None else None
+		#batch_len = batch_end - batch_start
+		batch_zi = zi_data[batch_start:batch_start+batch_size, ...] if zi_data is not None else None
 		batch_im = z_im[batch_start:batch_end, ...] if z_im is not None else None
-		res_list.append(sampler(batch_im, batch_len, 
-			gen_only=True, z_data=batch_z, zi_data=batch_zi, 
+		res_list.append(sampler(batch_im, batch_size, 
+			gen_only=True, zi_data=batch_zi, 
 			output_type=output_type, filter_only=filter_only))
 
-	return [np.concatenate([s[i] for s in res_list], axis=0) for i in range(len(res_list[0]))]
+	return [np.concatenate([s[i] for s in res_list], axis=0)[:sample_size, ...] for i in range(len(res_list[0]))]
 
 def blur_images_levels(imgs, blur_levels, blur_type='gauss'):
 	if blur_type == 'binomial':
@@ -1773,7 +1775,7 @@ if __name__ == '__main__':
 
 	### load ganist
 	load_path = log_path_snap+'/model_best.h5'
-	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
+	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_2/snapshots/model_best.h5'
 	ganist.load(load_path.format(run_seed))
 
 	'''
@@ -1781,7 +1783,7 @@ if __name__ == '__main__':
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(ganist, 1000, output_type='rec')[0]
+	g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
 	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
 	print '>>> g_samples shape: ', g_samples.shape
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)

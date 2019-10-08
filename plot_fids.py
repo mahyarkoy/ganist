@@ -30,28 +30,18 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/0_logs_wganbn_lap3_celeba128cc/fid50/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/9_logs_wganbn_lap3_gd344_celeba128cc_fid50/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/11_logs_wganbn_split4_celeba128_fid50/run_%d/fid_levels.cpk'
-	'/media/evl/Public/Mahyar/ganist_lap_logs/14_logs_wganbn_celeba128cc_fssetup_fshift/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/14_logs_wganbn_celeba128cc_fssetup_fshift/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/8_logs_wganbn_lap3_gd334_fshift_celeba128cc_fid50/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/7_logs_wganbn_lap3_gd334_celeba128cc_fid50/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/23_logs_wganbn_lap3_gd334_winsinc4_celeba128cc/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/9_logs_wganbn_lap3_gd344_celeba128cc_fid50/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/15_logs_wganbn_lap3_winsinc4_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/16_logs_wganbn_imsize32_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/17_logs_wganbn_imsize32_d32d128_celeba128cc/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lap_logs/22_logs_wganbn_gshift_celeba128cc_fshift/run_%d/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lap_logs/2_logs_wganbn_lap3_celeba128cc_popos/fid50/run_%d/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lap_logs/temp/logs_wganbn_lap3_celeba128cc_newshuffle/run_0/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/24_logs_gandm_ords4_celeba128cc/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/temp/logs_gandm_ordsus4_celeba128cc/run_0/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_proggan_celeba128cc_gauss41/run_%d/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/27_logs_gan_celeba128cc_frz5e4_butconv3/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/29_logs_gan_celeba128cc_frz5e4_butconv3fco/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/30_logs_gan_celeba128cc_frz5e4_butconv3_newopt/run_%d/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/10_fidlevels_gauss_logs/run_%d/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/3_fidlevels_logs/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/7_fidlevels_logs/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/8_fidlevels_logs/run_%d/fid_levels.cpk',
-	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/9_fidlevels_logs/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/22_logs_wganbn_gshift_celeba128cc_fshift/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/24_logs_wganbn_gshift_gnoshift_celeba128cc_fshift/run_%d/fid_levels.cpk'
+	'/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/ganist_lap_logs/28_logs_fsm_wganbn_8g64_g128_d128_dlp32_celeba128cc/run_%d/fid_levels.cpk'
 	]
 
 def plot_fid_levels(ax, pathname, pname, pcolor):
@@ -96,10 +86,10 @@ if __name__ == '__main__':
 	ax.set_title('CelebA 128: WGAN-BN')
 
 	### plot
-	pnames = ['real', 'no_shift', 'im_shifted', 'g_shifted_im_shifted']
+	pnames = ['real', 'wganbn', 'fsm_8g64', 'fsm_8g64_dlp32']
 	pcolors = [0, 1, 2, 3] ## add 0 for real
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_gshifted_imshifted_celeba128cc.pdf')
+	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_8g64f8_gd128_dlp32_celeba128cc.pdf')
