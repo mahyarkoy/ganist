@@ -40,8 +40,9 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/17_logs_wganbn_imsize32_d32d128_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/22_logs_wganbn_gshift_celeba128cc_fshift/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/24_logs_wganbn_gshift_gnoshift_celeba128cc_fshift/run_%d/fid_levels.cpk'
-	'/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lap_logs/28_logs_fsm_wganbn_8g64_g128_d128_dlp32_celeba128cc/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/28_logs_fsm_wganbn_8g64_g128_d128_dlp32_celeba128cc/run_%d/fid_levels.cpk'
+	'/media/evl/Public/Mahyar/ganist_lap_logs/30_logs_wganbn_gshift_gnoshift_2d128_celeba128cc_fshift/run_%d/fid_levels.cpk'
 	]
 
 def plot_fid_levels(ax, pathname, pname, pcolor):
@@ -64,7 +65,7 @@ def plot_fid_levels(ax, pathname, pname, pcolor):
 		with open(p, 'rb') as fs:
 			blur_levels, fid_list = pk.load(fs)
 			fids.append(fid_list)
-	fid_mat = np.array(fids)
+	fid_mat = np.array(fids)**2
 	fid_mean = np.mean(fid_mat, axis=0)
 	fid_std = np.std(fid_mat, axis=0)
 	### plot fid means with std
@@ -86,10 +87,10 @@ if __name__ == '__main__':
 	ax.set_title('CelebA 128: WGAN-BN')
 
 	### plot
-	pnames = ['real', 'wganbn', 'fsm_8g64', 'fsm_8g64_dlp32']
-	pcolors = [0, 1, 2, 3] ## add 0 for real
+	pnames = ['real', 'wganbn', 'g+gshift_2d128']
+	pcolors = [0, 1, 2] ## add 0 for real
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_8g64f8_gd128_dlp32_celeba128cc.pdf')
+	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_gshift_gnoshift_2d128_celeba128cc.pdf')

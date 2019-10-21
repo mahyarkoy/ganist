@@ -20,15 +20,15 @@ import matplotlib.cm as mat_cm
 import os
 from progressbar import ETA, Bar, Percentage, ProgressBar
 import argparse
-print matplotlib.get_backend()
-import cPickle as pk
+print(matplotlib.get_backend())
+import pickle as pk
+#import cPickle as pk #*python2
 import gzip
-from skimage.transform import resize
+#from skimage.transform import resize
 from sklearn.neighbors import NearestNeighbors, kneighbors_graph
 from sklearn.utils.graph import graph_shortest_path
 import sys
 import scipy
-import skimage.io as skio
 import glob
 from PIL import Image
 from scipy.stats import beta as beta_dist
@@ -110,7 +110,7 @@ def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_c
 
 def read_imagenet(im_dir, data_size, im_size=64):
 	im_data = np.zeros((1000, data_size, im_size, im_size, 3))
-	print '>>> Reading ImageNet from: '+ im_dir
+	print('>>> Reading ImageNet from: {}'.format(im_dir))
 	widgets = ["ImageNet", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=1000, widgets=widgets)
 	pbar.start()
@@ -143,7 +143,7 @@ def readim_path_from_dir(im_dir, im_type='/*.jpg'):
 def read_lsun(lsun_path, data_size, im_size=64):
 	im_data = np.zeros((data_size, im_size, im_size, 3))
 	i = 0
-	print '>>> Reading LSUN from: '+lsun_path
+	print('>>> Reading LSUN from: {}'.format(lsun_path))
 	widgets = ["LSUN", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=data_size, widgets=widgets)
 	pbar.start()
@@ -156,7 +156,7 @@ def read_lsun(lsun_path, data_size, im_size=64):
 	return im_data
 
 def read_art(art_path, data_size=None, im_size=64):
-	print '>>> Reading ART from: '+art_path
+	print('>>> Reading ART from: {}'.format(art_path))
 	with open(art_path+'/annotation_pruned.cpk', 'rb') as fs:
 		datadict = pk.load(fs)
 	fn_list = datadict['image_file_name']
@@ -190,8 +190,12 @@ def read_stl(stl_data_path, stl_lab_path, im_size=64):
 		### resize
 		im_data_re = np.zeros((im_data.shape[0], im_size, im_size, 3))
 		for i in range(im_data.shape[0]):
-			im_data_re[i, ...] = resize(im_data[i, ...], (im_size, im_size), preserve_range=True)
-		im_data_re = im_data_re / 128.0 - 1.0
+			#im_data_re[i, ...] = resize(im_data[i, ...], (im_size, im_size), preserve_range=True)
+			im_pil = Image.fromarray(im_data[i, ...])
+			im_re_pil = im_pil.resize((im_size, im_size), Image.BILINEAR)
+			im_re = np.asarray(im_re_pil)
+			im_data_re[i, ...] = im_re
+		im_data_re = (im_data_re / 255.0) * 2. - 1.0
 
 	with open(stl_lab_path, 'rb') as f:
 		labels = np.fromfile(f, dtype=np.uint8) - 1
@@ -807,7 +811,8 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 				fid_best_itr = itr_total
 				ganist.save(log_path_snap+'/model_best.h5')
 				with open(log_path+'/model_best_itr.txt', 'w+') as fs:
-					print >> fs, '{}'.format(fid_best_itr)
+					#print >> fs, '{}'.format(fid_best_itr) #*python2
+					print('{}'.format(fid_best_itr), file=fs)
 
 			if itr_total == max_itr_total:
 				break
@@ -896,6 +901,27 @@ def apply_lap_pyramid(im, batch_size=64):
 		im_batch = im[batch_start:batch_end]
 		im_reconst[batch_start:batch_end, ...] = sess.run(reconst, {im_layer: im_batch})
 	return im_reconst
+
+'''
+Sampler for PGGAN.
+sample_data: return images with shape (data_size, h, w, 3) in (-1,1)
+'''
+class PG_Sampler:
+	def __init__(self, net_path, sess):
+		self.sess = sess
+		with self.sess.as_default():
+			with open(net_path, 'rb') as fs:
+				self.G, self.D, self.Gs = pk.load(fs)
+
+	def sample_data(self, data_size, batch_size=32):
+		data_list = list()
+		with self.sess.as_default():
+			for batch_start in range(0, data_size, batch_size):
+				latents = np.random.randn(batch_size, *self.Gs.input_shapes[0][1:])
+				labels = np.zeros([latents.shape[0]] + self.Gs.input_shapes[1][1:])
+				images = self.Gs.run(latents, labels)
+				data_list.append(images.transpose(0, 2, 3, 1)) # NCHW => NHWC
+		return np.concatenate(data_list, axis=0)[:data_size]
 
 class TFutil:
 	__instance = None
@@ -1018,11 +1044,12 @@ class TFutil:
 		return imgs_us
 
 	'''
+	If sampler is provided: samples by calling sample_data on the sampler (class object)
 	If im_data is None: if ganist is provided then samples from it otherwise reads from im_paths
 	If im_data is provided: if ganist is provided then filters with ganist (filter only) else selects from im_data
 	'''
 	def extract_feats(self, im_data, sample_size, blur_levels=[0], 
-			ganist=None, im_paths=None, batch_size=1024, im_size=128, center_crop=None):
+			ganist=None, im_paths=None, batch_size=1024, im_size=128, center_crop=None, sampler=None):
 		feat_size = self.inception_feat.get_shape().as_list()[-1]
 		feat_list = [np.zeros((sample_size, feat_size)) for _ in range(len(blur_levels))]
 		print('>>> Extrating features')
@@ -1034,7 +1061,9 @@ class TFutil:
 			batch_end = min(batch_start + batch_size, sample_size)
 			batch_len = batch_end - batch_start
 			### collect images
-			if im_data is None:
+			if sampler is not None:
+				im = sampler.sample_data(batch_len)
+			elif im_data is None:
 				im = sample_ganist(ganist, batch_len, output_type='rec')[0] if ganist is not None else \
 					readim_from_path(im_paths[batch_start:batch_end], 
 						im_size, center_crop=center_crop)
@@ -1201,7 +1230,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 	class_size = 2
 	knn = 6 * channels
 	im_class_ids = dict((i, list()) for i in range(class_size))
-	print '>>> Mode Eval Started'
+	print('>>> Mode Eval Started')
 	widgets = ["Eval_modes", Percentage(), Bar(), ETA()]
 	pbar = ProgressBar(maxval=data_size, widgets=widgets)
 	pbar.start()
@@ -1234,13 +1263,13 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 					im_class_ids[c].append(batch_start+i)
 	else:
 		### put each image id into predicted class list
-		print 'labs>>> ', labels[0:10]
+		print('labs>>> ', labels[0:10])
 		for i, c in enumerate(labels):
 			im_class_ids[c].append(i)
 
 	### draw samples from modes
 	if draw_list is not None:
-		print '>>> Mode Draw Started'
+		print('>>> Mode Draw Started')
 		for c in draw_list:
 			l = im_class_ids[c]
 			if len(l) >= 25:
@@ -1248,7 +1277,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 					log_path_draw+'/'+draw_name+'_class_%d.png' % c)
 
 	### analyze modes
-	print '>>> Mode Var Started'
+	print('>>> Mode Var Started')
 	mode_count = np.zeros(class_size) 
 	mode_vars = np.zeros(class_size)
 	widgets = ["Var_modes", Percentage(), Bar(), ETA()]
@@ -1258,7 +1287,7 @@ def eval_modes(mnet, im_data, labels=None, draw_list=None, draw_name='gen'):
 		pbar.update(c)
 		mode_count[c] = len(l)
 		mode_vars[c] = eval_mode_var(im_data[l, ...], knn) if len(l) > knn else 0.0
-	print '>>> mode count: ', mode_count
+	print('>>> mode count: {}'.format(mode_count))
 	return np.sum(mode_count > mode_threshold), mode_count, mode_vars
 
 '''
@@ -1278,7 +1307,7 @@ def eval_mode_var(im_data, n_neighbors, n_jobs=12):
 	### calculate variance
 	d_tri = np.tril(d_mat)
 	count = np.sum(d_tri > 0)
-	print '>>> Mode zero distance counts: ', 2. * count / (d_mat.shape[0]**2 - d_mat.shape[0])
+	print('>>> Mode zero distance counts: {}'.format(2. * count / (d_mat.shape[0]**2 - d_mat.shape[0])))
 	#d_var = 2.0 * np.sum(d_tri ** 2) / count
 	d_var = 2.0 * np.sum(d_tri ** 2) / max_size
 	return d_var
@@ -1359,7 +1388,7 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 		im_data_sh = im_data[order, ...]
 		labels_sh = labels[order, ...]
 		epoch += 1
-		print ">>> Epoch %d started..." % epoch
+		print('>>> Epoch {} started...'.format(epoch))
 		### train one epoch
 		for batch_start in range(0, train_size, batch_size):
 			if itr_total >= max_itr_total:
@@ -1380,8 +1409,8 @@ def train_mnist_net(mnet, im_data, labels, eval_im_data=None, eval_labels=None):
 					labels_sh[0:10000], batch_size)
 				eval_logs.append([eval_loss, eval_acc, train_loss, train_acc])
 				itrs_logs.append(itr_total)
-				print '>>> train_acc: ', train_acc
-				print '>>> eval_acc: ', eval_acc
+				print('>>> train_acc: {}'.format(train_acc))
+				print('>>> eval_acc: {}'.format(eval_acc))
 
 			if itr_total >= max_itr_total:
 				break
@@ -1480,8 +1509,8 @@ def eval_fft(ganist, save_dir, dft_size=None):
 			fft_mat = np.zeros((val.shape[3], val.shape[0], val.shape[1]))
 			for i in range(val.shape[3]):
 				fft_mat[i, ...] = eval_fft_layer(val[:, :, :, i], dft_size)
-			print '>>> FFT MIN: ', fft_mat.min()
-			print '>>> FFT MAX: ', fft_mat.max()
+			print('>>> FFT MIN: {}'.format(fft_mat.min()))
+			print('>>> FFT MAX: {}'.format(fft_mat.max()))
 			fft_mean = np.mean(fft_mat, axis=0)
 			### plot mean fft
 			fig.clf()
@@ -1515,8 +1544,8 @@ if __name__ == '__main__':
 	run_seed = int(args.seed)
 	np.random.seed(run_seed)
 	tf.set_random_seed(run_seed)
-	import mnist_net
-	import vae_ganist
+	#import mnist_net
+	#import vae_ganist
 
 	### global colormap set
 	global_cmap = mat_cm.get_cmap('tab20')
@@ -1561,16 +1590,15 @@ if __name__ == '__main__':
 	config.gpu_options.allow_growth = True
 	sess = tf.Session(config=config)
 	### create a ganist instance
-	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	#ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
 	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### init variables
-	sess.run(tf.global_variables_initializer())
+	#sess.run(tf.global_variables_initializer())
 	### save network initially
-	#ganist.save(log_path_snap+'/model_0_0.h5')
-	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
-		print >>fs, '>>> g_vars: %d --- d_vars: %d' \
-			% (ganist.g_vars_count, ganist.d_vars_count)
+	#with open(log_path+'/vars_count_log.txt', 'w+') as fs:
+	#	print >>fs, '>>> g_vars: %d --- d_vars: %d' \
+	#		% (ganist.g_vars_count, ganist.d_vars_count)
 
 	'''
 	INCEPTION SETUP
@@ -1764,32 +1792,41 @@ if __name__ == '__main__':
 	blur_im = np.stack(blur_im_list, axis=0)
 	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
 	### draw filtered real samples (blurred)
-	sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
-		sample_size=10, im_data=train_imgs[:10])
+	#sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
+	#	sample_size=10, im_data=train_imgs[:10])
 
 	'''
 	GAN SETUP SECTION
 	'''
 	### train ganist
-	train_ganist(ganist, train_imgs, test_feats, train_labs)
+	#train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
-	load_path = log_path_snap+'/model_best.h5'
-	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_2/snapshots/model_best.h5'
-	ganist.load(load_path.format(run_seed))
+	#load_path = log_path_snap+'/model_best.h5'
+	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_0/snapshots/model_best.h5'
+	#ganist.load(load_path.format(run_seed))
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
-	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
-	print '>>> g_samples shape: ', g_samples.shape
-	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
+	#g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
+	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
+	#print('>>> g_samples shape: {}'.format(g_samples.shape))
+	#im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
 	#im_separate_draw(g_samples[:1000], log_path_sample)
-	sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
+	#sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
 	#sys.exit(0)
+
+	### Read from PGGAN and construct features
+	sys.path.insert(0, '/media/evl/Public/Mahyar/Data/pggan_model')
+	net_path = '/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/temp/results/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	pg_sampler = PG_Sampler(net_path, sess)
+	pg_samples = pg_sampler.sample_data(1024)
+	print('>>> pg_samples shape: {}'.format(pg_samples.shape))
+	im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
 
 	'''
 	Read data from ImageNet and BigGan
