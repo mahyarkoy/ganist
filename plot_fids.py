@@ -8,7 +8,8 @@ Created on Wed Jan 16 16:41:15 2019
 
 import numpy as np
 import matplotlib.pyplot as plt
-import cPickle as pk
+#import cPickle as pk
+import pickle as pk
 import matplotlib.cm as matcm
 import os
 
@@ -42,7 +43,10 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/24_logs_wganbn_gshift_gnoshift_celeba128cc_fshift/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/28_logs_fsm_wganbn_8g64_g128_d128_dlp32_celeba128cc/run_%d/fid_levels.cpk'
-	'/media/evl/Public/Mahyar/ganist_lap_logs/30_logs_wganbn_gshift_gnoshift_2d128_celeba128cc_fshift/run_%d/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/30_logs_wganbn_gshift_gnoshift_2d128_celeba128cc_fshift/run_%d/fid_levels.cpk'
+	'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/logs_pggan_g_celeba128cc/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc_sh/logs_pggan_celeba128cc_sh/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/31_logs_fsm16_wganbn_8g64_gd128_celeba128cc/run_%d/fid_levels.cpk'
 	]
 
 def plot_fid_levels(ax, pathname, pname, pcolor):
@@ -59,13 +63,16 @@ def plot_fid_levels(ax, pathname, pname, pcolor):
 			continue
 		paths.append(p)
 	### read the fid_levels
-	print '>>> paths: ', paths
+	print('>>> paths: {}'.format(paths))
 	fids = list()
 	for p in paths:
 		with open(p, 'rb') as fs:
-			blur_levels, fid_list = pk.load(fs)
+			try:
+				blur_levels, fid_list = pk.load(fs)
+			except:
+				blur_levels, fid_list = pk.load(fs, encoding='latin1')
 			fids.append(fid_list)
-	fid_mat = np.array(fids)**2
+	fid_mat = np.array(fids)
 	fid_mean = np.mean(fid_mat, axis=0)
 	fid_std = np.std(fid_mat, axis=0)
 	### plot fid means with std
@@ -84,13 +91,13 @@ if __name__ == '__main__':
 	ax.set_xlabel('Filter Std')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('CelebA 128: WGAN-BN')
+	ax.set_title('FID Levels: CelebA')
 
 	### plot
-	pnames = ['real', 'wganbn', 'g+gshift_2d128']
+	pnames = ['real', 'wganbn', 'pggan']
 	pcolors = [0, 1, 2] ## add 0 for real
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_gshift_gnoshift_2d128_celeba128cc.pdf')
+	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_pggan_g_celeba128cc.pdf')

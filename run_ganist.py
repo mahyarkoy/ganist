@@ -1590,11 +1590,11 @@ if __name__ == '__main__':
 	config.gpu_options.allow_growth = True
 	sess = tf.Session(config=config)
 	### create a ganist instance
-	#ganist = tf_ganist.Ganist(sess, log_path_sum)
+	ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
 	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### init variables
-	#sess.run(tf.global_variables_initializer())
+	sess.run(tf.global_variables_initializer())
 	### save network initially
 	#with open(log_path+'/vars_count_log.txt', 'w+') as fs:
 	#	print >>fs, '>>> g_vars: %d --- d_vars: %d' \
@@ -1792,41 +1792,43 @@ if __name__ == '__main__':
 	blur_im = np.stack(blur_im_list, axis=0)
 	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
 	### draw filtered real samples (blurred)
-	#sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
-	#	sample_size=10, im_data=train_imgs[:10])
+	sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
+		sample_size=10, im_data=train_imgs[:10])
 
 	'''
 	GAN SETUP SECTION
 	'''
 	### train ganist
-	#train_ganist(ganist, train_imgs, test_feats, train_labs)
+	train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
-	#load_path = log_path_snap+'/model_best.h5'
+	load_path = log_path_snap+'/model_best.h5'
 	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_0/snapshots/model_best.h5'
-	#ganist.load(load_path.format(run_seed))
+	ganist.load(load_path.format(run_seed))
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	#g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
-	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
-	#print('>>> g_samples shape: {}'.format(g_samples.shape))
-	#im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
-	#im_separate_draw(g_samples[:1000], log_path_sample)
-	#sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
+	g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
+	print('>>> g_samples shape: {}'.format(g_samples.shape))
+	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
+	im_separate_draw(g_samples[:1000], log_path_sample)
+	sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
 	#sys.exit(0)
 
-	### Read from PGGAN and construct features
-	sys.path.insert(0, '/media/evl/Public/Mahyar/Data/pggan_model')
-	net_path = '/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/temp/results/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
-	pg_sampler = PG_Sampler(net_path, sess)
-	pg_samples = pg_sampler.sample_data(1024)
-	print('>>> pg_samples shape: {}'.format(pg_samples.shape))
-	im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
-	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
+	'''
+	Read from PGGAN and construct features
+	'''
+	#sys.path.insert(0, '/media/evl/Public/Mahyar/Data/pggan_model')
+	#net_path = '/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/temp/results/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#pg_sampler = PG_Sampler(net_path, sess)
+	#pg_samples = pg_sampler.sample_data(1024)
+	#print('>>> pg_samples shape: {}'.format(pg_samples.shape))
+	#im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
+	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
 
 	'''
 	Read data from ImageNet and BigGan

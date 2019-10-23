@@ -458,7 +458,8 @@ class Ganist:
 			scope='0', gen_collect=list(), im_collect=list(), comb_list=list(), 
 			d_loss_list=list(), g_loss_list=list(), rg_grad_norm_list=list()):
 		#freq_list = [(0.25, 0.), (0., 0.25), (0.25, 0.25), (-0.25, 0.25)]
-		freq_list = [(1./8, 0.), (0., 1./8), (1./8, 1./8), (-1./8, 1./8)]
+		freq_list = [(1./8, 0.), (0., 1./8), (1./8, 1./8), (-1./8, 1./8),
+					(1./16, 0.), (0., 1./16), (1./16, 1./16), (-1./16, 1./16)]
 		blur_kernel = np.array([1., 4., 6., 4., 1.]) / 16. #make_winsinc_blackman(1./4, ksize=30)
 		#blur_kernel = np.array([1., 6., 15., 20., 15., 6., 1.])
 		#blur_kernel /= np.sum(blur_kernel)
@@ -507,7 +508,12 @@ class Ganist:
 			#gen_collect.append(g_layer[:, :, :, 3:6])
 
 		### apply upsample and low pass filter on g_layer to bring it to im_size
-		g_lp_list = [tf_binomial_blur(tf_upsample(gl), 2.*blur_kernel) for gl in g_layer_list]
+		g_lp_list = list()
+		for gl in g_layer_list:
+			g_us = gl
+			for i in range(int(np.log2(im_size//gen_size))):
+				g_us = tf_binomial_blur(tf_upsample(g_us), 2.*blur_kernel)
+			g_lp_list.append(g_us)
 
 		### build delta generator (must use im_size in recursive case)
 		g_delta = self.build_gen(zi_input, self.g_act, self.train_phase, 
@@ -536,13 +542,13 @@ class Ganist:
 		comb_list.append(g_comb)
 
 		### build band pass discriminators
-		for i, gl in enumerate(g_layer_list):
-			g_layer_ds = tf_downsample(tf_binomial_blur(gl, blur_kernel))
-			d_loss, g_loss, rg_grad_norm_output = \
-				self.build_gan_loss(im_lp_list[i], g_layer_ds, gen_size//2, scope='level_{}_{}'.format(scope, i))
-			d_loss_list.append(d_loss)
-			g_loss_list.append(g_loss)
-			rg_grad_norm_list.append(rg_grad_norm_output)
+		#for i, gl in enumerate(g_layer_list):
+		#	g_layer_ds = tf_downsample(tf_binomial_blur(gl, blur_kernel))
+		#	d_loss, g_loss, rg_grad_norm_output = \
+		#		self.build_gan_loss(im_lp_list[i], g_layer_ds, gen_size//2, scope='level_{}_{}'.format(scope, i))
+		#	d_loss_list.append(d_loss)
+		#	g_loss_list.append(g_loss)
+		#	rg_grad_norm_list.append(rg_grad_norm_output)
 
 		### build aligning discriminator
 		d_loss, g_loss, rg_grad_norm_output = \
@@ -552,11 +558,11 @@ class Ganist:
 		rg_grad_norm_list.append(rg_grad_norm_output)
 
 		### build low pass discriminator
-		d_loss, g_loss, rg_grad_norm_output = \
-			self.build_gan_loss(im_input_ds, g_delta_ds, im_size//4, scope='level_{}_delta'.format(scope))
-		d_loss_list.append(d_loss)
-		g_loss_list.append(g_loss)
-		rg_grad_norm_list.append(rg_grad_norm_output)
+		#d_loss, g_loss, rg_grad_norm_output = \
+		#	self.build_gan_loss(im_input_ds, g_delta_ds, im_size//4, scope='level_{}_delta'.format(scope))
+		#d_loss_list.append(d_loss)
+		#g_loss_list.append(g_loss)
+		#rg_grad_norm_list.append(rg_grad_norm_output)
 		
 		### return collected operators lists
 		gen_collect += g_layer_fs_list# + [g_delta_ds]
@@ -587,7 +593,7 @@ class Ganist:
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
 				self.build_shift_gan(self.im_input, self.zi_input, 
-					im_size=self.data_dim[0], gen_size=64)
+					im_size=self.data_dim[0], gen_size=32)
 			self.im_input_rec = self.im_collect[-1]
 
 			### apply pyramid for real images
