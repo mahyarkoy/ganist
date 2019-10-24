@@ -25,7 +25,7 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/35_logs_lap3_reconst_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/33_logs_gansd_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/23_logs_gandm_or_celeba128cc/run_%d/fid_levels.cpk',
-	'/media/evl/Public/Mahyar/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_%d/fid_levels.cpk',
+	#'/media/evl/Public/Mahyar/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/13_logs_wganbn_celeba128cc_fssetup/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/10_logs_wganbn_conv3_celeba128cc_fid50/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/0_logs_wganbn_lap3_celeba128cc/fid50/run_%d/fid_levels.cpk',
@@ -44,8 +44,8 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/28_logs_fsm_wganbn_8g64_g128_d128_dlp32_celeba128cc/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/30_logs_wganbn_gshift_gnoshift_2d128_celeba128cc_fshift/run_%d/fid_levels.cpk'
-	'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/logs_pggan_g_celeba128cc/fid_levels.cpk'
-	#'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc_sh/logs_pggan_celeba128cc_sh/fid_levels.cpk'
+	#'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/logs_pggan_celeba128cc/fid_levels.cpk'
+	'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc_sh/logs_pggan_celeba128cc_sh/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/31_logs_fsm16_wganbn_8g64_gd128_celeba128cc/run_%d/fid_levels.cpk'
 	]
 
@@ -72,7 +72,7 @@ def plot_fid_levels(ax, pathname, pname, pcolor):
 			except:
 				blur_levels, fid_list = pk.load(fs, encoding='latin1')
 			fids.append(fid_list)
-	fid_mat = np.array(fids)
+	fid_mat = np.array(fids)**2
 	fid_mean = np.mean(fid_mat, axis=0)
 	fid_std = np.std(fid_mat, axis=0)
 	### plot fid means with std
@@ -91,13 +91,14 @@ if __name__ == '__main__':
 	ax.set_xlabel('Filter Std')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('FID Levels: CelebA')
+	ax.set_title('FID Levels: Shifted CelebA')
 
 	### plot
-	pnames = ['real', 'wganbn', 'pggan']
-	pcolors = [0, 1, 2] ## add 0 for real
+	pnames = ['Real', 'PG-GAN']
+	pcolors = [0, 6] ## add 0 for real
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_pggan_g_celeba128cc.pdf')
+	#fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_celeba128cc.pdf')
+	fig.savefig('/home/mahyar/miss_details_images/fids50_pggan_celeba128cc_sh.pdf')
