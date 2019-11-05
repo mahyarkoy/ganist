@@ -140,6 +140,42 @@ def readim_from_path(im_paths, im_size=64, center_crop=None, verbose=False):
 def readim_path_from_dir(im_dir, im_type='/*.jpg'):
 	return [fn for fn in glob.glob(im_dir+im_type)]
 
+def create_lsun(lmdb_dir, resolution=256, max_images=None):
+	print('Loading LSUN dataset from "%s"' % lmdb_dir)
+	import lmdb # pip install lmdb
+	import cv2 # pip install opencv-python
+	import io
+	with lmdb.open(lmdb_dir, readonly=True).begin(write=False) as txn:
+		total_images = txn.stat()['entries']
+		if max_images is None:
+			max_images = total_images
+		idx_list = list()
+		im_counter = 0
+		im_data = np.zeros((max_images, resolution, resolution, 3), dtype=np.float32)
+		for idx, (key, value) in enumerate(txn.cursor()):
+			try:
+				try:
+					img = cv2.imdecode(np.fromstring(value, dtype=np.uint8), 1)
+					if img is None:
+						raise IOError('cv2.imdecode failed')
+					img = img[:, :, ::-1] # BGR => RGB
+				except IOError:
+					img = np.asarray(Image.open(io.BytesIO(value)))
+				crop = np.min(img.shape[:2])
+				img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
+				img = Image.fromarray(img, 'RGB')
+				img = img.resize((resolution, resolution), Image.ANTIALIAS)
+				img = np.asarray(img)
+				img = (img / 255.) * 2. - 1.
+				im_data[im_counter, ...] = img
+				im_counter += 1
+				idx_list.append(idx)
+			except:
+				print(sys.exc_info()[1])
+			if im_counter == max_images:
+				break
+	return im_data, idx_list
+
 def read_lsun(lsun_path, data_size, im_size=64):
 	im_data = np.zeros((data_size, im_size, im_size, 3))
 	i = 0
@@ -467,6 +503,8 @@ If c is not 3 then draws first channel only.
 '''
 def block_draw(im_data, path, separate_channels=False, border=False):
 	cols, rows, imh, imw, imc = im_data.shape
+	im_draw = im_data if imc == 3 else np.repeat(im_draw[:,:,:,:1], 3, axis=3)
+	imc = 3
 	### border
 	if border:
 		im_draw = im_color_borders(im_data.reshape((-1, imh, imw, imc)), 
@@ -479,7 +517,6 @@ def block_draw(im_data, path, separate_channels=False, border=False):
 	im_draw = im_draw.reshape([cols, imh*rows, imw, imc])
 	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
 	im_draw = (im_draw + 1.0) / 2.0
-	im_draw = im_draw if imc == 3 else np.repeat(im_draw[:,:,:,:1], imc, axis=3)
 	
 	### new draw without matplotlib
 	images = np.clip(np.rint(im_draw * 255.0), 0.0, 255.0).astype(np.uint8)
@@ -811,8 +848,8 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 				fid_best_itr = itr_total
 				ganist.save(log_path_snap+'/model_best.h5')
 				with open(log_path+'/model_best_itr.txt', 'w+') as fs:
-					print >> fs, '{}'.format(fid_best_itr) #*python2
-					#print('{}'.format(fid_best_itr), file=fs)
+					#print >> fs, '{}'.format(fid_best_itr) #*python2
+					print('{}'.format(fid_best_itr), file=fs)
 
 			if itr_total == max_itr_total:
 				break
@@ -1610,15 +1647,18 @@ if __name__ == '__main__':
 	config.gpu_options.allow_growth = True
 	sess = tf.Session(config=config)
 	### create a ganist instance
-	#ganist = tf_ganist.Ganist(sess, log_path_sum)
+	ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
 	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### init variables
-	#sess.run(tf.global_variables_initializer())
+	sess.run(tf.global_variables_initializer())
 	### save network initially
 	#with open(log_path+'/vars_count_log.txt', 'w+') as fs:
 	#	print >>fs, '>>> g_vars: %d --- d_vars: %d' \
 	#		% (ganist.g_vars_count, ganist.d_vars_count)
+	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
+		print('>>> g_vars: {} --- d_vars: {}'.format(
+			ganist.g_vars_count, ganist.d_vars_count), file=fs)
 
 	'''
 	INCEPTION SETUP
@@ -1785,82 +1825,96 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	#im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	#im_size = 128
+	#train_size = 2000
+	#im_paths = readim_path_from_dir(im_dir)
+	#np.random.shuffle(im_paths)
+	### prepare test features
+	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
+	#	im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
+	### prepare train images and features
+	#im_data = readim_from_path(im_paths[:train_size], 
+	#	im_size, center_crop=(121, 89), verbose=True)
+	##train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
+
+	### read lsun 128
+	lsun_lmdb_dir = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_lmdb/'
 	im_size = 128
 	train_size = 2000
-	im_paths = readim_path_from_dir(im_dir)
-	np.random.shuffle(im_paths)
+	lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=sample_size+train_size)
 	### prepare test features
-	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
-		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
+	test_data = lsun_data[train_size:train_size+sample_size]
+	test_feats = TFutil.get().extract_feats(test_data, sample_size, blur_levels=blur_levels)
 	### prepare train images and features
-	im_data = readim_from_path(im_paths[:train_size], 
-		im_size, center_crop=(121, 89), verbose=True)
-	#train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
+	im_data = lsun_data[:train_size]
+	np.random.shuffle(im_data) ### warning: lsun_data becomes shuffled
+	train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
+
+	'''
+	DATASET INITIAL EVALS
+	'''
+	### setup
 	train_imgs = im_data
 	train_labs = None
 	print('>>> Shape of training images: {}'.format(train_imgs.shape))
 	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
 	im_block_draw(train_imgs[:25], 5, log_path+'/true_samples.png', border=True)
-
-	'''
-	DATASET INITIAL EVALS
-	'''
 	### draw blurred images
 	blur_draw_size = 10
 	blur_im_list = blur_images_levels(train_imgs[:blur_draw_size], blur_levels)
 	blur_im = np.stack(blur_im_list, axis=0)
 	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
 	### draw filtered real samples (blurred)
-	#sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
-	#	sample_size=10, im_data=train_imgs[:10])
+	sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
+		sample_size=10, im_data=train_imgs[:10])
 
 	'''
 	GAN SETUP SECTION
 	'''
 	### train ganist
-	#train_ganist(ganist, train_imgs, test_feats, train_labs)
+	train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
-	#load_path = log_path_snap+'/model_best.h5'
+	load_path = log_path_snap+'/model_best.h5'
 	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_0/snapshots/model_best.h5'
-	#ganist.load(load_path.format(run_seed))
+	ganist.load(load_path.format(run_seed))
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	#g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
-	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
-	#print('>>> g_samples shape: {}'.format(g_samples.shape))
-	#im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
-	#im_separate_draw(g_samples[:1000], log_path_sample)
-	#sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
+	g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
+	print('>>> g_samples shape: {}'.format(g_samples.shape))
+	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
+	im_separate_draw(g_samples[:1000], log_path_sample)
+	sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
 	#sys.exit(0)
 
 	'''
 	Read from PGGAN and construct features
 	'''
 	### theano (comment when using tensorflow pggan)
-	sys.path.insert(0, '/media/evl/Public/Mahyar/Data/pggan_model_theano')
-	import misc
-	import config
-	os.environ['THEANO_FLAGS'] = ','.join([key + '=' + value for key, value in config.theano_flags.iteritems()])
-	sys.setrecursionlimit(10000)
-	import theano
-	from theano import tensor as T
-	import lasagne
+	#sys.path.insert(0, '/media/evl/Public/Mahyar/Data/pggan_model_theano')
+	#import misc
+	#import config
+	#os.environ['THEANO_FLAGS'] = ','.join([key + '=' + value for key, value in config.theano_flags.iteritems()])
+	#sys.setrecursionlimit(10000)
+	#import theano
+	#from theano import tensor as T
+	#import lasagne
 	### tensorflow (comment when using theano pggan)
 	#sys.path.insert(0, '/media/evl/Public/Mahyar/Data/pggan_model')
 
 	#net_path = '/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/temp/results/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
-	net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
-	pg_sampler = PG_Sampler(net_path, sess, net_type='theano')
-	pg_samples = pg_sampler.sample_data(1024)
-	print('>>> pg_samples shape: {}'.format(pg_samples.shape))
-	im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
-	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
+	#net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
+	#pg_sampler = PG_Sampler(net_path, sess, net_type='theano')
+	#pg_samples = pg_sampler.sample_data(1024)
+	#print('>>> pg_samples shape: {}'.format(pg_samples.shape))
+	#im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
+	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
 
 	'''
 	Read data from ImageNet and BigGan

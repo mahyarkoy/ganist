@@ -458,8 +458,10 @@ class Ganist:
 			scope='0', gen_collect=list(), im_collect=list(), comb_list=list(), 
 			d_loss_list=list(), g_loss_list=list(), rg_grad_norm_list=list()):
 		#freq_list = [(0.25, 0.), (0., 0.25), (0.25, 0.25), (-0.25, 0.25)]
-		freq_list = [(1./8, 0.), (0., 1./8), (1./8, 1./8), (-1./8, 1./8),
-					(1./16, 0.), (0., 1./16), (1./16, 1./16), (-1./16, 1./16)]
+		freq_list = [(1/16., 0.), (0., 1/16.), (1/16., 1/16.), (-1/16., 1/16.)]
+		#freq_list = [(1./8, 0.), (0., 1./8), (1./8, 1./8), (-1./8, 1./8),
+		#			(1./16, 0.), (0., 1./16), (1./16, 1./16), (-1./16, 1./16)]
+		#freq_list = [(0.25, 0.25)]
 		blur_kernel = np.array([1., 4., 6., 4., 1.]) / 16. #make_winsinc_blackman(1./4, ksize=30)
 		#blur_kernel = np.array([1., 6., 15., 20., 15., 6., 1.])
 		#blur_kernel /= np.sum(blur_kernel)
@@ -593,7 +595,7 @@ class Ganist:
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
 				self.build_shift_gan(self.im_input, self.zi_input, 
-					im_size=self.data_dim[0], gen_size=32)
+					im_size=self.data_dim[0], gen_size=64)
 			self.im_input_rec = self.im_collect[-1]
 
 			### apply pyramid for real images

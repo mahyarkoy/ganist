@@ -84,7 +84,7 @@ def apply_fft(im, freqs=None):
 	im_t = im_gray #np.mean(im, axis=-1)
 	if freqs is None:
 		imf = np.fft.fftn(im_t)
-		imf_s = np.fft.fftshift(imf)
+		imf_s = np.flip(np.fft.fftshift(imf), 0)
 	else:
 		imf_s, imf = compute_dft(im_t, freqs)
 	imf_proc = np.abs(imf_s)**2
