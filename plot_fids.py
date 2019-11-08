@@ -44,7 +44,7 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/28_logs_fsm_wganbn_8g64_g128_d128_dlp32_celeba128cc/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/30_logs_wganbn_gshift_gnoshift_2d128_celeba128cc_fshift/run_%d/fid_levels.cpk'
-	'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/logs_pggan_gdsmall_celeba128cc_%d/fid_levels.cpk',
+	'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/logs_pggan_gdsmall_%d/fid_levels.cpk',
 	'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/logs_pggan_fsg16_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc_sh/logs_pggan_celeba128cc_sh_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/31_logs_fsm16_wganbn_8g64_gd128_celeba128cc/run_%d/fid_levels.cpk'
@@ -95,11 +95,11 @@ if __name__ == '__main__':
 	ax.set_title('FID Levels: CelebA 128')
 
 	### plot
-	pnames = ['True', 'PG-GAN', 'FSG-PG-GAN']
+	pnames = ['True', 'PG-GAN', 'FSG']
 	pcolors = [0, 6, 2] ## add 0 for real, 6 pggan
 	for i, p in enumerate(fid_paths):
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
 	#fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_celeba128cc.pdf')
-	fig.savefig('/home/mahyar/miss_details_images/temp/fids50_pggan_fsg_celeba128cc.pdf')
+	fig.savefig('/home/mahyar/miss_details_images/temp/fids50_pggan_fsg16_celeba128cc.pdf')

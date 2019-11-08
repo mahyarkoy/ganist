@@ -611,7 +611,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 3e3
+	max_itr_total = 1e4
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
@@ -938,6 +938,67 @@ def apply_lap_pyramid(im, batch_size=64):
 		im_batch = im[batch_start:batch_end]
 		im_reconst[batch_start:batch_end, ...] = sess.run(reconst, {im_layer: im_batch})
 	return im_reconst
+
+'''
+Sampler for CUB
+order: the numpy array of the index of images to use in sampler.
+test_size: used for automatic setup of test and train order
+'''
+class CUB_Sampler:
+	def __init__(self, cub_dir, im_size=128, idx=0, order=None, test_size=None):
+		self.cub_dir = cub_dir
+		self.fnames = np.array([v[0] for v in self.read_cub_file(cub_dir+'/images.txt')])
+		self.cls = np.array([int(v[0]) for v in self.read_cub_file(cub_dir+'/image_class_labels.txt')]) - 1
+		self.bbox = np.array(
+			[[int(float(v)) for v in bb] for bb in self.read_cub_file(cub_dir+'/bounding_boxes.txt')])
+		self.total_count = self.fnames.shape[0]
+		self.im_size = im_size
+		self.idx = idx
+		if order is None:
+			self.order = np.arange(self.total_count)
+		elif order == 'test':
+			self.order, _ = self.make_test_train_order(test_size)
+		elif order == 'train':
+			_, self.order = self.make_test_train_order(test_size)
+		else:
+			self.order = order
+
+	def read_cub_file(self, fname):
+		vals = list()
+		with open(fname, 'r') as fs:
+			for l in fs:
+				vals.append(l.strip().split(' ')[1:])
+		return vals
+
+	def make_test_train_order(self, test_size):
+		max_per_class = test_size // np.amax(self.cls)
+		test_select = list()
+		train_select =  list()
+		c_pre = None
+		count = 0
+		for i, c in enumerate(self.cls):
+			if c != c_pre:
+				count = 0
+			if count < max_per_class:
+				test_select.append(i)
+				count += 1
+			else:
+				train_select.append(i)
+			c_pre = c
+		return np.array(test_select), np.array(train_select)
+
+	def sample_data(self, data_size=None):
+		data_size = data_size if data_size is not None else len(self.order)
+		im_data = np.zeros((data_size, self.im_size, self.im_size, 3), dtype=np.float32)
+		for i in range(data_size):
+			im_id = self.order[self.idx]
+			bbox = self.bbox[im_id]
+			fname = self.fnames[im_id]
+			im = read_image(self.cub_dir+'/images/'+fname, self.im_size, 
+				sqcrop=False, bbox=(bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3]))
+			im_data[i, ...] = im
+			self.idx = self.idx + 1 if self.idx < len(self.order) - 1 else 0
+		return im_data
 
 '''
 Sampler for PGGAN.
@@ -1635,7 +1696,7 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_sum_vae)
 
 	### read and process data
-	sample_size = 2000
+	sample_size = 5000
 	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
 	#blur_levels = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
 
@@ -1839,16 +1900,28 @@ if __name__ == '__main__':
 	##train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
-	lsun_lmdb_dir = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_lmdb/'
+	#lsun_lmdb_dir = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_lmdb/'
+	#im_size = 128
+	#train_size = 2000
+	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=sample_size+train_size)
+	#### prepare test features
+	#test_data = lsun_data[train_size:train_size+sample_size]
+	#test_feats = TFutil.get().extract_feats(test_data, sample_size, blur_levels=blur_levels)
+	#### prepare train images and features
+	#im_data = lsun_data[:train_size]
+	#np.random.shuffle(im_data) ### warning: lsun_data becomes shuffled
+	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
+
+	### read cub 128
+	cub_dir = '/media/evl/Public/Mahyar/Data/cub/CUB_200_2011/'
 	im_size = 128
-	train_size = 2000
-	lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=sample_size+train_size)
-	### prepare test features
-	test_data = lsun_data[train_size:train_size+sample_size]
-	test_feats = TFutil.get().extract_feats(test_data, sample_size, blur_levels=blur_levels)
-	### prepare train images and features
-	im_data = lsun_data[:train_size]
-	np.random.shuffle(im_data) ### warning: lsun_data becomes shuffled
+	#### prepare test features
+	cub_test_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='test', test_size=sample_size)
+	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=cub_test_sampler)
+	#### prepare train images and features
+	cub_train_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='train', test_size=sample_size)
+	im_data = cub_train_sampler.sample_data()
+	np.random.shuffle(im_data) ### warning: im_data becomes shuffled
 	train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	'''
@@ -1988,7 +2061,7 @@ if __name__ == '__main__':
 	'''
 	### compute multi level fid (second line for real data fid levels)
 	fid_list = compute_fid_levels(g_feats, test_feats)
-	#fid_list = compute_fid_levels(train_feats, test_feats)
+	fid_list_r = compute_fid_levels(train_feats, test_feats)
 	### plot fid_levels
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
@@ -2005,6 +2078,23 @@ if __name__ == '__main__':
 	### save fids
 	with open(log_path+'/fid_levels.cpk', 'wb+') as fs:
 		pk.dump([blur_levels, fid_list], fs)
+
+	### plot fid_levels_r
+	fig, ax = plt.subplots(figsize=(8, 6))
+	ax.clear()
+	ax.plot(blur_levels, fid_list_r)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_title('FID levels')
+	ax.set_xlabel('Filter sigma')
+	#ax.set_xlabel('Filter Size')
+	ax.set_ylabel('FID')
+	ax.set_xticks(blur_levels)
+	#ax.legend(loc=0)
+	fig.savefig(log_path+'/fid_levels_r.png', dpi=300)
+	plt.close(fig)
+	### save fids
+	with open(log_path+'/fid_levels_r.cpk', 'wb+') as fs:
+		pk.dump([blur_levels, fid_list_r], fs)
 
 	sess.close()
 
