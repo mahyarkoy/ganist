@@ -390,6 +390,17 @@ def tf_join_cols(split):
 	h = sum(im.get_shape().as_list()[1] for im in split)
 	return tf.reshape(tf.concat(split, axis=1), (-1, h, w, c))
 
+### shifts layer and concats real and imaginary parts, then downsamples to out_size
+def fs_layer(layer, fc_x, fc_y, out_size):
+	blur_kernel = np.array([1., 4., 6., 4., 1.]) / 16.
+	layer_size = layer.get_shape().as_list()[1]
+	layer_cos, layer_sin = tf_freq_shift(layer, fc_x, fc_y)
+	out = tf.concat([layer_cos, layer_sin], 3)
+	for i in range(int(np.log2(layer_size//out_size))):
+		out = tf_downsample(tf_binomial_blur(out, blur_kernel))
+	#print('>>> FS_Layer shape: {}'.format(out.get_shape().as_list()))
+	return out
+
 ### GAN Class definition
 class Ganist:
 	def __init__(self, sess, log_dir='logs'):
@@ -552,6 +563,17 @@ class Ganist:
 		#	g_loss_list.append(g_loss)
 		#	rg_grad_norm_list.append(rg_grad_norm_output)
 
+		### build freq shifted discriminators
+		for i, fc in enumerate(freq_list):
+			disc_size = gen_size
+			im_fs = fs_layer(im_input, -fc[0], -fc[1], disc_size)
+			g_fs = fs_layer(g_comb, -fc[0], -fc[1], disc_size)
+			d_loss, g_loss, rg_grad_norm_output = \
+				self.build_gan_loss(im_fs, g_fs, disc_size, scope='level_{}_{}'.format(scope, i))
+			d_loss_list.append(d_loss)
+			g_loss_list.append(g_loss)
+			rg_grad_norm_list.append(rg_grad_norm_output)
+
 		### build aligning discriminator
 		d_loss, g_loss, rg_grad_norm_output = \
 			self.build_gan_loss(im_input, g_comb, im_size, scope='level_{}_comb'.format(scope))
@@ -584,12 +606,48 @@ class Ganist:
 
 		return d_loss, g_loss, rg_grad_norm_output
 
+	def build_wgan(self, im_input, zi_input, im_size):
+		### generators
+		g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='main')
+		g_layer2 = self.build_gen(zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='comp')
+		g_layer2, _ = tf_freq_shift(g_layer2, 0.5, 0.5)
+
+		gen_collect = [g_layer, g_layer2]
+		im_collect = [im_input]
+		comb_list = [g_layer+g_layer2]
+
+		### discriminators
+		d_loss, g_loss, rg_grad_norm_output = \
+				self.build_gan_loss(im_input, comb_list[-1], im_size=im_size, scope='main')
+		d_loss_list = [d_loss]
+		g_loss_list = [g_loss]
+		rg_grad_norm_list = [rg_grad_norm_output]
+		
+		im_fs = fs_layer(im_input, -0.5, -0.5, im_size)
+		g_fs = fs_layer(comb_list[-1], -0.5, -0.5, im_size)
+		d_loss, g_loss, rg_grad_norm_output = \
+				self.build_gan_loss(im_fs, g_fs, im_size=im_size, scope='comp')
+		d_loss_list.append(d_loss)
+		g_loss_list.append(g_loss)
+		rg_grad_norm_list.append(rg_grad_norm_output)
+
+		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list		
+
 	def build_graph(self):
 		with tf.name_scope('ganist'):
 			### define placeholders for image and label inputs **g_num** **mt**
 			self.im_input = tf.placeholder(tf_dtype, [None]+self.data_dim, name='im_input')
 			self.zi_input = tf.placeholder(tf_dtype, [None, self.z_dim], name='zi_input')
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
+
+			### apply freq shift gan
+			#self.gen_collect, self.im_collect, self.comb_list,\
+			#self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
+			#	self.build_wgan(self.im_input, self.zi_input, 
+			#		im_size=self.data_dim[0])
+			#self.im_input_rec = self.im_collect[-1]
 
 			### apply freq shift gan
 			self.gen_collect, self.im_collect, self.comb_list,\

@@ -40,6 +40,52 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
 
 '''
+Apply FFT
+'''
+def apply_fft_win(im_data, path, windowing=True):
+	### windowing
+	win_size = im_data.shape[1]
+	win = np.hanning(im_data.shape[1])
+	win = np.outer(win, win).reshape((win_size, win_size, 1))
+	#single_draw(win, '/home/mahyar/miss_details_images/temp/hann_win.png')
+	#single_draw(win*im_data[0], '/home/mahyar/miss_details_images/temp/hann_win_im.png')
+	im_data = im_data * win if windowing is True else im_data
+	
+	### apply fft
+	print('>>> fft image shape: {}'.format(im_data.shape))
+	im_fft, _ = apply_fft_images(im_data, reshape=False)
+	### copy nyquist freq component to positive side of x and y axis
+	#im_fft_ext = np.concatenate((im_fft_mean, im_fft_mean[:, :1]/2.), axis=1)
+	#im_fft_ext = np.concatenate((im_fft_ext[-1:, :]/2., im_fft_ext), axis=0)
+	
+	### normalize fft
+	fft_max_power = np.amax(im_fft, axis=(1, 2), keepdims=True)
+	im_fft_norm = im_fft / fft_max_power
+	im_fft_mean = np.mean(im_fft_norm, axis=0)
+	
+	### plot mean fft
+	fig = plt.figure(0, figsize=(8,6))
+	fig.clf()
+	ax = fig.add_subplot(1,1,1)
+	np.clip(im_fft_mean, 1e-20, None, out=im_fft_mean)
+	pa = ax.imshow(np.log(im_fft_mean), cmap=plt.get_cmap('inferno'), vmin=-13)
+	ax.set_title('Log Average Frequency Spectrum')
+	dft_size = im_data.shape[1]
+	print('dft_size: {}'.format(dft_size))
+	print('fft_shape: {}'.format(im_fft_mean.shape))
+	#dft_size = None
+	if dft_size is not None:
+		ticks_loc_x = [0, dft_size//2]
+		ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
+		ax.set_xticks(ticks_loc_x)
+		ax.set_xticklabels([-0.5, 0])
+		ax.set_yticks(ticks_loc_y)
+		ax.set_yticklabels(['', 0, -0.5])
+	fig.colorbar(pa)
+	fig.savefig(path, dpi=300)
+	return
+
+'''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
 '''
 def read_mnist(mnist_path):
@@ -503,7 +549,7 @@ If c is not 3 then draws first channel only.
 '''
 def block_draw(im_data, path, separate_channels=False, border=False):
 	cols, rows, imh, imw, imc = im_data.shape
-	im_draw = im_data if imc == 3 else np.repeat(im_draw[:,:,:,:1], 3, axis=3)
+	im_data = im_data if imc == 3 else np.repeat(im_data[:,:,:,:,:1], 3, axis=4)
 	imc = 3
 	### border
 	if border:
@@ -611,7 +657,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 1e4
+	max_itr_total = 2e3
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
@@ -677,7 +723,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 			draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 \
 				else None
 			fid_dist, net_stats = eval_ganist(ganist, eval_feats, draw_path)
-			eval_logs.append(fid_dist)
+			eval_logs.append(fid_dist) ## *TOY
 			stats_logs.append(net_stats)
 
 			### log g layer stats
@@ -938,6 +984,23 @@ def apply_lap_pyramid(im, batch_size=64):
 		im_batch = im[batch_start:batch_end]
 		im_reconst[batch_start:batch_end, ...] = sess.run(reconst, {im_layer: im_batch})
 	return im_reconst
+
+'''
+Smpler for planar 2D cosine with uniform amplitude [-1, 1)
+'''
+class COS_Sampler:
+	def __init__(self, im_size, fc_x, fc_y):
+		self.im_size = im_size
+		self.ksize = im_size
+		self.fc_x = fc_x
+		self.fc_y = fc_y
+		self.kernel_loc = 2.*np.pi*fc_x * np.arange(self.ksize).reshape((1, 1, self.ksize, 1)) + \
+			2.*np.pi*fc_y * np.arange(self.ksize).reshape((1, self.ksize, 1, 1))
+
+	def sample_data(self, data_size):
+		kernel_cos = np.cos(self.kernel_loc)
+		amps = np.random.uniform(size=(data_size, 1, 1, 3)) * 2. - 1.
+		return amps * kernel_cos
 
 '''
 Sampler for CUB
@@ -1299,27 +1362,30 @@ Returns the energy distance of a trained GANist, and draws block images of GAN s
 '''
 def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None):
 	### sample and batch size
-	sample_size = eval_feats[0].shape[0]
+	sample_size = eval_feats[0].shape[0] ## *TOY
 	batch_size = 64
 	draw_size = 5
 	sampler = sampler if sampler is not None else ganist.step
 	
 	### collect real and gen samples **mt**
 	g_samples = sample_ganist(ganist, draw_size**2, sampler=sampler, output_type='rec')[0]
-	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=[0], ganist=ganist)
+	g_feats = TFutil.get().extract_feats(None, sample_size, 
+		blur_levels=[0], ganist=ganist) ## *TOY
 
 	### draw block image of gen samples
 	if draw_path is not None:
-		g_samples = g_samples.reshape([-1] + ganist.data_dim)
+		#g_samples = g_samples.reshape([-1] + ganist.data_dim)
 		im_block_draw(g_samples, draw_size, draw_path+'.png', border=True)
-		sample_pyramid_with_fft(ganist, draw_path+'_pyramid.png', 10)
+		sample_pyramid_with_fft(ganist, draw_path+'_pyramid.png', 10) ## *TOY
+		#g_samples = sample_ganist(ganist, 1000, sampler=sampler, output_type='rec')[0] ## *TOY
+		#apply_fft_win(g_samples[:1000], draw_path+'_fft_size{}.png'.format(g_samples.shape[1]), windowing=False) ## *TOY
 
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
 
 	### fid
-	fid = compute_fid(g_feats[0], eval_feats[0])
 	#fid = 0
+	fid = compute_fid(g_feats[0], eval_feats[0]) ## *TOY
 
 	return fid, net_stats
 
@@ -1696,7 +1762,7 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_sum_vae)
 
 	### read and process data
-	sample_size = 5000
+	sample_size = 1000
 	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
 	#blur_levels = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
 
@@ -1886,18 +1952,18 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	#im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
-	#im_size = 128
-	#train_size = 2000
-	#im_paths = readim_path_from_dir(im_dir)
-	#np.random.shuffle(im_paths)
+	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	im_size = 128
+	train_size = 2000
+	im_paths = readim_path_from_dir(im_dir)
+	np.random.shuffle(im_paths)
 	### prepare test features
-	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
-	#	im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
+	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
+		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
 	### prepare train images and features
-	#im_data = readim_from_path(im_paths[:train_size], 
-	#	im_size, center_crop=(121, 89), verbose=True)
-	##train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
+	im_data = readim_from_path(im_paths[:train_size], 
+		im_size, center_crop=(121, 89), verbose=True)
+	#train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
 	#lsun_lmdb_dir = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_lmdb/'
@@ -1913,16 +1979,23 @@ if __name__ == '__main__':
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### read cub 128
-	cub_dir = '/media/evl/Public/Mahyar/Data/cub/CUB_200_2011/'
-	im_size = 128
-	#### prepare test features
-	cub_test_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='test', test_size=sample_size)
-	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=cub_test_sampler)
-	#### prepare train images and features
-	cub_train_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='train', test_size=sample_size)
-	im_data = cub_train_sampler.sample_data()
-	np.random.shuffle(im_data) ### warning: im_data becomes shuffled
-	train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
+	#cub_dir = '/media/evl/Public/Mahyar/Data/cub/CUB_200_2011/'
+	#im_size = 128
+	##### prepare test features
+	#cub_test_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='test', test_size=sample_size)
+	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=cub_test_sampler)
+	##### prepare train images and features
+	#cub_train_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='train', test_size=sample_size)
+	#im_data = cub_train_sampler.sample_data()
+	#np.random.shuffle(im_data) ### warning: im_data becomes shuffled
+	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
+
+	### cosine sampler
+	#data_size = 50000
+	#sampler = COS_Sampler(im_size=32, fc_x=0., fc_y=0.)
+	#im_data = sampler.sample_data(data_size)
+	#test_feats = None
+	#apply_fft_win(im_data[:1000], log_path+'/fft_true_size{}.png'.format(im_data.shape[1]), windowing=False)
 
 	'''
 	DATASET INITIAL EVALS
@@ -1933,12 +2006,12 @@ if __name__ == '__main__':
 	print('>>> Shape of training images: {}'.format(train_imgs.shape))
 	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
 	im_block_draw(train_imgs[:25], 5, log_path+'/true_samples.png', border=True)
-	### draw blurred images
+	### draw blurred images ## *TOY
 	blur_draw_size = 10
 	blur_im_list = blur_images_levels(train_imgs[:blur_draw_size], blur_levels)
 	blur_im = np.stack(blur_im_list, axis=0)
 	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
-	### draw filtered real samples (blurred)
+	### draw real samples pyramid
 	sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
 		sample_size=10, im_data=train_imgs[:10])
 
@@ -1949,9 +2022,9 @@ if __name__ == '__main__':
 	train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
-	load_path = log_path_snap+'/model_best.h5'
+	load_path = log_path_snap+'/model_best.h5' ## *TOY
 	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_0/snapshots/model_best.h5'
-	ganist.load(load_path.format(run_seed))
+	ganist.load(load_path.format(run_seed)) ## *TOY
 
 	'''
 	GAN DATA EVAL
@@ -1959,12 +2032,17 @@ if __name__ == '__main__':
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
 	g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
-	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, ganist=ganist)
+	g_feats = TFutil.get().extract_feats(None, sample_size, 
+		blur_levels=blur_levels, ganist=ganist) ## *TOY
 	print('>>> g_samples shape: {}'.format(g_samples.shape))
 	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
-	im_separate_draw(g_samples[:1000], log_path_sample)
-	sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10)
+	im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
+	sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10) ## *TOY
 	#sys.exit(0)
+
+	### *TOY
+	#apply_fft_win(g_samples[:1000], log_path+'/fft_gen_size{}.png'.format(g_samples.shape[1]), windowing=False)
+	#apply_fft_win(g_samples[:1000], log_path+'/fft_gen_size{}_hann.png'.format(g_samples.shape[1]), windowing=True)
 
 	'''
 	Read from PGGAN and construct features
@@ -2059,9 +2137,9 @@ if __name__ == '__main__':
 	'''
 	Multi Level FID
 	'''
-	### compute multi level fid (second line for real data fid levels)
+	### compute multi level fid (second line for real data fid levels) ## *TOY
 	fid_list = compute_fid_levels(g_feats, test_feats)
-	fid_list_r = compute_fid_levels(train_feats, test_feats)
+	#fid_list_r = compute_fid_levels(train_feats, test_feats)
 	### plot fid_levels
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
@@ -2080,21 +2158,21 @@ if __name__ == '__main__':
 		pk.dump([blur_levels, fid_list], fs)
 
 	### plot fid_levels_r
-	fig, ax = plt.subplots(figsize=(8, 6))
-	ax.clear()
-	ax.plot(blur_levels, fid_list_r)
-	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_title('FID levels')
-	ax.set_xlabel('Filter sigma')
-	#ax.set_xlabel('Filter Size')
-	ax.set_ylabel('FID')
-	ax.set_xticks(blur_levels)
-	#ax.legend(loc=0)
-	fig.savefig(log_path+'/fid_levels_r.png', dpi=300)
-	plt.close(fig)
-	### save fids
-	with open(log_path+'/fid_levels_r.cpk', 'wb+') as fs:
-		pk.dump([blur_levels, fid_list_r], fs)
+	#fig, ax = plt.subplots(figsize=(8, 6))
+	#ax.clear()
+	#ax.plot(blur_levels, fid_list_r)
+	#ax.grid(True, which='both', linestyle='dotted')
+	#ax.set_title('FID levels')
+	#ax.set_xlabel('Filter sigma')
+	##ax.set_xlabel('Filter Size')
+	#ax.set_ylabel('FID')
+	#ax.set_xticks(blur_levels)
+	##ax.legend(loc=0)
+	#fig.savefig(log_path+'/fid_levels_r.png', dpi=300)
+	#plt.close(fig)
+	#### save fids
+	#with open(log_path+'/fid_levels_r.cpk', 'wb+') as fs:
+	#	pk.dump([blur_levels, fid_list_r], fs)
 
 	sess.close()
 

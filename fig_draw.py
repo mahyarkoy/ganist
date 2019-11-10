@@ -108,7 +108,7 @@ def leakage_test(log_dir, im_size=128, ksize=16, fc_x=1./4, fc_y=0.):
 	kernel_cos = np.cos(kernel_loc)
 	im_data = np.zeros((1, im_size, im_size, 1))
 	im_data[0, :ksize, :ksize, :1] = kernel_cos
-	apply_fft_win(im_data, log_dir+'/fft_im{}_cos{}.png'.format(im_size, ksize), windowing=False)	
+	apply_fft_win(im_data, log_dir+'/fft_im{}_cos{}.png'.format(im_size, ksize), windowing=False)
 
 #celeba_data = read_celeba(32)
 #apply_fft_win(celeba_data, log_dir+'/fft_celeba32cc_hann.png')
