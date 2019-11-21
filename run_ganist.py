@@ -532,10 +532,10 @@ def sample_pyramid_with_fft(ganist, path=None, sample_size=10, im_data=None):
 		pfft, _ = apply_fft_images(p, reshape=True)
 		pyramid_fft.append(np.log(pfft)/5. - 0.5)
 
-	fft_c, _ = apply_fft_images(pyramid[0]+1j*pyramid[1], reshape=True)
-	pyramid_fft.append(np.log(fft_c)/5. - 0.5)
-	fft_op_c, _ = apply_fft_images(pyramid[2]+1j*pyramid[3], reshape=True)
-	pyramid_fft.append(np.log(fft_op_c)/5. - 0.5)
+	#fft_c, _ = apply_fft_images(pyramid[0]+1j*pyramid[1], reshape=True)
+	#pyramid_fft.append(np.log(fft_c)/5. - 0.5)
+	#fft_op_c, _ = apply_fft_images(pyramid[2]+1j*pyramid[3], reshape=True)
+	#pyramid_fft.append(np.log(fft_op_c)/5. - 0.5)
 
 	pyramid_collect = pyramid + pyramid_fft
 	if path is not None:
@@ -657,13 +657,13 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 2e3
+	max_itr_total = 5e5
 	d_updates = 5
 	g_updates = 1
 	batch_size = 32
 	eval_step = eval_int
 	draw_step = eval_int
-	snap_step = max_itr_total // 5
+	snap_step = max_itr_total // 10
 
 	### logs initi
 	g_logs = list()
@@ -1034,7 +1034,7 @@ class CUB_Sampler:
 		return vals
 
 	def make_test_train_order(self, test_size):
-		max_per_class = test_size // np.amax(self.cls)
+		max_per_class = test_size // (np.amax(self.cls)+1)
 		test_select = list()
 		train_select =  list()
 		c_pre = None
@@ -1762,7 +1762,7 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_sum_vae)
 
 	### read and process data
-	sample_size = 1000
+	sample_size = 5000
 	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
 	#blur_levels = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
 
@@ -1774,7 +1774,7 @@ if __name__ == '__main__':
 	config.gpu_options.allow_growth = True
 	sess = tf.Session(config=config)
 	### create a ganist instance
-	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	#ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
 	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### init variables
@@ -1783,16 +1783,16 @@ if __name__ == '__main__':
 	#with open(log_path+'/vars_count_log.txt', 'w+') as fs:
 	#	print >>fs, '>>> g_vars: %d --- d_vars: %d' \
 	#		% (ganist.g_vars_count, ganist.d_vars_count)
-	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
-		print('>>> g_vars: {} --- d_vars: {}'.format(
-			ganist.g_vars_count, ganist.d_vars_count), file=fs)
+	#with open(log_path+'/vars_count_log.txt', 'w+') as fs:
+	#	print('>>> g_vars: {} --- d_vars: {}'.format(
+	#		ganist.g_vars_count, ganist.d_vars_count), file=fs)
 
 	'''
 	INCEPTION SETUP
 	'''
 	fid_im_size = 128
-	inception_dir = '/media/evl/Public/Mahyar/Data/models/research/slim'
-	ckpt_path = '/media/evl/Public/Mahyar/Data/inception_v3_model/kaggle/inception_v3.ckpt'
+	inception_dir = '/dresden/users/mk1391/evl/Data/models/research/slim'
+	ckpt_path = '/dresden/users/mk1391/evl/Data/inception_v3_model/kaggle/inception_v3.ckpt'
 	sys.path.insert(0, inception_dir)
 
 	#from inception.slim import slim
@@ -1952,18 +1952,18 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
-	im_size = 128
-	train_size = 2000
-	im_paths = readim_path_from_dir(im_dir)
-	np.random.shuffle(im_paths)
-	### prepare test features
-	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
-		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
-	### prepare train images and features
-	im_data = readim_from_path(im_paths[:train_size], 
-		im_size, center_crop=(121, 89), verbose=True)
-	#train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
+	#im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	#im_size = 128
+	#train_size = 50000
+	#im_paths = readim_path_from_dir(im_dir)
+	#np.random.shuffle(im_paths)
+	#### prepare test features
+	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
+	#	im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
+	#### prepare train images and features
+	#im_data = readim_from_path(im_paths[:train_size], 
+	#	im_size, center_crop=(121, 89), verbose=True)
+	##train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
 	#lsun_lmdb_dir = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_lmdb/'
@@ -1979,15 +1979,15 @@ if __name__ == '__main__':
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### read cub 128
-	#cub_dir = '/media/evl/Public/Mahyar/Data/cub/CUB_200_2011/'
-	#im_size = 128
-	##### prepare test features
-	#cub_test_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='test', test_size=sample_size)
-	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=cub_test_sampler)
-	##### prepare train images and features
-	#cub_train_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='train', test_size=sample_size)
-	#im_data = cub_train_sampler.sample_data()
-	#np.random.shuffle(im_data) ### warning: im_data becomes shuffled
+	cub_dir = '/dresden/users/mk1391/evl/Data/cub/CUB_200_2011/'
+	im_size = 128
+	#### prepare test features
+	cub_test_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='test', test_size=sample_size)
+	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=cub_test_sampler)
+	#### prepare train images and features
+	cub_train_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='train', test_size=sample_size)
+	im_data = cub_train_sampler.sample_data()
+	np.random.shuffle(im_data) ### warning: im_data becomes shuffled
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### cosine sampler
@@ -2012,32 +2012,32 @@ if __name__ == '__main__':
 	blur_im = np.stack(blur_im_list, axis=0)
 	block_draw(blur_im, log_path+'/blur_im_samples.png', border=True)
 	### draw real samples pyramid
-	sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
-		sample_size=10, im_data=train_imgs[:10])
+	#sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
+	#	sample_size=10, im_data=train_imgs[:10])
 
 	'''
 	GAN SETUP SECTION
 	'''
 	### train ganist
-	train_ganist(ganist, train_imgs, test_feats, train_labs)
+	#train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
-	load_path = log_path_snap+'/model_best.h5' ## *TOY
+	#load_path = log_path_snap+'/model_best.h5' ## *TOY
 	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_0/snapshots/model_best.h5'
-	ganist.load(load_path.format(run_seed)) ## *TOY
+	#ganist.load(load_path.format(run_seed)) ## *TOY
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
-	g_feats = TFutil.get().extract_feats(None, sample_size, 
-		blur_levels=blur_levels, ganist=ganist) ## *TOY
-	print('>>> g_samples shape: {}'.format(g_samples.shape))
-	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
-	im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
-	sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10) ## *TOY
+	#g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
+	#g_feats = TFutil.get().extract_feats(None, sample_size, 
+	#	blur_levels=blur_levels, ganist=ganist) ## *TOY
+	#print('>>> g_samples shape: {}'.format(g_samples.shape))
+	#im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
+	#im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
+	#sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10) ## *TOY
 	#sys.exit(0)
 
 	### *TOY
@@ -2057,15 +2057,15 @@ if __name__ == '__main__':
 	#from theano import tensor as T
 	#import lasagne
 	### tensorflow (comment when using theano pggan)
-	#sys.path.insert(0, '/media/evl/Public/Mahyar/Data/pggan_model')
+	sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
 
-	#net_path = '/media/evl/Public/Mahyar/pggan_logs/logs_celeba128cc/temp/results/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cub128bb/results_gdsmall_cub_0/000-pgan-cub-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
-	#pg_sampler = PG_Sampler(net_path, sess, net_type='theano')
-	#pg_samples = pg_sampler.sample_data(1024)
-	#print('>>> pg_samples shape: {}'.format(pg_samples.shape))
-	#im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
-	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
+	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	pg_samples = pg_sampler.sample_data(1024)
+	print('>>> pg_samples shape: {}'.format(pg_samples.shape))
+	im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
 
 	'''
 	Read data from ImageNet and BigGan
