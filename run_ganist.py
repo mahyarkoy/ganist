@@ -2059,7 +2059,7 @@ if __name__ == '__main__':
 	### tensorflow (comment when using theano pggan)
 	sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
 
-	net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cub128bb/results_gdsmall_cub_0/000-pgan-cub-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cub128bb/results_gdsmall_cub_1/000-pgan-cub-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
 	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
 	pg_samples = pg_sampler.sample_data(1024)
