@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import tf_ganist
 import sys
+from os.path import join
 					
 '''
 Drawing Freq Components
@@ -49,7 +50,7 @@ Read Data
 '''
 def read_celeba(im_size, data_size=1000):
 	### read celeba 128
-	celeba_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	celeba_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
 	celeba_paths = readim_path_from_dir(celeba_dir, im_type='/*.jpg')
 	### prepare train images and features
 	celeba_data = readim_from_path(celeba_paths[:data_size], 
@@ -58,6 +59,7 @@ def read_celeba(im_size, data_size=1000):
 
 '''
 Apply FFT
+im_data shape: (b, h, w, c)
 '''
 def apply_fft_win(im_data, path, windowing=True):
 	### windowing
@@ -76,9 +78,12 @@ def apply_fft_win(im_data, path, windowing=True):
 	#im_fft_ext = np.concatenate((im_fft_ext[-1:, :]/2., im_fft_ext), axis=0)
 	
 	### normalize fft
-	fft_max_power = np.amax(im_fft, axis=(1, 2), keepdims=True)
-	im_fft_norm = im_fft / fft_max_power
-	im_fft_mean = np.mean(im_fft_norm, axis=0)
+	#fft_max_power = np.amax(im_fft, axis=(1, 2), keepdims=True)
+	#im_fft_norm = im_fft / fft_max_power
+	#im_fft_mean = np.mean(im_fft_norm, axis=0)
+	im_fft_mean = np.mean(im_fft, axis=0)
+	fft_max_power = np.amax(im_fft_mean)
+	im_fft_mean /= fft_max_power  
 	
 	### plot mean fft
 	fig = plt.figure(0, figsize=(8,6))
@@ -102,13 +107,15 @@ def apply_fft_win(im_data, path, windowing=True):
 	fig.savefig(path, dpi=300)
 	return
 
-def leakage_test(log_dir, im_size=128, ksize=16, fc_x=1./4, fc_y=0.):
+def leakage_test(log_dir, im_size=128, ksize=128, fc_x=1./16, fc_y=0.):
 	kernel_loc = 2.*np.pi*fc_x * np.arange(ksize).reshape((1, 1, ksize, 1)) + \
 		2.*np.pi*fc_y * np.arange(ksize).reshape((1, ksize, 1, 1))
 	kernel_cos = np.cos(kernel_loc)
 	im_data = np.zeros((1, im_size, im_size, 1))
 	im_data[0, :ksize, :ksize, :1] = kernel_cos
-	apply_fft_win(im_data, log_dir+'/fft_im{}_cos{}.png'.format(im_size, ksize), windowing=False)
+	im_data *= (im_data > 0).astype(int)
+	apply_fft_win(im_data, join(log_dir, 'relu_fft_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, fc_x, fc_y)), windowing=False)
+	single_draw(im_data[0], join(log_dir, 'relu_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, fc_x, fc_y)))
 
 #celeba_data = read_celeba(32)
 #apply_fft_win(celeba_data, log_dir+'/fft_celeba32cc_hann.png')
@@ -123,29 +130,29 @@ def leakage_test(log_dir, im_size=128, ksize=16, fc_x=1./4, fc_y=0.):
 FFT on GANIST
 '''
 if __name__ == '__main__':
-	log_dir = '/home/mahyar/miss_details_images/temp/'
+	log_dir = 'logs_draw/'
 	
 	'''
 	Leakage test
 	'''
-	#leakage_test(log_dir)
+	leakage_test(log_dir)
 	
 	'''
 	CUB FFT test
 	'''
-	cub_dir = '/media/evl/Public/Mahyar/Data/cub/CUB_200_2011/'
-	im_size = 128
-	data_size = 1000
-	test_size = 1000
-	sampler = CUB_Sampler(cub_dir, im_size=im_size, order='test', test_size=test_size)
-	cub_data = sampler.sample_data(data_size)
-	print('>>> CUB shape: {}'.format(cub_data.shape))
-	print('>>> CUB size: {}'.format(sampler.total_count))
-	print('>>> CUB number of classes: {}'.format(1 + np.amax(sampler.cls)))
-	print('>>> CUB average bbox (h, w): ({}, {})'.format(np.mean(sampler.bbox[:, 2]), np.mean(sampler.bbox[:, 3])))
-	im_block_draw(cub_data, 5, log_dir+'/cub{}bb_samples.png'.format(im_size), border=True)
-	apply_fft_win(cub_data, log_dir+'/fft_cub{}bb_hann.png'.format(im_size))
-	sys.exit(0)
+	#cub_dir = '/media/evl/Public/Mahyar/Data/cub/CUB_200_2011/'
+	#im_size = 128
+	#data_size = 1000
+	#test_size = 1000
+	#sampler = CUB_Sampler(cub_dir, im_size=im_size, order='test', test_size=test_size)
+	#cub_data = sampler.sample_data(data_size)
+	#print('>>> CUB shape: {}'.format(cub_data.shape))
+	#print('>>> CUB size: {}'.format(sampler.total_count))
+	#print('>>> CUB number of classes: {}'.format(1 + np.amax(sampler.cls)))
+	#print('>>> CUB average bbox (h, w): ({}, {})'.format(np.mean(sampler.bbox[:, 2]), np.mean(sampler.bbox[:, 3])))
+	#im_block_draw(cub_data, 5, log_dir+'/cub{}bb_samples.png'.format(im_size), border=True)
+	#apply_fft_win(cub_data, log_dir+'/fft_cub{}bb_hann.png'.format(im_size))
+	#sys.exit(0)
 
 	'''
 	LSUN FFT test
@@ -160,24 +167,24 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	config.gpu_options.allow_growth = True
-	sess = tf.Session(config=config)
+	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	#config.gpu_options.allow_growth = True
+	#sess = tf.Session(config=config)
 	### init TFutil
-	tfutil = TFutil(sess)
+	#tfutil = TFutil(sess)
 
-	data_size = 1000
+	#data_size = 1000
 	### create a ganist instance
-	ganist = tf_ganist.Ganist(sess, log_dir)
+	#ganist = tf_ganist.Ganist(sess, log_dir)
 	### init variables
-	sess.run(tf.global_variables_initializer())
+	#sess.run(tf.global_variables_initializer())
 	### load ganist
 	#load_path = log_dir_snap+'/model_best.h5'
 	#ganist.load(load_path.format(run_seed))
 	### sample
-	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
-	apply_fft_win(g_samples, log_dir+'fft_wganbn_sh16_comb9_hann.png')
+	#g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+	#apply_fft_win(g_samples, log_dir+'fft_wganbn_sh16_comb9_hann.png')
 	
 	### close session
-	sess.close()
+	#sess.close()

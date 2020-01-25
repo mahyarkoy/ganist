@@ -5,3 +5,4 @@ logs*
 snapshots
 plots/
 cl_plots/
+.DS_Store

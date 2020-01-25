@@ -606,7 +606,7 @@ class Ganist:
 
 		return d_loss, g_loss, rg_grad_norm_output
 
-	def build_wgan(self, im_input, zi_input, im_size):
+	def build_wgan_fs(self, im_input, zi_input, im_size):
 		### generators
 		g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
 				im_size=im_size, sub_scope='main')
@@ -633,7 +633,24 @@ class Ganist:
 		g_loss_list.append(g_loss)
 		rg_grad_norm_list.append(rg_grad_norm_output)
 
-		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list		
+		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
+
+	def build_wgan(self, im_input, zi_input, im_size):
+		### generators
+		g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='main')
+		gen_collect = [g_layer]
+		im_collect = [im_input]
+		comb_list = [g_layer]
+
+		### discriminators
+		d_loss, g_loss, rg_grad_norm_output = \
+				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='main')
+		d_loss_list = [d_loss]
+		g_loss_list = [g_loss]
+		rg_grad_norm_list = [rg_grad_norm_output]
+
+		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list	
 
 	def build_graph(self):
 		with tf.name_scope('ganist'):
@@ -768,9 +785,13 @@ class Ganist:
 			d_grads_vars = self.d_opt_handle.compute_gradients(self.d_loss_total, self.d_vars)
 			self.d_opt_total = self.d_opt_handle.apply_gradients(d_grads_vars)
 			
-			### collect g loss
+			### collect g loss *L2LOSS
 			#self.g_loss_list = [g_loss_l0, g_loss_l1, g_loss_l2, g_loss_rec]
-			self.g_loss_total = sum(self.g_loss_list)
+			#self.g_loss_total = sum(self.g_loss_list)
+
+			### L2 Loss for generator *L2LOSS
+			self.g_loss_total = tf.reduce_mean(
+				tf.reduce_sum(tf.square(self.im_input - self.comb_list[-1]), axis=[1, 2, 3]))
 
 			### g opt total
 			self.g_opt_handle = tf.train.AdamOptimizer(self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2)
