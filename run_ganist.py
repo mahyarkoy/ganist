@@ -666,6 +666,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 			batch_order = train_order[batch_start:batch_end]
 			#print('>>> batch order: {}'.format(batch_order))
 			batch_data = train_dataset[batch_order, ...]
+			batch_labs = train_labs[batch_order, ...] if train_labs is not None else None
 			#im_block_draw(batch_data, 6, log_path_draw+'/batch_data_{}.png'.format(batch_start), border=True)
 			fetch_batch = False
 		
@@ -678,7 +679,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 			itrs_logs.append(itr_total)
 			draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 \
 				else None
-			fid_dist, net_stats = eval_ganist(ganist, eval_feats, draw_path)
+			fid_dist, net_stats = eval_ganist(ganist, eval_feats, draw_path, labs=batch_labs)
 			#eval_logs.append(fid_dist) ## *TOY
 			stats_logs.append(net_stats)
 
@@ -859,7 +860,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 		### discriminator update
 		if d_update_flag is True and d_updates > 0:
 			batch_sum = ganist.step(batch_data, 
-				batch_size=None, gen_update=False, run_count=itr_total)
+				batch_size=None, gen_update=False, run_count=itr_total, zi_data=batch_labs)
 			ganist.write_sum(batch_sum, itr_total)
 			d_itr += 1
 			itr_total += 1
@@ -869,7 +870,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 		### generator updates: g_updates times for each d_updates of discriminator
 		elif g_updates > 0:
 			batch_sum = ganist.step(batch_data, 
-				batch_size=None, gen_update=True, run_count=itr_total)
+				batch_size=None, gen_update=True, run_count=itr_total, zi_data=batch_labs)
 			ganist.write_sum(batch_sum, itr_total)
 			g_itr += 1
 			itr_total += 1
@@ -888,13 +889,13 @@ def sample_ganist(ganist, sample_size, sampler=None, batch_size=64,
 	zi_data=None, z_im=None, output_type='rec', filter_only=False):
 	sampler = sampler if sampler is not None else ganist.step
 	res_list = list()
-	if zi_data is not None and zi_data.shape[0]%batch_size != 0:
-		raise ValueError('zi_data must be a multiple of batch_size for sampling!')
 	for batch_start in range(0, sample_size, batch_size):
 		batch_end = min(batch_start + batch_size, sample_size)
 		#batch_len = batch_end - batch_start
 		batch_zi = zi_data[batch_start:batch_start+batch_size, ...] if zi_data is not None else None
 		batch_im = z_im[batch_start:batch_end, ...] if z_im is not None else None
+		if batch_zi is not None and batch_zi.shape[0] != batch_size:
+			raise ValueError('zi_data must be a multiple of batch_size for sampling!')
 		res_list.append(sampler(batch_im, batch_size, 
 			gen_only=True, zi_data=batch_zi, 
 			output_type=output_type, filter_only=filter_only))
@@ -1317,7 +1318,7 @@ def eval_en_acc(ganist, im_data, im_label, batch_size=64):
 '''
 Returns the energy distance of a trained GANist, and draws block images of GAN samples
 '''
-def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None):
+def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None, labs=None):
 	### sample and batch size
 	#sample_size = eval_feats[0].shape[0] ## *TOY
 	batch_size = 64
@@ -1325,7 +1326,7 @@ def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None):
 	sampler = sampler if sampler is not None else ganist.step
 	
 	### collect real and gen samples **mt**
-	g_samples = sample_ganist(ganist, draw_size**2, sampler=sampler, output_type='rec')[0]
+	g_samples = sample_ganist(ganist, draw_size**2, sampler=sampler, output_type='rec', zi_data=labs)[0]
 	#g_feats = TFutil.get().extract_feats(None, sample_size, 
 	#	blur_levels=[0], ganist=ganist) ## *TOY
 
@@ -1334,7 +1335,7 @@ def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None):
 		#g_samples = g_samples.reshape([-1] + ganist.data_dim)
 		im_block_draw(g_samples, draw_size, draw_path+'.png', border=True)
 		#sample_pyramid_with_fft(ganist, draw_path+'_pyramid.png', 10) ## *TOY
-		g_samples = sample_ganist(ganist, 1000, sampler=sampler, output_type='rec')[0] ## *TOY
+		g_samples = sample_ganist(ganist, 1000, sampler=sampler, output_type='rec', zi_data=labs)[0] ## *TOY
 		apply_fft_win(g_samples[:1000], draw_path+'_fft_size{}.png'.format(g_samples.shape[1]), windowing=False) ## *TOY
 
 	### get network stats
@@ -1954,6 +1955,8 @@ if __name__ == '__main__':
 	im_size = 128
 	sampler = COS_Sampler(im_size=im_size, fc_x=fc_x, fc_y=fc_y)
 	im_data = sampler.sample_data(data_size)
+	im_labels = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
+				size=[data_size, ganist.z_dim])
 	test_feats = None
 	apply_fft_win(im_data[:1000], 
 		join(log_path, 'fft_true_fx{}_fy{}_size{}.png'.format(int(im_size*fc_x), int(im_size*fc_y), im_data.shape[1])),
@@ -1967,7 +1970,7 @@ if __name__ == '__main__':
 	'''
 	### setup
 	train_imgs = im_data
-	train_labs = None
+	train_labs = im_labels #None ### *L2LOSS
 	print('>>> Shape of training images: {}'.format(train_imgs.shape))
 	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
 	im_block_draw(train_imgs[:25], 5, join(log_path,'true_samples.png'), border=True)
@@ -1996,21 +1999,21 @@ if __name__ == '__main__':
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(ganist, 1024, output_type='rec')[0]
+	g_samples = sample_ganist(ganist, 1024, output_type='rec', zi_data=train_labs)[0]
 	#g_feats = TFutil.get().extract_feats(None, sample_size, 
 	#	blur_levels=blur_levels, ganist=ganist) ## *TOY
 	print('>>> g_samples shape: {}'.format(g_samples.shape))
-	im_block_draw(g_samples, 5, log_path+'/gen_samples.png', border=True)
+	im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
 	im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
 	#sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10) ## *TOY
 	#sys.exit(0)
 
 	### *TOY
 	apply_fft_win(g_samples[:1000], 
-		'fft_gen_fx{}_fy{}_size{}.png'.format(int(im_size*fc_x), int(im_size*fc_y), g_samples.shape[1]), 
+		join(log_path, 'fft_gen_fx{}_fy{}_size{}.png'.format(int(im_size*fc_x), int(im_size*fc_y), g_samples.shape[1])), 
 		windowing=False)
 	apply_fft_win(g_samples[:1000], 
-		'fft_gen_fx{}_fy{}_size{}_hann.png'.format(int(im_size*fc_x), int(im_size*fc_y), g_samples.shape[1]),
+		join(log_path, 'fft_gen_fx{}_fy{}_size{}_hann.png'.format(int(im_size*fc_x), int(im_size*fc_y), g_samples.shape[1])),
 		windowing=True)
 
 	'''
