@@ -429,7 +429,7 @@ class Ganist:
 		self.man_dim = 0
 		self.g_num = 1
 		self.z_range = 1.0
-		self.data_dim = [128, 128, 3]
+		self.data_dim = [128, 128, 1]
 		self.hp_loss_weight = 1.
 		self.gp_loss_weight = 10.0
 		self.rg_loss_weight = 0.0

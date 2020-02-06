@@ -36,7 +36,7 @@ from scipy.stats import beta as beta_dist
 from scipy import signal
 import tf_ganist
 from fft_test import apply_fft_images
-from util import apply_fft_win
+from util import apply_fft_win, freq_leakage
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
@@ -358,10 +358,12 @@ Draws im_data images one by one as separate image files in the save_dir.
 im_data shape: (B, H, W, C)
 '''
 def im_separate_draw(im_data, save_dir):
-	images = np.clip(np.rint((im_data + 1.0) / 2.0 * 255.0), 0.0, 255.0).astype(np.uint8)
-	for i, im in enumerate(images):
-		fname = save_dir + '/{}.jpg'.format(i)
-		Image.fromarray(im, 'RGB').save(fname, 'JPEG')
+	#images = np.clip(np.rint((im_data + 1.0) / 2.0 * 255.0), 0.0, 255.0).astype(np.uint8)
+	imb, imh, imw, imc = im_data.shape
+	for i, im in enumerate(im_data):
+		fname = join(save_dir, '{}.png'.format(i))
+		#Image.fromarray(im, 'RGB').save(fname, 'JPEG')
+		block_draw(im.reshape([1, 1, imh, imw, imc]), fname)
 
 '''
 Draws sample_size**2 randomly selected images from im_data.
@@ -614,7 +616,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 
 	### training configs
 	max_itr_total = 5e5
-	d_updates = 0 #5 ### *L2LOSS
+	d_updates = 5 ### *L2LOSS 0
 	g_updates = 1
 	batch_size = 32
 	eval_step = eval_int
@@ -679,7 +681,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 			itrs_logs.append(itr_total)
 			draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 \
 				else None
-			fid_dist, net_stats = eval_ganist(ganist, eval_feats, draw_path, labs=batch_labs)
+			fid_dist, net_stats = eval_ganist(ganist, eval_feats, draw_path, labs=train_labs)
 			#eval_logs.append(fid_dist) ## *TOY
 			stats_logs.append(net_stats)
 
@@ -1741,7 +1743,7 @@ if __name__ == '__main__':
 	#with open(log_path+'/vars_count_log.txt', 'w+') as fs:
 	#	print >>fs, '>>> g_vars: %d --- d_vars: %d' \
 	#		% (ganist.g_vars_count, ganist.d_vars_count)
-	with open(log_path+'/vars_count_log.txt', 'w+') as fs:
+	with open(join(log_path,'vars_count_log.txt'), 'w+') as fs:
 		print('>>> g_vars: {} --- d_vars: {}'.format(
 			ganist.g_vars_count, ganist.d_vars_count), file=fs)
 
@@ -1950,27 +1952,30 @@ if __name__ == '__main__':
 
 	### cosine sampler
 	data_size = 50000
-	fc_x = 0.
-	fc_y = 0.
+	freq_centers = [(32/128., 32/128.), (32/128., -32/128.)]
 	im_size = 128
-	sampler = COS_Sampler(im_size=im_size, fc_x=fc_x, fc_y=fc_y)
-	im_data = sampler.sample_data(data_size)
+	im_data = np.zeros((data_size, im_size, im_size, ganist.data_dim[-1]))
+	freq_str = ''
+	for fc in freq_centers:
+		sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=ganist.data_dim[-1])
+		im_data += sampler.sample_data(data_size)
+		freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+	im_data /= len(freq_centers)
 	im_labels = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
-				size=[data_size, ganist.z_dim])
+			size=[data_size, ganist.z_dim])
 	test_feats = None
-	apply_fft_win(im_data[:1000], 
-		join(log_path, 'fft_true_fx{}_fy{}_size{}.png'.format(int(im_size*fc_x), int(im_size*fc_y), im_data.shape[1])),
-		windowing=False)
-	apply_fft_win(im_data[:1000], 
-		join(log_path, 'fft_true_fx{}_fy{}_size{}_hann.png'.format(int(im_size*fc_x), int(im_size*fc_y), im_data.shape[1])),
-		windowing=True)
+	true_fft = apply_fft_win(im_data[:1000], 
+			join(log_path, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
+	true_fft_hann = apply_fft_win(im_data[:1000], 
+			join(log_path, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
+	freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size))
 
 	'''
 	DATASET INITIAL EVALS
 	'''
 	### setup
 	train_imgs = im_data
-	train_labs = im_labels #None ### *L2LOSS
+	train_labs = None ### *L2LOSS im_labels
 	print('>>> Shape of training images: {}'.format(train_imgs.shape))
 	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
 	im_block_draw(train_imgs[:25], 5, join(log_path,'true_samples.png'), border=True)
@@ -2009,12 +2014,15 @@ if __name__ == '__main__':
 	#sys.exit(0)
 
 	### *TOY
-	apply_fft_win(g_samples[:1000], 
-		join(log_path, 'fft_gen_fx{}_fy{}_size{}.png'.format(int(im_size*fc_x), int(im_size*fc_y), g_samples.shape[1])), 
-		windowing=False)
-	apply_fft_win(g_samples[:1000], 
-		join(log_path, 'fft_gen_fx{}_fy{}_size{}_hann.png'.format(int(im_size*fc_x), int(im_size*fc_y), g_samples.shape[1])),
-		windowing=True)
+	gen_fft = apply_fft_win(g_samples[:1000], 
+		join(log_path, 'fft_gen{}_size{}'.format(freq_str, g_samples.shape[1])), windowing=False)
+	gen_fft_hann = apply_fft_win(g_samples[:1000], 
+		join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
+	freq_leakage(np.mean(true_fft, axis=0), np.mean(gen_fft, axis=0), 
+			'leakage{}_size{}'.format(freq_str, g_samples.shape[1]))
+	freq_leakage(np.mean(true_fft_hann, axis=0), np.mean(gen_fft_hann, axis=0), 
+			'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1]))
+	freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size))
 
 	'''
 	Read from PGGAN and construct features

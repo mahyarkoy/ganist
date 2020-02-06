@@ -8,6 +8,7 @@ from PIL import Image
 import tf_ganist
 import sys
 from os.path import join
+from util import apply_fft_win
 					
 '''
 Drawing Freq Components
@@ -57,65 +58,19 @@ def read_celeba(im_size, data_size=1000):
 			im_size, center_crop=(121, 89), verbose=True)
 	return celeba_data
 
-'''
-Apply FFT
-im_data shape: (b, h, w, c)
-'''
-def apply_fft_win(im_data, path, windowing=True):
-	### windowing
-	win_size = im_data.shape[1]
-	win = np.hanning(im_data.shape[1])
-	win = np.outer(win, win).reshape((win_size, win_size, 1))
-	#single_draw(win, '/home/mahyar/miss_details_images/temp/hann_win.png')
-	#single_draw(win*im_data[0], '/home/mahyar/miss_details_images/temp/hann_win_im.png')
-	im_data = im_data * win if windowing is True else im_data
-	
-	### apply fft
-	print('>>> fft image shape: {}'.format(im_data.shape))
-	im_fft, _ = apply_fft_images(im_data, reshape=False)
-	### copy nyquist freq component to positive side of x and y axis
-	#im_fft_ext = np.concatenate((im_fft_mean, im_fft_mean[:, :1]/2.), axis=1)
-	#im_fft_ext = np.concatenate((im_fft_ext[-1:, :]/2., im_fft_ext), axis=0)
-	
-	### normalize fft
-	#fft_max_power = np.amax(im_fft, axis=(1, 2), keepdims=True)
-	#im_fft_norm = im_fft / fft_max_power
-	#im_fft_mean = np.mean(im_fft_norm, axis=0)
-	im_fft_mean = np.mean(im_fft, axis=0)
-	fft_max_power = np.amax(im_fft_mean)
-	im_fft_mean /= fft_max_power  
-	
-	### plot mean fft
-	fig = plt.figure(0, figsize=(8,6))
-	fig.clf()
-	ax = fig.add_subplot(1,1,1)
-	np.clip(im_fft_mean, 1e-20, None, out=im_fft_mean)
-	pa = ax.imshow(np.log(im_fft_mean), cmap=plt.get_cmap('inferno'), vmin=-13)
-	ax.set_title('Log Average Frequency Spectrum')
-	dft_size = im_data.shape[1]
-	print('dft_size: {}'.format(dft_size))
-	print('fft_shape: {}'.format(im_fft_mean.shape))
-	#dft_size = None
-	if dft_size is not None:
-		ticks_loc_x = [0, dft_size//2]
-		ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
-		ax.set_xticks(ticks_loc_x)
-		ax.set_xticklabels([-0.5, 0])
-		ax.set_yticks(ticks_loc_y)
-		ax.set_yticklabels(['', 0, -0.5])
-	fig.colorbar(pa)
-	fig.savefig(path, dpi=300)
-	return
-
-def leakage_test(log_dir, im_size=128, ksize=128, fc_x=1./16, fc_y=0.):
+def leakage_test(log_dir, im_size=128, ksize=128, fc_x=43./128, fc_y=1./128):
 	kernel_loc = 2.*np.pi*fc_x * np.arange(ksize).reshape((1, 1, ksize, 1)) + \
 		2.*np.pi*fc_y * np.arange(ksize).reshape((1, ksize, 1, 1))
 	kernel_cos = np.cos(kernel_loc)
 	im_data = np.zeros((1, im_size, im_size, 1))
 	im_data[0, :ksize, :ksize, :1] = kernel_cos
-	im_data *= (im_data > 0).astype(int)
-	apply_fft_win(im_data, join(log_dir, 'relu_fft_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, fc_x, fc_y)), windowing=False)
-	single_draw(im_data[0], join(log_dir, 'relu_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, fc_x, fc_y)))
+	#im_data *= (im_data > 0).astype(int)
+	im_data = np.tanh(im_data)
+	apply_fft_win(im_data, 
+		join(log_dir, 'tanh_fft_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, int(im_size*fc_x), int(im_size*fc_y))), 
+		windowing=False)
+	single_draw(im_data[0], 
+		join(log_dir, 'tanh_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, int(im_size*fc_x), int(im_size*fc_y))))
 
 #celeba_data = read_celeba(32)
 #apply_fft_win(celeba_data, log_dir+'/fft_celeba32cc_hann.png')
@@ -132,6 +87,15 @@ FFT on GANIST
 if __name__ == '__main__':
 	log_dir = 'logs_draw/'
 	
+	'''
+	Cos Sampler
+	'''
+	#from util import COS_Sampler
+	#cos_sampler = COS_Sampler(im_size=128, fc_x=0., fc_y=0.)
+	#im_data = cos_sampler.sample_data(10)
+	#single_draw(im_data[0], 
+	#	join(log_dir, 'constant_color.png'))
+
 	'''
 	Leakage test
 	'''

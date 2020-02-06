@@ -45,8 +45,8 @@ im: (h, w, c)
 return: fft image, greyscaled image
 '''
 def apply_fft(im, freqs=None):
-	im_gray = np.mean(im, axis=-1) #np.mean((im + 1.0) / 2., axis=-1)
-	im_t = im_gray #np.mean(im, axis=-1)
+	im_gray = np.mean(im, axis=-1)
+	im_t = im_gray
 	if freqs is None:
 		imf = np.fft.fftn(im_t)
 		imf_s = np.flip(np.fft.fftshift(imf), 0)
@@ -122,5 +122,72 @@ def apply_fft_win(im_data, path, windowing=True):
 		ax.set_yticks(ticks_loc_y)
 		ax.set_yticklabels(['', 0, -0.5])
 	fig.colorbar(pa)
+
+	### save (if image prefix is not provided, save both image and pickle data)
+	if path[-4:] != '.png':
+		with open(path+'.pk', 'wb+') as fs:
+			pk.dump(im_fft, fs)
+		path += '.png'
 	fig.savefig(path, dpi=300)
-	return
+	return im_fft
+
+'''
+Computes the ratio of power that has leaked.
+true_power, gen_power: (h, w)
+path: saves result as text file if given.
+'''
+def freq_leakage(true_power, gen_power, path=None)
+	true_power_dist = 1. * true_power / np.sum(true_power)
+	gen_power_dist = 1. * gen_power / np.sum(gen_power)
+	leakage = np.sum(np.abs(true_power_dist - gen_power_dist)) / 2.
+	if path is not None:
+		with open(path+'.txt', 'w+') as fs:
+			print('>>> frequency leakage: {}'.format(leakage), file=fs)
+	return leakage
+
+'''
+Draws the distributions formed on each frequency location.
+Assumes signal is real (does not work for complex signals).
+'''
+def freq_density(fft, freqs, im_size, path, density=None):
+	mu = 0.
+	sigma = 0.2
+	density = lambda x: 1./(sigma*np.sqrt(2*np.pi)) * np.exp(-(x-mu)**2/(2.*sigma**2))
+	freqs = np.rint(np.array(freqs)*im_size).astype(int)
+	fft = np.flip(fft, 0)
+	fig = plt.figure(0, figsize=(8,6))
+	fft_density = list()
+	for fx, fy in freqs:
+		data = np.sqrt(fft[:, im_size//2+fx, im_size//2+fy]) / im_size**2 * freqs.shape[0]
+		data *= 2. if fx == 0 and fy == 0 else 1.
+		fft_density.append(data)
+		fig.clf()
+		ax = fig.add_subplot(1,1,1)
+		count, bins, _ = ax.hist(s, 100, range=(-1., 1.), density=True)
+		if density is not None:
+			ax.plot(bins, density(bins), linewidth=2, color='r')
+		ax.set_xlabel('frequency magnitude')
+		ax.set_ylabel('density')
+		fig.savefig(path+'_fx{}_fy{}'.format(fx, fy)+'.png', dpi=300)
+	return fft_density
+
+'''
+Sampler for planar 2D cosine with uniform amplitude [-1, 1)
+'''
+class COS_Sampler:
+	def __init__(self, im_size, fc_x, fc_y, channels=1):
+		self.im_size = im_size
+		self.ch = channels
+		self.ksize = im_size
+		self.fc_x = fc_x
+		self.fc_y = fc_y
+		self.kernel_loc = 2.*np.pi*fc_x * np.arange(self.ksize).reshape((1, 1, self.ksize, 1)) + \
+			2.*np.pi*fc_y * np.arange(self.ksize).reshape((1, self.ksize, 1, 1))
+
+	def sample_data(self, data_size):
+		kernel_cos = np.cos(self.kernel_loc)
+		#amps = np.random.uniform(size=(data_size, 1, 1, self.ch)) * 2. - 1.
+		amps = np.clip(np.random.normal(loc=0., scale=0.2, size=(data_size, 1, 1, self.ch)), -1., 1.)
+		return amps * kernel_cos
+
+
