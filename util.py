@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import glob
 import sys
+import pickle as pk
 
 '''
 DFT of the 2d discrete non-periodic input image.
@@ -136,7 +137,7 @@ Computes the ratio of power that has leaked.
 true_power, gen_power: (h, w)
 path: saves result as text file if given.
 '''
-def freq_leakage(true_power, gen_power, path=None)
+def freq_leakage(true_power, gen_power, path=None):
 	true_power_dist = 1. * true_power / np.sum(true_power)
 	gen_power_dist = 1. * gen_power / np.sum(gen_power)
 	leakage = np.sum(np.abs(true_power_dist - gen_power_dist)) / 2.
@@ -159,11 +160,11 @@ def freq_density(fft, freqs, im_size, path, density=None):
 	fft_density = list()
 	for fx, fy in freqs:
 		data = np.sqrt(fft[:, im_size//2+fx, im_size//2+fy]) / im_size**2 * freqs.shape[0]
-		data *= 2. if fx == 0 and fy == 0 else 1.
+		data *= 1. if fx == 0 and fy == 0 else 2.
 		fft_density.append(data)
 		fig.clf()
 		ax = fig.add_subplot(1,1,1)
-		count, bins, _ = ax.hist(s, 100, range=(-1., 1.), density=True)
+		count, bins, _ = ax.hist(data, 100, range=(-1., 1.), density=True)
 		if density is not None:
 			ax.plot(bins, density(bins), linewidth=2, color='r')
 		ax.set_xlabel('frequency magnitude')

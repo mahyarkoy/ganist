@@ -36,10 +36,10 @@ from scipy.stats import beta as beta_dist
 from scipy import signal
 import tf_ganist
 from fft_test import apply_fft_images
-from util import apply_fft_win, freq_leakage
+from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-os.environ["CUDA_VISIBLE_DEVICES"] = "1" # "0, 1" for multiple
+os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
 
 '''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
@@ -615,13 +615,13 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 5e5
+	max_itr_total = 2e3
 	d_updates = 5 ### *L2LOSS 0
 	g_updates = 1
 	batch_size = 32
 	eval_step = eval_int
 	draw_step = eval_int
-	snap_step = max_itr_total // 10
+	snap_step = max_itr_total // 5
 
 	### logs initi
 	g_logs = list()
@@ -944,23 +944,6 @@ def apply_lap_pyramid(im, batch_size=64):
 		im_batch = im[batch_start:batch_end]
 		im_reconst[batch_start:batch_end, ...] = sess.run(reconst, {im_layer: im_batch})
 	return im_reconst
-
-'''
-Smpler for planar 2D cosine with uniform amplitude [-1, 1)
-'''
-class COS_Sampler:
-	def __init__(self, im_size, fc_x, fc_y):
-		self.im_size = im_size
-		self.ksize = im_size
-		self.fc_x = fc_x
-		self.fc_y = fc_y
-		self.kernel_loc = 2.*np.pi*fc_x * np.arange(self.ksize).reshape((1, 1, self.ksize, 1)) + \
-			2.*np.pi*fc_y * np.arange(self.ksize).reshape((1, self.ksize, 1, 1))
-
-	def sample_data(self, data_size):
-		kernel_cos = np.cos(self.kernel_loc)
-		amps = np.random.uniform(size=(data_size, 1, 1, 3)) * 2. - 1.
-		return amps * kernel_cos
 
 '''
 Sampler for CUB
@@ -1968,7 +1951,7 @@ if __name__ == '__main__':
 			join(log_path, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
 	true_fft_hann = apply_fft_win(im_data[:1000], 
 			join(log_path, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
-	freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size))
+	freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size)))
 
 	'''
 	DATASET INITIAL EVALS
@@ -2019,10 +2002,10 @@ if __name__ == '__main__':
 	gen_fft_hann = apply_fft_win(g_samples[:1000], 
 		join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
 	freq_leakage(np.mean(true_fft, axis=0), np.mean(gen_fft, axis=0), 
-			'leakage{}_size{}'.format(freq_str, g_samples.shape[1]))
+			join(log_path, 'leakage{}_size{}'.format(freq_str, g_samples.shape[1])))
 	freq_leakage(np.mean(true_fft_hann, axis=0), np.mean(gen_fft_hann, axis=0), 
-			'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1]))
-	freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size))
+			join(log_path, 'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1])))
+	freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size)))
 
 	'''
 	Read from PGGAN and construct features
