@@ -787,11 +787,11 @@ class Ganist:
 			
 			### collect g loss *L2LOSS
 			#self.g_loss_list = [g_loss_l0, g_loss_l1, g_loss_l2, g_loss_rec]
-			#self.g_loss_total = sum(self.g_loss_list)
+			self.g_loss_total = sum(self.g_loss_list)
 
 			### L2 Loss for generator *L2LOSS
-			self.g_loss_total = tf.reduce_mean(
-				tf.reduce_sum(tf.square(self.im_input - self.comb_list[-1]), axis=[1, 2, 3]))
+			#self.g_loss_total = tf.reduce_mean(
+			#	tf.reduce_sum(tf.square(self.im_input - self.comb_list[-1]), axis=[1, 2, 3]))
 
 			### g opt total
 			self.g_opt_handle = tf.train.AdamOptimizer(self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2)
