@@ -1232,24 +1232,6 @@ def compute_fid(feat1, feat2):
 	return np.sqrt(fid2)
 
 '''
-Evaluate fid on data
-'''
-def eval_fid(sess, im_r, im_g, blur=0):
-	### extract real images (at least data_size)
-	feat_r = extract_inception_feat(sess, inception_feat_layer, inception_im_layer, blur_images(im_r, blur))
-	### extract fake images
-	feat_g = extract_inception_feat(sess, inception_feat_layer, inception_im_layer, blur_images(im_g, blur))
-	### compute fid
-	return compute_fid(feat_r, feat_g)
-
-def eval_fid_levels(sess, im_r, im_g, blur_levels):
-	fid_list = list()
-	for b in blur_levels:
-		print('>>> Computing FID Level {}'.format(b))
-		fid_list.append(eval_fid(sess, im_r, im_g, b))
-	return fid_list
-
-'''
 Compute FID between pairs of features from feat_r and feat_g.
 feat_r, feat_g: equal sized lists containing image features.
 '''
@@ -1947,12 +1929,12 @@ if __name__ == '__main__':
 	im_labels = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
 			size=[data_size, ganist.z_dim])
 	test_feats = None
-	true_fft = apply_fft_win(im_data[:1000], 
+	true_fft = apply_fft_win(im_data[:10000], 
 			join(log_path, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
-	true_fft_hann = apply_fft_win(im_data[:1000], 
+	true_fft_hann = apply_fft_win(im_data[:10000], 
 			join(log_path, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
 	freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size)))
-
+	
 	'''
 	DATASET INITIAL EVALS
 	'''
@@ -1998,12 +1980,12 @@ if __name__ == '__main__':
 
 	### *TOY
 	gen_fft = apply_fft_win(g_samples[:1000], 
-		join(log_path, 'fft_gen{}_size{}'.format(freq_str, g_samples.shape[1])), windowing=False)
+			join(log_path, 'fft_gen{}_size{}'.format(freq_str, g_samples.shape[1])), windowing=False)
 	gen_fft_hann = apply_fft_win(g_samples[:1000], 
-		join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
-	freq_leakage(np.mean(true_fft, axis=0), np.mean(gen_fft, axis=0), 
+			join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
+	freq_leakage(true_fft, gen_fft, 
 			join(log_path, 'leakage{}_size{}'.format(freq_str, g_samples.shape[1])))
-	freq_leakage(np.mean(true_fft_hann, axis=0), np.mean(gen_fft_hann, axis=0), 
+	freq_leakage(true_fft_hann, gen_fft_hann, 
 			join(log_path, 'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1])))
 	freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size)))
 

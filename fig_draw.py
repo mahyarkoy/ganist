@@ -8,7 +8,7 @@ from PIL import Image
 import tf_ganist
 import sys
 from os.path import join
-from util import apply_fft_win
+from util import apply_fft_win, COS_Sampler, freq_density
 					
 '''
 Drawing Freq Components
@@ -99,7 +99,25 @@ if __name__ == '__main__':
 	'''
 	Leakage test
 	'''
-	leakage_test(log_dir)
+	#leakage_test(log_dir)
+
+	### cosine sampler
+	data_size = 50000
+	freq_centers = [(32/128., 32/128.), (32/128., -32/128.)]
+	im_size = 128
+	im_data = np.zeros((data_size, im_size, im_size, 1))
+	freq_str = ''
+	for fc in freq_centers:
+		sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=1)
+		im_data += sampler.sample_data(data_size)
+		freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+	im_data /= len(freq_centers)
+	test_feats = None
+	true_fft = apply_fft_win(im_data[:2000], 
+			join(log_dir, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
+	true_fft_hann = apply_fft_win(im_data[:2000], 
+			join(log_dir, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
+	freq_density(true_fft, freq_centers, im_size, join(log_dir, 'freq_density_size{}'.format(im_size)))
 	
 	'''
 	CUB FFT test

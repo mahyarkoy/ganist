@@ -53,8 +53,7 @@ def apply_fft(im, freqs=None):
 		imf_s = np.flip(np.fft.fftshift(imf), 0)
 	else:
 		imf_s, imf = compute_dft(im_t, freqs)
-	imf_proc = np.abs(imf_s)**2
-	return imf_proc, im_gray
+	return imf_s, im_gray
 
 '''
 Apply FFT to greyscaled images (intensity only).
@@ -64,7 +63,7 @@ return: fft images, greyscale images
 def apply_fft_images(ims, reshape=False):
 	data_size, h, w, c = ims.shape
 	im_data = np.zeros((data_size, h, w))
-	imf_data = np.zeros((data_size, h, w))
+	imf_data = np.zeros((data_size, h, w), dtype=complex)
 	for cntr, im in enumerate(ims):
 		imf_proc, im_gray = apply_fft(im)
 		im_data[cntr, ...] = im_gray
@@ -96,11 +95,12 @@ def apply_fft_win(im_data, path, windowing=True):
 	#im_fft_ext = np.concatenate((im_fft_mean, im_fft_mean[:, :1]/2.), axis=1)
 	#im_fft_ext = np.concatenate((im_fft_ext[-1:, :]/2., im_fft_ext), axis=0)
 	
-	### normalize fft
+	### compute power and normalize fft
 	#fft_max_power = np.amax(im_fft, axis=(1, 2), keepdims=True)
 	#im_fft_norm = im_fft / fft_max_power
 	#im_fft_mean = np.mean(im_fft_norm, axis=0)
-	im_fft_mean = np.mean(im_fft, axis=0)
+	im_fft_power = np.abs(im_fft)**2
+	im_fft_mean = np.mean(im_fft_power, axis=0)
 	fft_max_power = np.amax(im_fft_mean)
 	im_fft_mean /= fft_max_power  
 	
@@ -112,8 +112,8 @@ def apply_fft_win(im_data, path, windowing=True):
 	pa = ax.imshow(np.log(im_fft_mean), cmap=plt.get_cmap('inferno'), vmin=-13)
 	ax.set_title('Log Average Frequency Spectrum')
 	dft_size = im_data.shape[1]
-	print('dft_size: {}'.format(dft_size))
-	print('fft_shape: {}'.format(im_fft_mean.shape))
+	#print('dft_size: {}'.format(dft_size))
+	#print('fft_shape: {}'.format(im_fft_mean.shape))
 	#dft_size = None
 	if dft_size is not None:
 		ticks_loc_x = [0, dft_size//2]
@@ -137,7 +137,9 @@ Computes the ratio of power that has leaked.
 true_power, gen_power: (h, w)
 path: saves result as text file if given.
 '''
-def freq_leakage(true_power, gen_power, path=None):
+def freq_leakage(true_fft, gen_fft, path=None):
+	true_power = np.mean(np.abs(true_fft)**2, axis=0)
+	gen_power = np.mean(np.abs(gen_fft)**2, axis=0)
 	true_power_dist = 1. * true_power / np.sum(true_power)
 	gen_power_dist = 1. * gen_power / np.sum(gen_power)
 	leakage = np.sum(np.abs(true_power_dist - gen_power_dist)) / 2.
@@ -147,30 +149,38 @@ def freq_leakage(true_power, gen_power, path=None):
 	return leakage
 
 '''
-Draws the distributions formed on each frequency location.
-Assumes signal is real (does not work for complex signals).
+Draws the distributions formed on each frequency location (mag and phase).
+Assumes signal was real (does not work for complex signals) and in [-1,1]
+fft: fast fourier transfor with shape [b, h, w], shifted and fliped on y (1 axis)
 '''
-def freq_density(fft, freqs, im_size, path, density=None):
-	mu = 0.
-	sigma = 0.2
-	density = lambda x: 1./(sigma*np.sqrt(2*np.pi)) * np.exp(-(x-mu)**2/(2.*sigma**2))
+def freq_density(fft, freqs, im_size, path, mag_density=None, phase_density=None):
+	mag_density = lambda x, mu=0.5, sigma=0.1: 1./(sigma*np.sqrt(2*np.pi)) * np.exp(-(x-mu)**2/(2.*sigma**2))
+	phase_density = lambda x, mu=0., sigma=0.2*np.pi: 1./(sigma*np.sqrt(2*np.pi)) * np.exp(-(x-mu)**2/(2.*sigma**2))
 	freqs = np.rint(np.array(freqs)*im_size).astype(int)
-	fft = np.flip(fft, 0)
+	fft = np.flip(fft, 1)
 	fig = plt.figure(0, figsize=(8,6))
-	fft_density = list()
+	mag_samples = list()
+	phase_samples = list()
 	for fx, fy in freqs:
-		data = np.sqrt(fft[:, im_size//2+fx, im_size//2+fy]) / im_size**2 * freqs.shape[0]
-		data *= 1. if fx == 0 and fy == 0 else 2.
-		fft_density.append(data)
+		data = fft[:, im_size//2+fx, im_size//2+fy]
+		mag = np.abs(data) / im_size**2 * freqs.shape[0]
+		mag *= 1. if fx == 0 and fy == 0 else 2.
+		phase = -np.angle(data)
+		mag_samples.append(mag)
+		phase_samples.append(phase)
 		fig.clf()
-		ax = fig.add_subplot(1,1,1)
-		count, bins, _ = ax.hist(data, 100, range=(-1., 1.), density=True)
-		if density is not None:
-			ax.plot(bins, density(bins), linewidth=2, color='r')
-		ax.set_xlabel('frequency magnitude')
-		ax.set_ylabel('density')
+		ax_mag = fig.add_subplot(2,1,1)
+		ax_phase = fig.add_subplot(2,1,2)
+		mag_count, mag_bins, _ = ax_mag.hist(mag, 100, range=(0., 1.), density=True)
+		phase_count, phase_bins, _ = ax_phase.hist(phase, 100, range=(-np.pi, np.pi), density=True)
+		if mag_density is not None:
+			ax_mag.plot(mag_bins, mag_density(mag_bins), linewidth=2, color='r')
+		if phase_density is not None:
+			ax_phase.plot(phase_bins, phase_density(phase_bins), linewidth=2, color='r')
+		ax_mag.set_xlabel('magnitude')
+		ax_phase.set_xlabel('phase')
 		fig.savefig(path+'_fx{}_fy{}'.format(fx, fy)+'.png', dpi=300)
-	return fft_density
+	return mag_samples, phase_samples
 
 '''
 Sampler for planar 2D cosine with uniform amplitude [-1, 1)
@@ -186,9 +196,9 @@ class COS_Sampler:
 			2.*np.pi*fc_y * np.arange(self.ksize).reshape((1, self.ksize, 1, 1))
 
 	def sample_data(self, data_size):
-		kernel_cos = np.cos(self.kernel_loc)
 		#amps = np.random.uniform(size=(data_size, 1, 1, self.ch)) * 2. - 1.
-		amps = np.clip(np.random.normal(loc=0., scale=0.2, size=(data_size, 1, 1, self.ch)), -1., 1.)
-		return amps * kernel_cos
+		mag = np.clip(np.random.normal(loc=0.5, scale=0.1, size=(data_size, 1, 1, self.ch)), 0., 1.)
+		phase = np.clip(np.random.normal(loc=0., scale=0.2*np.pi, size=(data_size, 1, 1, self.ch)), -np.pi, np.pi)
+		return mag * (np.cos(phase)*np.cos(self.kernel_loc) + np.sin(phase)*np.sin(self.kernel_loc))
 
 
