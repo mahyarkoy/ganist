@@ -199,6 +199,7 @@ class COS_Sampler:
 		#amps = np.random.uniform(size=(data_size, 1, 1, self.ch)) * 2. - 1.
 		mag = np.clip(np.random.normal(loc=0.5, scale=0.1, size=(data_size, 1, 1, self.ch)), 0., 1.)
 		phase = np.clip(np.random.normal(loc=0., scale=0.2*np.pi, size=(data_size, 1, 1, self.ch)), -np.pi, np.pi)
+		phase = 0. if self.fc_x == 0 and self.fc_y == 0 else phase
 		return mag * (np.cos(phase)*np.cos(self.kernel_loc) + np.sin(phase)*np.sin(self.kernel_loc))
 
 

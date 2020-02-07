@@ -615,13 +615,13 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 	train_size = im_data.shape[0]
 
 	### training configs
-	max_itr_total = 2e3
+	max_itr_total = 5e5
 	d_updates = 5 ### *L2LOSS 0
 	g_updates = 1
 	batch_size = 32
 	eval_step = eval_int
 	draw_step = eval_int
-	snap_step = max_itr_total // 5
+	snap_step = max_itr_total // 10
 
 	### logs initi
 	g_logs = list()
@@ -1302,8 +1302,9 @@ def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None, labs=None):
 		#g_samples = g_samples.reshape([-1] + ganist.data_dim)
 		im_block_draw(g_samples, draw_size, draw_path+'.png', border=True)
 		#sample_pyramid_with_fft(ganist, draw_path+'_pyramid.png', 10) ## *TOY
-		g_samples = sample_ganist(ganist, 1000, sampler=sampler, output_type='rec', zi_data=labs)[0] ## *TOY
-		apply_fft_win(g_samples[:1000], draw_path+'_fft_size{}.png'.format(g_samples.shape[1]), windowing=False) ## *TOY
+		g_samples = sample_ganist(ganist, 10000, sampler=sampler, output_type='rec', zi_data=labs)[0] ## *TOY
+		gen_fft = apply_fft_win(g_samples[:10000], draw_path+'_fft_size{}.png'.format(g_samples.shape[1]), windowing=False) ## *TOY
+		freq_density(gen_fft, freq_centers, ganist.data_dim[1], draw_path+'_freq_density_size{}'.format(ganist.data_dim[1])) ## *TOY
 
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
@@ -1969,7 +1970,7 @@ if __name__ == '__main__':
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(ganist, 1024, output_type='rec', zi_data=train_labs)[0]
+	g_samples = sample_ganist(ganist, 10000, output_type='rec', zi_data=train_labs)[0]
 	#g_feats = TFutil.get().extract_feats(None, sample_size, 
 	#	blur_levels=blur_levels, ganist=ganist) ## *TOY
 	print('>>> g_samples shape: {}'.format(g_samples.shape))
@@ -1979,9 +1980,9 @@ if __name__ == '__main__':
 	#sys.exit(0)
 
 	### *TOY
-	gen_fft = apply_fft_win(g_samples[:1000], 
+	gen_fft = apply_fft_win(g_samples[:10000], 
 			join(log_path, 'fft_gen{}_size{}'.format(freq_str, g_samples.shape[1])), windowing=False)
-	gen_fft_hann = apply_fft_win(g_samples[:1000], 
+	gen_fft_hann = apply_fft_win(g_samples[:10000], 
 			join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
 	freq_leakage(true_fft, gen_fft, 
 			join(log_path, 'leakage{}_size{}'.format(freq_str, g_samples.shape[1])))

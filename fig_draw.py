@@ -103,7 +103,7 @@ if __name__ == '__main__':
 
 	### cosine sampler
 	data_size = 50000
-	freq_centers = [(32/128., 32/128.), (32/128., -32/128.)]
+	freq_centers = [(0/128., 0/128.), (-32/128., -32/128.)]
 	im_size = 128
 	im_data = np.zeros((data_size, im_size, im_size, 1))
 	freq_str = ''
@@ -113,9 +113,9 @@ if __name__ == '__main__':
 		freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
 	im_data /= len(freq_centers)
 	test_feats = None
-	true_fft = apply_fft_win(im_data[:2000], 
+	true_fft = apply_fft_win(im_data[:1000], 
 			join(log_dir, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
-	true_fft_hann = apply_fft_win(im_data[:2000], 
+	true_fft_hann = apply_fft_win(im_data[:1000], 
 			join(log_dir, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
 	freq_density(true_fft, freq_centers, im_size, join(log_dir, 'freq_density_size{}'.format(im_size)))
 	
