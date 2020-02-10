@@ -10,6 +10,9 @@ from PIL import Image
 import glob
 import sys
 import pickle as pk
+from os.path import join
+from progressbar import ETA, Bar, Percentage, ProgressBar
+import matplotlib.cm as mat_cm
 
 '''
 DFT of the 2d discrete non-periodic input image.
@@ -56,6 +59,13 @@ def apply_fft(im, freqs=None):
 	return imf_s, im_gray
 
 '''
+Reverse apply_fft function.
+'''
+def apply_ifft(fft):
+	im = np.fft.ifftn(np.fft.ifftshift(np.flip(fft, 0)))
+	return im
+
+'''
 Apply FFT to greyscaled images (intensity only).
 ims shape: (b, h, w, c)
 return: fft images, greyscale images
@@ -75,9 +85,20 @@ def apply_fft_images(ims, reshape=False):
 	return imf_data, im_data
 
 '''
+Reverse apply_fft_images.
+'''
+def apply_ifft_images(ffts):
+	data_size, h, w = ffts.shape
+	im_data = np.zeros((data_size, h, w, 1))
+	for i, fft in enumerate(ffts):
+		im = apply_ifft(fft)
+		im_data[i, :, :, 0] = im
+	return im_data
+
+'''
 Apply FFT to greyscaled images, then average power, normalize and plot.
 im_data shape: (b, h, w, c)
-return: none
+return: shifted and flipped axis 1 fft, shape (b, h, w)
 '''
 def apply_fft_win(im_data, path, windowing=True):
 	### windowing
@@ -162,9 +183,13 @@ def freq_density(fft, freqs, im_size, path, mag_density=None, phase_density=None
 	mag_samples = list()
 	phase_samples = list()
 	for fx, fy in freqs:
-		data = fft[:, im_size//2+fx, im_size//2+fy]
+		assert np.abs(fx) <= im_size//2 and np.abs(fy) <= im_size//2
+		data = fft[:, (im_size//2+fx) % im_size, (im_size//2+fy) % im_size]
 		mag = np.abs(data) / im_size**2 * freqs.shape[0]
-		mag *= 1. if fx == 0 and fy == 0 else 2.
+		mag *= 1. if (fx == 0 and fy == 0) or \
+				(fx == 0 and np.abs(fy) == im_size//2) or \
+				(fy == 0 and np.abs(fx) == im_size//2) or \
+				(np.abs(fx) == im_size//2 and np.abs(fy) == im_size//2) else 2.
 		phase = -np.angle(data)
 		mag_samples.append(mag)
 		phase_samples.append(phase)
@@ -199,7 +224,182 @@ class COS_Sampler:
 		#amps = np.random.uniform(size=(data_size, 1, 1, self.ch)) * 2. - 1.
 		mag = np.clip(np.random.normal(loc=0.5, scale=0.1, size=(data_size, 1, 1, self.ch)), 0., 1.)
 		phase = np.clip(np.random.normal(loc=0., scale=0.2*np.pi, size=(data_size, 1, 1, self.ch)), -np.pi, np.pi)
-		phase = 0. if self.fc_x == 0 and self.fc_y == 0 else phase
+		phase = np.random.choice([0., np.pi], size=(data_size, 1, 1, self.ch)) \
+				if (self.fc_x == 0 and self.fc_y == 0) or \
+				(np.abs(self.fc_x) == 0.5 and np.abs(self.fc_y) == 0.5) else phase
 		return mag * (np.cos(phase)*np.cos(self.kernel_loc) + np.sin(phase)*np.sin(self.kernel_loc))
+
+
+'''
+Reads CelebA Data.
+'''
+def read_celeba(im_size, data_size=1000):
+	### read celeba 128
+	celeba_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
+	celeba_paths = readim_path_from_dir(celeba_dir, im_type='*.jpg')
+	### prepare train images and features
+	celeba_data = readim_from_path(celeba_paths[:data_size], 
+			im_size, center_crop=(121, 89), verbose=True)
+	return celeba_data
+
+'''
+Reads path names given the directory and type extension.
+'''
+def readim_path_from_dir(im_dir, im_type='*.jpg'):
+	return [fn for fn in glob.glob(join(im_dir, im_type))]
+
+'''
+Reads 3-channel images from the given paths.
+returns: image array with shape (len(im_paths), im_size, im_size, 3)
+'''
+def readim_from_path(im_paths, im_size=64, center_crop=None, verbose=False):
+	data_size = len(im_paths)
+	im_data = np.zeros((data_size, im_size, im_size, 3))
+	if verbose:
+		widgets = ["Reading Images", Percentage(), Bar(), ETA()]
+		pbar = ProgressBar(maxval=data_size, widgets=widgets)
+		pbar.start()
+	for i, fn in enumerate(im_paths):
+		if verbose:
+			pbar.update(i)
+		im_data[i, ...] = read_image(fn, im_size, center_crop=center_crop)
+	return im_data
+
+'''
+Reads single image from path.
+Return image [h, w, 3] and in [-1, 1] float format.
+'''
+def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_crop=None):
+	im = Image.open(im_path)
+	w, h = im.size
+	crop_size = 128
+	### celebA specific center crop: im_size cut around center
+	if center_crop is not None:
+		cy, cx = center_crop
+		im_array = np.asarray(im)
+		im_crop = im_array[cy-crop_size//2:cy+crop_size//2, cx-crop_size//2:cx+crop_size//2]
+		im.close()
+		im_re = im_crop
+		if im_size != crop_size:
+			im_pil = Image.fromarray(im_crop)
+			im_re_pil = im_pil.resize((im_size, im_size), Image.BILINEAR)
+			im_re = np.asarray(im_re_pil)
+		im_o = (im_re / 255.0) * 2.0 - 1.0
+		im_o = im_o[:, :, :3]
+		return im_o if not verbose else (im_o, w, h)
+	### crop and resize for all other datasets
+	if sqcrop:
+		im_cut = min(w, h)
+		left = (w - im_cut) //2
+		top = (h - im_cut) //2
+		right = (w + im_cut) //2
+		bottom = (h + im_cut) //2
+		im_sq = im.crop((left, top, right, bottom))
+	elif bbox is not None:
+		left = bbox[0]
+		top = bbox[1]
+		right = bbox[2]
+		bottom = bbox[3]
+		im_sq = im.crop((left, top, right, bottom))
+	else:
+		im_sq = im
+	im_re_pil = im_sq.resize((im_size, im_size), Image.BILINEAR)
+	im_re = np.array(im_re_pil.getdata())
+	## next line is because pil removes the channels for black and white images!!!
+	im_re = im_re if len(im_re.shape) > 1 else np.repeat(im_re[..., np.newaxis], 3, axis=1)
+	im_re = im_re.reshape((im_size, im_size, -1))
+	im.close()
+	im_o = (im_re / 255.0) * 2.0 - 1.0 
+	im_o = im_o[:, :, :3]
+	return im_o if not verbose else (im_o, w, h)
+
+'''
+Draws the given layers of the pyramid.
+if im_shape is provided, it assumes that as the shape of final output, otherwise uses reconst.
+pyramid: [l0, l1, ..., reconst] each shape [b, h, w, c] with values (-1,1)
+'''
+def pyramid_draw(pyramid, path, im_shape=None):
+	n, h, w, c = pyramid[-1].shape if im_shape is None else im_shape
+	im_comb = np.zeros((n, len(pyramid), h, w, c))
+	for i, pi in enumerate(pyramid):
+		im_comb[:, i, ...] = im_resize(pi, h, w)
+	block_draw(im_comb, path, border=True)
+
+'''
+Resizes image using PIL.
+ims: array with shape (b, h, w, 3)
+'''
+def im_resize(ims, hsize, wsize):
+	b, h, w, c = ims.shape
+	if hsize == h and wsize == w:
+		return ims
+	im_re = np.zeros((b, hsize, wsize, c))
+	for i, im in enumerate(ims):
+		im_pil = Image.fromarray(im)
+		im_re_pil = im_pil.resize((hsize, wsize), Image.BILINEAR)
+		im_re[i, ...] = np.asarray(im_re_pil)
+	return im_re
+
+'''
+im_data should be a (columns, rows, imh, imw, imc).
+im_data values should be in [-1, 1].
+If c is not 3 then draws first channel only.
+'''
+def block_draw(im_data, path, separate_channels=False, border=False):
+	cols, rows, imh, imw, imc = im_data.shape
+	im_data = im_data if imc == 3 else np.repeat(im_data[:,:,:,:,:1], 3, axis=4)
+	imc = 3
+	### border
+	if border:
+		im_draw = im_color_borders(im_data.reshape((-1, imh, imw, imc)), 
+			1.*np.ones(cols*rows, dtype=np.int32), max_label=0., color_map='RdBu')
+		imb, imh, imw, imc = im_draw.shape
+		im_draw = im_draw.reshape((cols, rows, imh, imw, imc))
+	else:
+		im_draw = im_data
+	### block shape
+	im_draw = im_draw.reshape([cols, imh*rows, imw, imc])
+	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
+	im_draw = (im_draw + 1.0) / 2.0
+	
+	### new draw without matplotlib
+	images = np.clip(np.rint(im_draw * 255.0), 0.0, 255.0).astype(np.uint8)
+	Image.fromarray(images, 'RGB').save(path)
+	return
+
+
+'''
+Adds a color border to im_data corresponding to its im_label.
+im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
+'''
+def im_color_borders(im_data, im_labels, max_label=None, color_map=None, color_set=None):
+	imb, imh, imw, imc = im_data.shape
+	fh = imh // 32 + 1
+	fw = imw // 32 + 1
+	max_label = im_labels.max() if max_label is None else max_label
+	if imc == 1:
+		im_data_t = np.tile(im_data, (1, 1, 1, 3))
+	else:
+		im_data_t = np.array(im_data)
+	im_labels_norm = 1. * im_labels.reshape([-1]) / (max_label + 1)
+	### pick rgb color for each label: (imb, 3) in [-1,1]
+	if color_map is None:
+		assert color_set is not None
+		rgb_colors = color_set[im_labels, ...][:, :3] * 2. - 1.
+	else:
+		cmap = mat_cm.get_cmap(color_map)
+		rgb_colors = cmap(im_labels_norm)[:, :3] * 2. - 1.
+	rgb_colors_t = np.tile(rgb_colors.reshape((imb, 1, 1, 3)), (1, imh+2*fh, imw+2*fw, 1))
+
+	### put im into rgb_colors_t
+	for b in range(imb):
+		rgb_colors_t[b, fh:imh+fh, fw:imw+fw, :] = im_data[b, ...]
+
+	return rgb_colors_t
+
+
+
+
+
 
 

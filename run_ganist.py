@@ -36,7 +36,8 @@ from scipy.stats import beta as beta_dist
 from scipy import signal
 import tf_ganist
 from fft_test import apply_fft_images
-from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density
+from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density, read_image, readim_from_path, readim_path_from_dir
+from util import block_draw, im_color_borders
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
@@ -66,50 +67,6 @@ def im_process(im_data, im_size=28):
 	im_data_re = im_data_re * 2.0 - 1.0
 	return im_data_re
 
-def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_crop=None):
-	im = Image.open(im_path)
-	w, h = im.size
-	crop_size = 128
-	### celebA specific center crop: im_size cut around center
-	if center_crop is not None:
-		cy, cx = center_crop
-		im_array = np.asarray(im)
-		im_crop = im_array[cy-crop_size//2:cy+crop_size//2, cx-crop_size//2:cx+crop_size//2]
-		im.close()
-		im_re = im_crop
-		if im_size != crop_size:
-			im_pil = Image.fromarray(im_crop)
-			im_re_pil = im_pil.resize((im_size, im_size), Image.BILINEAR)
-			im_re = np.asarray(im_re_pil)
-		im_o = (im_re / 255.0) * 2.0 - 1.0
-		im_o = im_o[:, :, :3]
-		return im_o if not verbose else (im_o, w, h)
-	### crop and resize for all other datasets
-	if sqcrop:
-		im_cut = min(w, h)
-		left = (w - im_cut) //2
-		top = (h - im_cut) //2
-		right = (w + im_cut) //2
-		bottom = (h + im_cut) //2
-		im_sq = im.crop((left, top, right, bottom))
-	elif bbox is not None:
-		left = bbox[0]
-		top = bbox[1]
-		right = bbox[2]
-		bottom = bbox[3]
-		im_sq = im.crop((left, top, right, bottom))
-	else:
-		im_sq = im
-	im_re_pil = im_sq.resize((im_size, im_size), Image.BILINEAR)
-	im_re = np.array(im_re_pil.getdata())
-	## next line is because pil removes the channels for black and white images!!!
-	im_re = im_re if len(im_re.shape) > 1 else np.repeat(im_re[..., np.newaxis], 3, axis=1)
-	im_re = im_re.reshape((im_size, im_size, -1))
-	im.close()
-	im_o = (im_re / 255.0) * 2.0 - 1.0 
-	im_o = im_o[:, :, :3]
-	return im_o if not verbose else (im_o, w, h)
-
 def read_imagenet(im_dir, data_size, im_size=64):
 	im_data = np.zeros((1000, data_size, im_size, im_size, 3))
 	print('>>> Reading ImageNet from: {}'.format(im_dir))
@@ -125,22 +82,6 @@ def read_imagenet(im_dir, data_size, im_size=64):
 			if i == data_size:
 				break
 	return im_data
-
-def readim_from_path(im_paths, im_size=64, center_crop=None, verbose=False):
-	data_size = len(im_paths)
-	im_data = np.zeros((data_size, im_size, im_size, 3))
-	if verbose:
-		widgets = ["Reading Images", Percentage(), Bar(), ETA()]
-		pbar = ProgressBar(maxval=data_size, widgets=widgets)
-		pbar.start()
-	for i, fn in enumerate(im_paths):
-		if verbose:
-			pbar.update(i)
-		im_data[i, ...] = read_image(fn, im_size, center_crop=center_crop)
-	return im_data
-
-def readim_path_from_dir(im_dir, im_type='/*.jpg'):
-	return [fn for fn in glob.glob(im_dir+im_type)]
 
 def create_lsun(lmdb_dir, resolution=256, max_images=None):
 	print('Loading LSUN dataset from "%s"' % lmdb_dir)
@@ -318,7 +259,7 @@ def gset_block_draw(ganist, sample_size, path, en_color=True, border=False):
 		im_draw[g, ...] = sample_ganist(ganist, sample_size, z_data=z_data[g*sample_size:(g+1)*sample_size])[0]
 	#im_draw = (im_draw + 1.0) / 2.0
 	if border:
-		im_draw = im_color_borders(im_draw.reshape([-1]+ganist.data_dim), z_data)
+		im_draw = im_color_borders(im_draw.reshape([-1]+ganist.data_dim), z_data, color_set=global_color_set)
 		im_block_draw(im_draw, sample_size, path, z_data)
 	elif en_color:
 		en_block_draw(ganist, im_draw, path)
@@ -346,7 +287,7 @@ def gset_block_draw_top(ganist, sample_size, path, pr_th=0.05, en_color=False, g
 	if g_color is True:
 		im_draw_flat = im_draw.reshape([-1]+ganist.data_dim)
 		z_data_flat = z_data.reshape([-1])
-		im_draw_color = im_color_borders(im_draw_flat, z_data_flat, max_label=ganist.g_num-1)
+		im_draw_color = im_color_borders(im_draw_flat, z_data_flat, max_label=ganist.g_num-1, color_set=global_color_set)
 		_, imh, imw, imc = im_draw_color.shape
 		im_draw = im_draw_color.reshape([top_g_count, sample_size, imh, imw, imc])
 	if en_color is True:
@@ -405,47 +346,9 @@ def en_block_draw(ganist, im_data, path, max_label=None):
 	max_label = ganist.g_num-1 if max_label is None else max_label
 	im_draw_flat = im_data.reshape([-1]+ganist.data_dim)
 	en_labels = np.argmax(eval_ganist_en(ganist, im_draw_flat), axis=1)
-	im_draw_color = im_color_borders(im_draw_flat, en_labels, max_label=max_label)
+	im_draw_color = im_color_borders(im_draw_flat, en_labels, max_label=max_label, color_set=global_color_set)
 	_, imh, imw, imc = im_draw_color.shape
 	block_draw(im_draw_color.reshape([cols, rows, imh, imw, imc]), path)
-
-'''
-Adds a color border to im_data corresponding to its im_label.
-im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
-'''
-def im_color_borders(im_data, im_labels, max_label=None, color_map=None):
-	imb, imh, imw, imc = im_data.shape
-	fh = imh // 32 + 1
-	fw = imw // 32 + 1
-	max_label = im_labels.max() if max_label is None else max_label
-	if imc == 1:
-		im_data_t = np.tile(im_data, (1, 1, 1, 3))
-	else:
-		im_data_t = np.array(im_data)
-	im_labels_norm = 1. * im_labels.reshape([-1]) / (max_label + 1)
-	### pick rgb color for each label: (imb, 3) in [-1,1]
-	if color_map is None:
-		rgb_colors = global_color_set[im_labels, ...][:, :3] * 2. - 1.
-	else:
-		cmap = mat_cm.get_cmap(color_map)
-		rgb_colors = cmap(im_labels_norm)[:, :3] * 2. - 1.
-	rgb_colors_t = np.tile(rgb_colors.reshape((imb, 1, 1, 3)), (1, imh+2*fh, imw+2*fw, 1))
-
-	### put im into rgb_colors_t
-	for b in range(imb):
-		rgb_colors_t[b, fh:imh+fh, fw:imw+fw, :] = im_data[b, ...]
-
-	return rgb_colors_t
-
-	### create mask
-	#box_mask = np.ones((imh, imw))
-	#box_mask[fh+1:imh-fh, fw+1:imw-fw] = 0.
-	#box_mask_t = np.tile(box_mask.reshape((1, imh, imw, 1)), (imb, 1, 1, 3))
-	#box_mask_inv = np.abs(box_mask_t - 1.)
-
-	### apply mask
-	#im_data_border = im_data_t * box_mask_inv + rgb_colors_t * box_mask_t
-	#return im_data_border
 
 '''
 Draws the given layers of the pyramid.
@@ -499,67 +402,6 @@ def sample_pyramid_with_fft(ganist, path=None, sample_size=10, im_data=None):
 	if path is not None:
 		pyramid_draw(pyramid_collect, path, im_shape=(pyramid[0].shape[0], 128, 128, 3))
 	return pyramid_collect
-
-'''
-im_data should be a (columns, rows, imh, imw, imc).
-im_data values should be in [-1, 1].
-If c is not 3 then draws first channel only.
-'''
-def block_draw(im_data, path, separate_channels=False, border=False):
-	cols, rows, imh, imw, imc = im_data.shape
-	im_data = im_data if imc == 3 else np.repeat(im_data[:,:,:,:,:1], 3, axis=4)
-	imc = 3
-	### border
-	if border:
-		im_draw = im_color_borders(im_data.reshape((-1, imh, imw, imc)), 
-			1.*np.ones(cols*rows, dtype=np.int32), max_label=0., color_map='RdBu')
-		imb, imh, imw, imc = im_draw.shape
-		im_draw = im_draw.reshape((cols, rows, imh, imw, imc))
-	else:
-		im_draw = im_data
-	### block shape
-	im_draw = im_draw.reshape([cols, imh*rows, imw, imc])
-	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
-	im_draw = (im_draw + 1.0) / 2.0
-	
-	### new draw without matplotlib
-	images = np.clip(np.rint(im_draw * 255.0), 0.0, 255.0).astype(np.uint8)
-	Image.fromarray(images, 'RGB').save(path)
-	return
-
-	### plots
-	#fig = plt.figure(0)
-	#fig.clf()
-	#if not separate_channels or im_draw.shape[-1] != 3:
-	#	ax = fig.add_subplot(1, 1, 1)
-	#	if im_draw.shape[-1] == 1:
-	#		ims = ax.imshow(im_draw.reshape(im_draw.shape[:-1]))
-	#	else:
-	#		ims = ax.imshow(im_draw)
-	#	ax.set_axis_off()
-	#	#fig.colorbar(ims)
-	#	fig.savefig(path, dpi=300)
-	#else:
-	#	im_tmp = np.zeros(im_draw.shape)
-	#	ax = fig.add_subplot(1, 3, 1)
-	#	im_tmp[..., 0] = im_draw[..., 0]
-	#	ax.set_axis_off()
-	#	ax.imshow(im_tmp)
-	#	
-	#	ax = fig.add_subplot(1, 3, 2)
-	#	im_tmp[...] = 0.0
-	#	im_tmp[..., 1] = im_draw[..., 1]
-	#	ax.set_axis_off()
-	#	ax.imshow(im_tmp)
-	#	
-	#	ax = fig.add_subplot(1, 3, 3)
-	#	im_tmp[...] = 0.0
-	#	im_tmp[..., 2] = im_draw[..., 2]
-	#	ax.set_axis_off()
-	#	ax.imshow(im_tmp)
-	#	
-	#	fig.subplots_adjust(wspace=0, hspace=0)
-	#	fig.savefig(path, dpi=300)
 
 '''
 Plot and saves layer stats.
@@ -721,7 +563,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 			### draw real samples en classified **g_num**
 			#d_sample_size = 1000
 			#im_true_color = im_color_borders(train_dataset[:d_sample_size], 
-			#	train_labs[:d_sample_size], max_label=9)
+			#	train_labs[:d_sample_size], max_label=9, color_set=global_color_set)
 			#im_block_draw(im_true_color, 10, draw_path+'_t.png', 
 			#	im_labels=train_labs[:d_sample_size])
 			#im_block_draw(train_dataset[:d_sample_size], 10, draw_path+'_t.png', 
@@ -1918,7 +1760,7 @@ if __name__ == '__main__':
 
 	### cosine sampler
 	data_size = 50000
-	freq_centers = [(32/128., 32/128.), (32/128., -32/128.)]
+	freq_centers = [(0/128., 0/128.), (3/128., 3/128.), (41/128., 41/128.)]
 	im_size = 128
 	im_data = np.zeros((data_size, im_size, im_size, ganist.data_dim[-1]))
 	freq_str = ''

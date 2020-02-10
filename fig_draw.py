@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from run_ganist import readim_path_from_dir, readim_from_path, block_draw, im_block_draw
+from run_ganist import block_draw, im_block_draw
 from run_ganist import TFutil, sample_ganist, create_lsun, CUB_Sampler
 from fft_test import apply_fft_images
 import matplotlib.pyplot as plt
@@ -8,7 +8,7 @@ from PIL import Image
 import tf_ganist
 import sys
 from os.path import join
-from util import apply_fft_win, COS_Sampler, freq_density
+from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
 					
 '''
 Drawing Freq Components
@@ -46,18 +46,6 @@ def single_draw(im, path):
 	Image.fromarray(im_out, 'RGB').save(path)
 	return
 
-'''
-Read Data
-'''
-def read_celeba(im_size, data_size=1000):
-	### read celeba 128
-	celeba_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
-	celeba_paths = readim_path_from_dir(celeba_dir, im_type='/*.jpg')
-	### prepare train images and features
-	celeba_data = readim_from_path(celeba_paths[:data_size], 
-			im_size, center_crop=(121, 89), verbose=True)
-	return celeba_data
-
 def leakage_test(log_dir, im_size=128, ksize=128, fc_x=43./128, fc_y=1./128):
 	kernel_loc = 2.*np.pi*fc_x * np.arange(ksize).reshape((1, 1, ksize, 1)) + \
 		2.*np.pi*fc_y * np.arange(ksize).reshape((1, ksize, 1, 1))
@@ -88,22 +76,26 @@ if __name__ == '__main__':
 	log_dir = 'logs_draw/'
 	
 	'''
-	Cos Sampler
+	FFT and IFFT
 	'''
-	#from util import COS_Sampler
-	#cos_sampler = COS_Sampler(im_size=128, fc_x=0., fc_y=0.)
-	#im_data = cos_sampler.sample_data(10)
-	#single_draw(im_data[0], 
-	#	join(log_dir, 'constant_color.png'))
+	#celeba_data = read_celeba(128, data_size=10)
+	#ffts, greys = apply_fft_images(celeba_data, reshape=True)
+	#phase = np.angle(ffts)
+	#mag = 10. #np.abs(ffts)
+	#ffts = mag * np.exp(phase * 1.j)
+	#revs = apply_ifft_images(ffts[:, :, :, 0])
+	#pyramid_draw([greys, revs, greys-revs], join(log_dir, 'revs.png'))
 
 	'''
 	Leakage test
 	'''
 	#leakage_test(log_dir)
 
-	### cosine sampler
+	'''
+	Cosine sampler
+	'''
 	data_size = 50000
-	freq_centers = [(0/128., 0/128.), (-32/128., -32/128.)]
+	freq_centers = [(64/128., 64/128.)]
 	im_size = 128
 	im_data = np.zeros((data_size, im_size, im_size, 1))
 	freq_str = ''
