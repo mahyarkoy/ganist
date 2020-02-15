@@ -401,6 +401,8 @@ class COS_Sampler:
 		phase = np.clip(np.random.normal(loc=0., scale=0.2*np.pi, size=(data_size, 1, 1, self.ch)), -np.pi, np.pi)
 		phase = np.random.choice([0., np.pi], size=(data_size, 1, 1, self.ch)) \
 				if (self.fc_x == 0 and self.fc_y == 0) or \
+				(np.abs(self.fc_x) == 0.5 and self.fc_y == 0) or \
+				(self.fc_x == 0 and np.abs(self.fc_y) == 0.5) or \
 				(np.abs(self.fc_x) == 0.5 and np.abs(self.fc_y) == 0.5) else phase
 		return mag * (np.cos(phase)*np.cos(self.kernel_loc) + np.sin(phase)*np.sin(self.kernel_loc))
 
