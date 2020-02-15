@@ -38,7 +38,7 @@ import tf_ganist
 from fft_test import apply_fft_images
 from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density, read_image, readim_from_path, readim_path_from_dir
 from util import block_draw, im_color_borders
-from util import mag_phase_dist
+from util import mag_phase_wass_dist, mag_phase_total_variation
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
@@ -1836,9 +1836,12 @@ if __name__ == '__main__':
 	freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
 	with open(join(log_path, 'wd_mag_phase.txt'), 'w+') as fs:
 		for fx, fy in freqs:
-			mag_wd, phase_wd = mag_phase_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+			mag_wd, phase_wd = mag_phase_wass_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+			mag_tv, phase_tv = mag_phase_total_variation(true_hist[(fx, fy)], gen_hist[(fx, fy)])
 			print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
 			print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
+			print('mag_tv_fx{}_fy{}: {}'.format(fx, fy, mag_tv), file=fs)
+			print('phase_tv_fx{}_fy{}: {}'.format(fx, fy, phase_tv), file=fs)
 	'''
 	Read from PGGAN and construct features
 	'''

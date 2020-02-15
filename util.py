@@ -17,6 +17,173 @@ import re
 import scipy
 
 '''
+Reads CelebA Data.
+'''
+def read_celeba(im_size, data_size=1000):
+	### read celeba 128
+	celeba_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
+	celeba_paths = readim_path_from_dir(celeba_dir, im_type='*.jpg')
+	### prepare train images and features
+	celeba_data = readim_from_path(celeba_paths[:data_size], 
+			im_size, center_crop=(121, 89), verbose=True)
+	return celeba_data
+
+'''
+Reads path names given the directory and type extension.
+'''
+def readim_path_from_dir(im_dir, im_type='*.jpg'):
+	return [fn for fn in glob.glob(join(im_dir, im_type))]
+
+'''
+Reads 3-channel images from the given paths.
+returns: image array with shape (len(im_paths), im_size, im_size, 3)
+'''
+def readim_from_path(im_paths, im_size=64, center_crop=None, verbose=False):
+	data_size = len(im_paths)
+	im_data = np.zeros((data_size, im_size, im_size, 3))
+	if verbose:
+		widgets = ["Reading Images", Percentage(), Bar(), ETA()]
+		pbar = ProgressBar(maxval=data_size, widgets=widgets)
+		pbar.start()
+	for i, fn in enumerate(im_paths):
+		if verbose:
+			pbar.update(i)
+		im_data[i, ...] = read_image(fn, im_size, center_crop=center_crop)
+	return im_data
+
+'''
+Reads single image from path.
+Return image [h, w, 3] and in [-1, 1] float format.
+'''
+def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_crop=None):
+	im = Image.open(im_path)
+	w, h = im.size
+	crop_size = 128
+	### celebA specific center crop: im_size cut around center
+	if center_crop is not None:
+		cy, cx = center_crop
+		im_array = np.asarray(im)
+		im_crop = im_array[cy-crop_size//2:cy+crop_size//2, cx-crop_size//2:cx+crop_size//2]
+		im.close()
+		im_re = im_crop
+		if im_size != crop_size:
+			im_pil = Image.fromarray(im_crop)
+			im_re_pil = im_pil.resize((im_size, im_size), Image.BILINEAR)
+			im_re = np.asarray(im_re_pil)
+		im_o = (im_re / 255.0) * 2.0 - 1.0
+		im_o = im_o[:, :, :3]
+		return im_o if not verbose else (im_o, w, h)
+	### crop and resize for all other datasets
+	if sqcrop:
+		im_cut = min(w, h)
+		left = (w - im_cut) //2
+		top = (h - im_cut) //2
+		right = (w + im_cut) //2
+		bottom = (h + im_cut) //2
+		im_sq = im.crop((left, top, right, bottom))
+	elif bbox is not None:
+		left = bbox[0]
+		top = bbox[1]
+		right = bbox[2]
+		bottom = bbox[3]
+		im_sq = im.crop((left, top, right, bottom))
+	else:
+		im_sq = im
+	im_re_pil = im_sq.resize((im_size, im_size), Image.BILINEAR)
+	im_re = np.array(im_re_pil.getdata())
+	## next line is because pil removes the channels for black and white images!!!
+	im_re = im_re if len(im_re.shape) > 1 else np.repeat(im_re[..., np.newaxis], 3, axis=1)
+	im_re = im_re.reshape((im_size, im_size, -1))
+	im.close()
+	im_o = (im_re / 255.0) * 2.0 - 1.0 
+	im_o = im_o[:, :, :3]
+	return im_o if not verbose else (im_o, w, h)
+
+'''
+Draws the given layers of the pyramid.
+if im_shape is provided, it assumes that as the shape of final output, otherwise uses reconst.
+pyramid: [l0, l1, ..., reconst] each shape [b, h, w, c] with values (-1,1)
+'''
+def pyramid_draw(pyramid, path, im_shape=None):
+	n, h, w, c = pyramid[-1].shape if im_shape is None else im_shape
+	im_comb = np.zeros((n, len(pyramid), h, w, c))
+	for i, pi in enumerate(pyramid):
+		im_comb[:, i, ...] = im_resize(pi, h, w)
+	block_draw(im_comb, path, border=True)
+
+'''
+Resizes image using PIL.
+ims: array with shape (b, h, w, 3)
+'''
+def im_resize(ims, hsize, wsize):
+	b, h, w, c = ims.shape
+	if hsize == h and wsize == w:
+		return ims
+	im_re = np.zeros((b, hsize, wsize, c))
+	for i, im in enumerate(ims):
+		im_pil = Image.fromarray(im)
+		im_re_pil = im_pil.resize((hsize, wsize), Image.BILINEAR)
+		im_re[i, ...] = np.asarray(im_re_pil)
+	return im_re
+
+'''
+im_data should be a (columns, rows, imh, imw, imc).
+im_data values should be in [-1, 1].
+If c is not 3 then draws first channel only.
+'''
+def block_draw(im_data, path, separate_channels=False, border=False):
+	cols, rows, imh, imw, imc = im_data.shape
+	im_data = im_data if imc == 3 else np.repeat(im_data[:,:,:,:,:1], 3, axis=4)
+	imc = 3
+	### border
+	if border:
+		im_draw = im_color_borders(im_data.reshape((-1, imh, imw, imc)), 
+			1.*np.ones(cols*rows, dtype=np.int32), max_label=0., color_map='RdBu')
+		imb, imh, imw, imc = im_draw.shape
+		im_draw = im_draw.reshape((cols, rows, imh, imw, imc))
+	else:
+		im_draw = im_data
+	### block shape
+	im_draw = im_draw.reshape([cols, imh*rows, imw, imc])
+	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
+	im_draw = (im_draw + 1.0) / 2.0
+	
+	### new draw without matplotlib
+	images = np.clip(np.rint(im_draw * 255.0), 0.0, 255.0).astype(np.uint8)
+	Image.fromarray(images, 'RGB').save(path)
+	return
+
+
+'''
+Adds a color border to im_data corresponding to its im_label.
+im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
+'''
+def im_color_borders(im_data, im_labels, max_label=None, color_map=None, color_set=None):
+	imb, imh, imw, imc = im_data.shape
+	fh = imh // 32 + 1
+	fw = imw // 32 + 1
+	max_label = im_labels.max() if max_label is None else max_label
+	if imc == 1:
+		im_data_t = np.tile(im_data, (1, 1, 1, 3))
+	else:
+		im_data_t = np.array(im_data)
+	im_labels_norm = 1. * im_labels.reshape([-1]) / (max_label + 1)
+	### pick rgb color for each label: (imb, 3) in [-1,1]
+	if color_map is None:
+		assert color_set is not None
+		rgb_colors = color_set[im_labels, ...][:, :3] * 2. - 1.
+	else:
+		cmap = mat_cm.get_cmap(color_map)
+		rgb_colors = cmap(im_labels_norm)[:, :3] * 2. - 1.
+	rgb_colors_t = np.tile(rgb_colors.reshape((imb, 1, 1, 3)), (1, imh+2*fh, imw+2*fw, 1))
+
+	### put im into rgb_colors_t
+	for b in range(imb):
+		rgb_colors_t[b, fh:imh+fh, fw:imw+fw, :] = im_data[b, ...]
+
+	return rgb_colors_t
+
+'''
 DFT of the 2d discrete non-periodic input image.
 im: must be 2d array
 freqs: a 1d array of freqs to evaluate the dft at (max 0.5)
@@ -237,174 +404,6 @@ class COS_Sampler:
 				(np.abs(self.fc_x) == 0.5 and np.abs(self.fc_y) == 0.5) else phase
 		return mag * (np.cos(phase)*np.cos(self.kernel_loc) + np.sin(phase)*np.sin(self.kernel_loc))
 
-
-'''
-Reads CelebA Data.
-'''
-def read_celeba(im_size, data_size=1000):
-	### read celeba 128
-	celeba_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
-	celeba_paths = readim_path_from_dir(celeba_dir, im_type='*.jpg')
-	### prepare train images and features
-	celeba_data = readim_from_path(celeba_paths[:data_size], 
-			im_size, center_crop=(121, 89), verbose=True)
-	return celeba_data
-
-'''
-Reads path names given the directory and type extension.
-'''
-def readim_path_from_dir(im_dir, im_type='*.jpg'):
-	return [fn for fn in glob.glob(join(im_dir, im_type))]
-
-'''
-Reads 3-channel images from the given paths.
-returns: image array with shape (len(im_paths), im_size, im_size, 3)
-'''
-def readim_from_path(im_paths, im_size=64, center_crop=None, verbose=False):
-	data_size = len(im_paths)
-	im_data = np.zeros((data_size, im_size, im_size, 3))
-	if verbose:
-		widgets = ["Reading Images", Percentage(), Bar(), ETA()]
-		pbar = ProgressBar(maxval=data_size, widgets=widgets)
-		pbar.start()
-	for i, fn in enumerate(im_paths):
-		if verbose:
-			pbar.update(i)
-		im_data[i, ...] = read_image(fn, im_size, center_crop=center_crop)
-	return im_data
-
-'''
-Reads single image from path.
-Return image [h, w, 3] and in [-1, 1] float format.
-'''
-def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_crop=None):
-	im = Image.open(im_path)
-	w, h = im.size
-	crop_size = 128
-	### celebA specific center crop: im_size cut around center
-	if center_crop is not None:
-		cy, cx = center_crop
-		im_array = np.asarray(im)
-		im_crop = im_array[cy-crop_size//2:cy+crop_size//2, cx-crop_size//2:cx+crop_size//2]
-		im.close()
-		im_re = im_crop
-		if im_size != crop_size:
-			im_pil = Image.fromarray(im_crop)
-			im_re_pil = im_pil.resize((im_size, im_size), Image.BILINEAR)
-			im_re = np.asarray(im_re_pil)
-		im_o = (im_re / 255.0) * 2.0 - 1.0
-		im_o = im_o[:, :, :3]
-		return im_o if not verbose else (im_o, w, h)
-	### crop and resize for all other datasets
-	if sqcrop:
-		im_cut = min(w, h)
-		left = (w - im_cut) //2
-		top = (h - im_cut) //2
-		right = (w + im_cut) //2
-		bottom = (h + im_cut) //2
-		im_sq = im.crop((left, top, right, bottom))
-	elif bbox is not None:
-		left = bbox[0]
-		top = bbox[1]
-		right = bbox[2]
-		bottom = bbox[3]
-		im_sq = im.crop((left, top, right, bottom))
-	else:
-		im_sq = im
-	im_re_pil = im_sq.resize((im_size, im_size), Image.BILINEAR)
-	im_re = np.array(im_re_pil.getdata())
-	## next line is because pil removes the channels for black and white images!!!
-	im_re = im_re if len(im_re.shape) > 1 else np.repeat(im_re[..., np.newaxis], 3, axis=1)
-	im_re = im_re.reshape((im_size, im_size, -1))
-	im.close()
-	im_o = (im_re / 255.0) * 2.0 - 1.0 
-	im_o = im_o[:, :, :3]
-	return im_o if not verbose else (im_o, w, h)
-
-'''
-Draws the given layers of the pyramid.
-if im_shape is provided, it assumes that as the shape of final output, otherwise uses reconst.
-pyramid: [l0, l1, ..., reconst] each shape [b, h, w, c] with values (-1,1)
-'''
-def pyramid_draw(pyramid, path, im_shape=None):
-	n, h, w, c = pyramid[-1].shape if im_shape is None else im_shape
-	im_comb = np.zeros((n, len(pyramid), h, w, c))
-	for i, pi in enumerate(pyramid):
-		im_comb[:, i, ...] = im_resize(pi, h, w)
-	block_draw(im_comb, path, border=True)
-
-'''
-Resizes image using PIL.
-ims: array with shape (b, h, w, 3)
-'''
-def im_resize(ims, hsize, wsize):
-	b, h, w, c = ims.shape
-	if hsize == h and wsize == w:
-		return ims
-	im_re = np.zeros((b, hsize, wsize, c))
-	for i, im in enumerate(ims):
-		im_pil = Image.fromarray(im)
-		im_re_pil = im_pil.resize((hsize, wsize), Image.BILINEAR)
-		im_re[i, ...] = np.asarray(im_re_pil)
-	return im_re
-
-'''
-im_data should be a (columns, rows, imh, imw, imc).
-im_data values should be in [-1, 1].
-If c is not 3 then draws first channel only.
-'''
-def block_draw(im_data, path, separate_channels=False, border=False):
-	cols, rows, imh, imw, imc = im_data.shape
-	im_data = im_data if imc == 3 else np.repeat(im_data[:,:,:,:,:1], 3, axis=4)
-	imc = 3
-	### border
-	if border:
-		im_draw = im_color_borders(im_data.reshape((-1, imh, imw, imc)), 
-			1.*np.ones(cols*rows, dtype=np.int32), max_label=0., color_map='RdBu')
-		imb, imh, imw, imc = im_draw.shape
-		im_draw = im_draw.reshape((cols, rows, imh, imw, imc))
-	else:
-		im_draw = im_data
-	### block shape
-	im_draw = im_draw.reshape([cols, imh*rows, imw, imc])
-	im_draw = np.concatenate([im_draw[i, ...] for i in range(im_draw.shape[0])], axis=1)
-	im_draw = (im_draw + 1.0) / 2.0
-	
-	### new draw without matplotlib
-	images = np.clip(np.rint(im_draw * 255.0), 0.0, 255.0).astype(np.uint8)
-	Image.fromarray(images, 'RGB').save(path)
-	return
-
-
-'''
-Adds a color border to im_data corresponding to its im_label.
-im_data must have shape (imb, imh, imw, imc) with values in [-1,1].
-'''
-def im_color_borders(im_data, im_labels, max_label=None, color_map=None, color_set=None):
-	imb, imh, imw, imc = im_data.shape
-	fh = imh // 32 + 1
-	fw = imw // 32 + 1
-	max_label = im_labels.max() if max_label is None else max_label
-	if imc == 1:
-		im_data_t = np.tile(im_data, (1, 1, 1, 3))
-	else:
-		im_data_t = np.array(im_data)
-	im_labels_norm = 1. * im_labels.reshape([-1]) / (max_label + 1)
-	### pick rgb color for each label: (imb, 3) in [-1,1]
-	if color_map is None:
-		assert color_set is not None
-		rgb_colors = color_set[im_labels, ...][:, :3] * 2. - 1.
-	else:
-		cmap = mat_cm.get_cmap(color_map)
-		rgb_colors = cmap(im_labels_norm)[:, :3] * 2. - 1.
-	rgb_colors_t = np.tile(rgb_colors.reshape((imb, 1, 1, 3)), (1, imh+2*fh, imw+2*fw, 1))
-
-	### put im into rgb_colors_t
-	for b in range(imb):
-		rgb_colors_t[b, fh:imh+fh, fw:imw+fw, :] = im_data[b, ...]
-
-	return rgb_colors_t
-
 '''
 Evaluate the mean and average of stats in toy experiments over several runs.
 log_dir: directory containing run_i directories.
@@ -417,6 +416,8 @@ def eval_toy_exp(log_dir, im_size):
 			freq_re.findall(glob.glob(join(run_dirs[0], 'leakage_*_size{}.txt'.format(im_size)))[0])]).astype(int)
 	mag_wd_list = list()
 	phase_wd_list = list()
+	mag_tv_list = list()
+	phase_tv_list = list()
 	leak_list = list()
 	leak_hann_list = list()
 	for rdir in run_dirs:
@@ -431,22 +432,32 @@ def eval_toy_exp(log_dir, im_size):
 		### compute the wasserstein distance between the dists for each freq
 		with open(join(rdir, 'wd_mag_phase.txt'), 'w+') as fs:
 			for fx, fy in freqs:
-				mag_wd, phase_wd = mag_phase_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+				mag_wd, phase_wd = mag_phase_wass_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+				mag_tv, phase_tv = mag_phase_total_variation(true_hist[(fx, fy)], gen_hist[(fx, fy)])
 				mag_wd_list.append(mag_wd)
 				phase_wd_list.append(phase_wd)
+				mag_tv_list.append(mag_tv)
+				phase_tv_list.append(phase_tv)
 				print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
 				print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
+				print('mag_tv_fx{}_fy{}: {}'.format(fx, fy, mag_tv), file=fs)
+				print('phase_tv_fx{}_fy{}: {}'.format(fx, fy, phase_tv), file=fs)
 
 		### read mag and phase wd
 		#with open(glob.glob(join(rdir, 'wd_mag_phase.txt')), 'r') as fs:
 		#	for i, l in enumerate(fs):
 		#		fstr, vstr = l.strip().split()
 		#		lfx, lfy = tuple(map(int, freq_re.findall(fstr)[0]))
-		#		assert (lfx, lfy) == freqs[i%2]
-		#		if i%2 == 0:
+		#		assert (lfx, lfy) == freqs[i//2]
+		#		ltype = '_'.join(l.strip().split()[0].split('_')[:2])
+		#		if ltype == 'mag_wd':
 		#			mag_wd_list.append(float(l.strip().split()[-1]))
-		#		else:
+		#		elif ltype == 'phase_wd':
 		#			phase_wd_list.append(float(l.strip().split()[-1]))
+		#		elif ltype == 'mag_tv':
+		#			mag_tv_list.append(float(l.strip().split()[-1]))
+		#		elif ltype == 'phase_tv':
+		#			phase_tv_list.append(float(l.strip().split()[-1]))
 
 		### read the leakage
 		with open(glob.glob(join(rdir, 'leakage_*_size{}.txt'.format(im_size)))[0], 'r') as fs:
@@ -460,10 +471,18 @@ def eval_toy_exp(log_dir, im_size):
 	phase_wd_mat = np.array(phase_wd_list).reshape((len(run_dirs), freqs.shape[0]))
 	phase_wd_mean = np.mean(phase_wd_mat, 0)
 	phase_wd_std = np.std(phase_wd_mat, 0)
+	mag_tv_mat = np.array(mag_tv_list).reshape((len(run_dirs), freqs.shape[0]))
+	mag_tv_mean = np.mean(mag_tv_mat, 0)
+	mag_tv_std = np.std(mag_tv_mat, 0)
+	phase_tv_mat = np.array(phase_tv_list).reshape((len(run_dirs), freqs.shape[0]))
+	phase_tv_mean = np.mean(phase_tv_mat, 0)
+	phase_tv_std = np.std(phase_tv_mat, 0)
 	with open(join(log_dir, 'sum_stats.txt'), 'w+') as fs:
 		for i, (fx, fy) in enumerate(freqs):
 			print('mag_wd_fx{}_fy{}: {} std {}'.format(fx, fy, mag_wd_mean[i], mag_wd_std[i]), file=fs)
 			print('phase_wd_fx{}_fy{}: {} std {}'.format(fx, fy, phase_wd_mean[i], phase_wd_std[i]), file=fs)
+			print('mag_tv_fx{}_fy{}: {} std {}'.format(fx, fy, mag_tv_mean[i], mag_tv_std[i]), file=fs)
+			print('phase_tv_fx{}_fy{}: {} std {}'.format(fx, fy, phase_tv_mean[i], phase_tv_std[i]), file=fs)
 		print('leak: {} std {}'.format(np.mean(leak_list), np.std(leak_list)), file=fs)
 		print('leak_hann: {} std {}'.format(np.mean(leak_hann_list), np.std(leak_hann_list)), file=fs)
 	return
@@ -472,12 +491,23 @@ def eval_toy_exp(log_dir, im_size):
 Computes wasserstein distance between true and gen distributions for mag and phase.
 true_hist, gen_hist: each are a list of [mag_bins, mag_weights, phase_bins, phase_weights].
 '''
-def mag_phase_dist(true_hist, gen_hist):
+def mag_phase_wass_dist(true_hist, gen_hist):
 	mag_wd = scipy.stats.wasserstein_distance(
 			true_hist[0][:-1], gen_hist[0][:-1], true_hist[1], gen_hist[1])
 	phase_wd = scipy.stats.wasserstein_distance(
 			true_hist[2][:-1], gen_hist[2][:-1], true_hist[3], gen_hist[3])
 	return mag_wd, phase_wd
+
+'''
+Computes toatl variation between true and gen distributions for mag and phase.
+true_hist, gen_hist: each are a list of [mag_bins, mag_weights, phase_bins, phase_weights].
+'''
+def mag_phase_total_variation(true_hist, gen_hist):
+	mag_tv = np.sum(np.abs(
+			true_hist[1]/np.sum(true_hist[1]) - gen_hist[1]/np.sum(gen_hist[1]))) / 2.
+	phase_tv = np.sum(np.abs(
+			true_hist[3]/np.sum(true_hist[3]) - gen_hist[3]/np.sum(gen_hist[3]))) / 2.
+	return mag_tv, phase_tv
 
 
 

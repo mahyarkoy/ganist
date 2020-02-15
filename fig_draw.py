@@ -9,7 +9,7 @@ import tf_ganist
 import sys
 from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
-from util import eval_toy_exp
+from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
 import glob
 
 '''
@@ -81,9 +81,40 @@ if __name__ == '__main__':
 	Eval toy experiments.
 	'''
 	for i in range(13, 20):
-		exp_dir = glob.glob('/dresden/users/mk1391/evl/ganist_toy_logs/{}_*'.format(i))[0]
+		exp_dir = glob.glob('/dresden/users/mk1391/evl/ganist_toy_logs/{}_*/'.format(i))[0]
 		eval_toy_exp(exp_dir, im_size=128)
 		break
+
+	'''
+	Eval distribution distance
+	'''
+	#data_size = 10000
+	#mag = np.clip(np.random.normal(loc=0.5, scale=0.1, size=(data_size)), 0., 1.)
+	#phase = np.clip(np.random.normal(loc=0., scale=0.2*np.pi, size=(data_size)), -np.pi, np.pi)
+	#fig = plt.figure(0, figsize=(8,6))
+	#fig.clf()
+	#ax_mag = fig.add_subplot(2,1,1)
+	#ax_phase = fig.add_subplot(2,1,2)
+	#mag_count, mag_bins, _ = ax_mag.hist(mag, 100, range=(0., 1.), density=True)
+	#phase_count, phase_bins, _ = ax_phase.hist(phase, 100, range=(-np.pi, np.pi), density=True)
+	#true_hist = [mag_bins, mag_count, phase_bins, phase_count]
+	#fig.savefig(join(log_dir, 'true_mag_phase.png'), dpi=300)
+	#
+	#mag = np.clip(np.random.normal(loc=0.5, scale=0.01, size=(data_size)), 0., 1.)
+	#phase = np.clip(np.random.normal(loc=0., scale=0.2*np.pi, size=(data_size)), -np.pi, np.pi)
+	#fig = plt.figure(1, figsize=(8,6))
+	#fig.clf()
+	#ax_mag = fig.add_subplot(2,1,1)
+	#ax_phase = fig.add_subplot(2,1,2)
+	#mag_count, mag_bins, _ = ax_mag.hist(mag, 100, range=(0., 1.), density=True)
+	#phase_count, phase_bins, _ = ax_phase.hist(phase, 100, range=(-np.pi, np.pi), density=True)
+	#gen_hist = [mag_bins, mag_count, phase_bins, phase_count]
+	#fig.savefig(join(log_dir, 'gen_mag_phase.png'), dpi=300)
+	#
+	#mag_wd, phase_wd = mag_phase_wass_dist(true_hist, gen_hist)
+	#mag_tv, phase_tv = mag_phase_total_variation(true_hist, gen_hist)
+	#print('mag_wd: {} --- phase_wd: {}'.format(mag_wd, phase_wd))
+	#print('mag_tv: {} --- phase_tv: {}'.format(mag_tv, phase_tv))
 
 	'''
 	Filter draw
