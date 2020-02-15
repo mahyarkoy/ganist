@@ -450,7 +450,7 @@ def eval_toy_exp(log_dir, im_size):
 		#	for i, l in enumerate(fs):
 		#		fstr, vstr = l.strip().split()
 		#		lfx, lfy = tuple(map(int, freq_re.findall(fstr)[0]))
-		#		assert (lfx, lfy) == freqs[i//2]
+		#		assert (lfx, lfy) == freqs[i//4]
 		#		ltype = '_'.join(l.strip().split()[0].split('_')[:2])
 		#		if ltype == 'mag_wd':
 		#			mag_wd_list.append(float(l.strip().split()[-1]))
