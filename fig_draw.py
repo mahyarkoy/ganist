@@ -10,6 +10,7 @@ import sys
 from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
 from util import eval_toy_exp
+import glob
 
 '''
 Drawing Freq Components
@@ -79,8 +80,8 @@ if __name__ == '__main__':
 	'''
 	Eval toy experiments.
 	'''
-	for i in range(10, 20)
-		exp_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/{}'.format(i)
+	for i in range(13, 20):
+		exp_dir = glob.glob('/dresden/users/mk1391/evl/ganist_toy_logs/{}_*'.format(i))[0]
 		eval_toy_exp(exp_dir, im_size=128)
 		break
 

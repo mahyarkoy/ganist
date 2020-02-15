@@ -13,6 +13,8 @@ import pickle as pk
 from os.path import join
 from progressbar import ETA, Bar, Percentage, ProgressBar
 import matplotlib.cm as mat_cm
+import re
+import scipy
 
 '''
 DFT of the 2d discrete non-periodic input image.
@@ -408,7 +410,7 @@ Evaluate the mean and average of stats in toy experiments over several runs.
 log_dir: directory containing run_i directories.
 '''
 def eval_toy_exp(log_dir, im_size):
-	run_dirs = glob.glob(join(log_dir, 'run_*'))
+	run_dirs = glob.glob(join(log_dir, 'run_*/'))
 	### find freqs
 	freq_re = re.compile('_fx([0-9-]+)_fy([0-9-]+)')
 	freqs = np.array([(int(fx), int(fy)) for fx, fy in \
@@ -419,18 +421,19 @@ def eval_toy_exp(log_dir, im_size):
 	leak_hann_list = list()
 	for rdir in run_dirs:
 		### compute the dists
+		print(rdir)
 		with open(glob.glob(join(rdir, 'fft_true_*_size{}.pk'.format(im_size)))[0], 'rb') as fs:
 			fft = pk.load(fs)
-			true_hist = freq_density(fft, freqs/im_size, join(rdir, 'true_freq_density_size{}_data'.format(im_size)))
+			true_hist = freq_density(fft, freqs/im_size, im_size, join(rdir, 'true_freq_density_size{}_data'.format(im_size)))
 		with open(glob.glob(join(rdir, 'fft_gen_*_size{}.pk'.format(im_size)))[0], 'rb') as fs:
 			fft = pk.load(fs)
-			gen_hist = freq_density(fft, freqs/im_size, join(rdir, 'gen_freq_density_size{}_data'.format(im_size)))
+			gen_hist = freq_density(fft, freqs/im_size, im_size, join(rdir, 'gen_freq_density_size{}_data'.format(im_size)))
 		### compute the wasserstein distance between the dists for each freq
-		for fx, fy in freqs:
-			mag_wd, phase_wd = mag_phase_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
-			mag_wd_list.append(mag_wd)
-			phase_wd_list.append(phase_wd)
-			with open(join(rdir, 'wd_mag_phase.txt'), 'a+') as fs:
+		with open(join(rdir, 'wd_mag_phase.txt'), 'w+') as fs:
+			for fx, fy in freqs:
+				mag_wd, phase_wd = mag_phase_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+				mag_wd_list.append(mag_wd)
+				phase_wd_list.append(phase_wd)
 				print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
 				print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
 
@@ -447,9 +450,9 @@ def eval_toy_exp(log_dir, im_size):
 
 		### read the leakage
 		with open(glob.glob(join(rdir, 'leakage_*_size{}.txt'.format(im_size)))[0], 'r') as fs:
-			leak_list.append(float(fs.next().strip().split()[-1]))
+			leak_list.append(float(fs.readline().strip().split()[-1]))
 		with open(glob.glob(join(rdir, 'leakage_*_size{}_hann.txt'.format(im_size)))[0], 'r') as fs:
-			leak_hann_list.append(float(fs.next().strip().split()[-1]))
+			leak_hann_list.append(float(fs.readline().strip().split()[-1]))
 	
 	mag_wd_mat = np.array(mag_wd_list).reshape((len(run_dirs), freqs.shape[0]))
 	mag_wd_mean = np.mean(mag_wd_mat, 0)
@@ -462,7 +465,7 @@ def eval_toy_exp(log_dir, im_size):
 			print('mag_wd_fx{}_fy{}: {} std {}'.format(fx, fy, mag_wd_mean[i], mag_wd_std[i]), file=fs)
 			print('phase_wd_fx{}_fy{}: {} std {}'.format(fx, fy, phase_wd_mean[i], phase_wd_std[i]), file=fs)
 		print('leak: {} std {}'.format(np.mean(leak_list), np.std(leak_list)), file=fs)
-		print('leak_hann: {} std {}'.format(np.mean(leak_hann_list), np.std(leak_list)), file=fs)
+		print('leak_hann: {} std {}'.format(np.mean(leak_hann_list), np.std(leak_hann_list)), file=fs)
 	return
 
 '''
@@ -471,9 +474,9 @@ true_hist, gen_hist: each are a list of [mag_bins, mag_weights, phase_bins, phas
 '''
 def mag_phase_dist(true_hist, gen_hist):
 	mag_wd = scipy.stats.wasserstein_distance(
-			true_hist[0], gen_hist[0], true_hist[1], gen_hist[1])
+			true_hist[0][:-1], gen_hist[0][:-1], true_hist[1], gen_hist[1])
 	phase_wd = scipy.stats.wasserstein_distance(
-			true_hist[2], gen_hist[2], true_hist[3], gen_hist[3])
+			true_hist[2][:-1], gen_hist[2][:-1], true_hist[3], gen_hist[3])
 	return mag_wd, phase_wd
 
 
