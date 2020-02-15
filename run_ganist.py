@@ -38,6 +38,7 @@ import tf_ganist
 from fft_test import apply_fft_images
 from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density, read_image, readim_from_path, readim_path_from_dir
 from util import block_draw, im_color_borders
+from util import mag_phase_dist
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
@@ -1776,7 +1777,7 @@ if __name__ == '__main__':
 			join(log_path, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
 	true_fft_hann = apply_fft_win(im_data[:10000], 
 			join(log_path, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
-	freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size)))
+	true_hist = freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size)))
 	
 	'''
 	DATASET INITIAL EVALS
@@ -1830,8 +1831,14 @@ if __name__ == '__main__':
 			join(log_path, 'leakage{}_size{}'.format(freq_str, g_samples.shape[1])))
 	freq_leakage(true_fft_hann, gen_fft_hann, 
 			join(log_path, 'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1])))
-	freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size)))
-
+	gen_hist = freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size)))
+	### compute the wasserstein distance between the dists for each freq
+	freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
+	with open(join(log_path, 'wd_mag_phase.txt'), 'w+') as fs:
+		for fx, fy in freqs:
+			mag_wd, phase_wd = mag_phase_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+			print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
+			print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
 	'''
 	Read from PGGAN and construct features
 	'''

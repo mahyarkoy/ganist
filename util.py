@@ -174,7 +174,7 @@ Draws the distributions formed on each frequency location (mag and phase).
 Assumes signal was real (does not work for complex signals) and in [-1,1]
 fft: fast fourier transfor with shape [b, h, w], shifted and fliped on y (1 axis)
 '''
-def freq_density(fft, freqs, im_size, path, mag_density=None, phase_density=None):
+def freq_density(fft, freqs, im_size, path, mag_density=None, phase_density=None, draw=True):
 	mag_density = lambda x, mu=0.5, sigma=0.1: 1./(sigma*np.sqrt(2*np.pi)) * np.exp(-(x-mu)**2/(2.*sigma**2))
 	phase_density = lambda x, mu=0., sigma=0.2*np.pi: 1./(sigma*np.sqrt(2*np.pi)) * np.exp(-(x-mu)**2/(2.*sigma**2))
 	freqs = np.rint(np.array(freqs)*im_size).astype(int)
@@ -182,6 +182,7 @@ def freq_density(fft, freqs, im_size, path, mag_density=None, phase_density=None
 	fig = plt.figure(0, figsize=(8,6))
 	mag_samples = list()
 	phase_samples = list()
+	freq_hist = dict()
 	for fx, fy in freqs:
 		assert np.abs(fx) <= im_size//2 and np.abs(fy) <= im_size//2
 		data = fft[:, (im_size//2+fx) % im_size, (im_size//2+fy) % im_size]
@@ -198,14 +199,19 @@ def freq_density(fft, freqs, im_size, path, mag_density=None, phase_density=None
 		ax_phase = fig.add_subplot(2,1,2)
 		mag_count, mag_bins, _ = ax_mag.hist(mag, 100, range=(0., 1.), density=True)
 		phase_count, phase_bins, _ = ax_phase.hist(phase, 100, range=(-np.pi, np.pi), density=True)
+		freq_hist[(fx, fy)] = [mag_bins, mag_count, phase_bins, phase_count]
+		with open(path+'_fx{}_fy{}'.format(fx, fy)+'.pk', 'wb+') as fs:
+			pk.dump([mag_bins, mag_count, phase_bins, phase_count], fs)
 		if mag_density is not None:
 			ax_mag.plot(mag_bins, mag_density(mag_bins), linewidth=2, color='r')
 		if phase_density is not None:
 			ax_phase.plot(phase_bins, phase_density(phase_bins), linewidth=2, color='r')
 		ax_mag.set_xlabel('magnitude')
 		ax_phase.set_xlabel('phase')
-		fig.savefig(path+'_fx{}_fy{}'.format(fx, fy)+'.png', dpi=300)
-	return mag_samples, phase_samples
+		if draw:
+			fig.savefig(path+'_fx{}_fy{}'.format(fx, fy)+'.png', dpi=300)
+
+	return freq_hist
 
 '''
 Sampler for planar 2D cosine with uniform amplitude [-1, 1)
@@ -396,6 +402,87 @@ def im_color_borders(im_data, im_labels, max_label=None, color_map=None, color_s
 		rgb_colors_t[b, fh:imh+fh, fw:imw+fw, :] = im_data[b, ...]
 
 	return rgb_colors_t
+
+'''
+Evaluate the mean and average of stats in toy experiments over several runs.
+log_dir: directory containing run_i directories.
+'''
+def eval_toy_exp(log_dir, im_size):
+	run_dirs = glob.glob(join(log_dir, 'run_*'))
+	### find freqs
+	freq_re = re.compile('_fx([0-9-]+)_fy([0-9-]+)')
+	freqs = np.array([(int(fx), int(fy)) for fx, fy in \
+			freq_re.findall(glob.glob(join(run_dirs[0], 'leakage_*_size{}.txt'.format(im_size)))[0])]).astype(int)
+	mag_wd_list = list()
+	phase_wd_list = list()
+	leak_list = list()
+	leak_hann_list = list()
+	for rdir in run_dirs:
+		### compute the dists
+		with open(glob.glob(join(rdir, 'fft_true_*_size{}.pk'.format(im_size)))[0], 'rb') as fs:
+			fft = pk.load(fs)
+			true_hist = freq_density(fft, freqs/im_size, join(rdir, 'true_freq_density_size{}_data'.format(im_size)))
+		with open(glob.glob(join(rdir, 'fft_gen_*_size{}.pk'.format(im_size)))[0], 'rb') as fs:
+			fft = pk.load(fs)
+			gen_hist = freq_density(fft, freqs/im_size, join(rdir, 'gen_freq_density_size{}_data'.format(im_size)))
+		### compute the wasserstein distance between the dists for each freq
+		for fx, fy in freqs:
+			mag_wd, phase_wd = mag_phase_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+			mag_wd_list.append(mag_wd)
+			phase_wd_list.append(phase_wd)
+			with open(join(rdir, 'wd_mag_phase.txt'), 'a+') as fs:
+				print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
+				print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
+
+		### read mag and phase wd
+		#with open(glob.glob(join(rdir, 'wd_mag_phase.txt')), 'r') as fs:
+		#	for i, l in enumerate(fs):
+		#		fstr, vstr = l.strip().split()
+		#		lfx, lfy = tuple(map(int, freq_re.findall(fstr)[0]))
+		#		assert (lfx, lfy) == freqs[i%2]
+		#		if i%2 == 0:
+		#			mag_wd_list.append(float(l.strip().split()[-1]))
+		#		else:
+		#			phase_wd_list.append(float(l.strip().split()[-1]))
+
+		### read the leakage
+		with open(glob.glob(join(rdir, 'leakage_*_size{}.txt'.format(im_size)))[0], 'r') as fs:
+			leak_list.append(float(fs.next().strip().split()[-1]))
+		with open(glob.glob(join(rdir, 'leakage_*_size{}_hann.txt'.format(im_size)))[0], 'r') as fs:
+			leak_hann_list.append(float(fs.next().strip().split()[-1]))
+	
+	mag_wd_mat = np.array(mag_wd_list).reshape((len(run_dirs), freqs.shape[0]))
+	mag_wd_mean = np.mean(mag_wd_mat, 0)
+	mag_wd_std = np.std(mag_wd_mat, 0)
+	phase_wd_mat = np.array(phase_wd_list).reshape((len(run_dirs), freqs.shape[0]))
+	phase_wd_mean = np.mean(phase_wd_mat, 0)
+	phase_wd_std = np.std(phase_wd_mat, 0)
+	with open(join(log_dir, 'sum_stats.txt'), 'w+') as fs:
+		for i, (fx, fy) in enumerate(freqs):
+			print('mag_wd_fx{}_fy{}: {} std {}'.format(fx, fy, mag_wd_mean[i], mag_wd_std[i]), file=fs)
+			print('phase_wd_fx{}_fy{}: {} std {}'.format(fx, fy, phase_wd_mean[i], phase_wd_std[i]), file=fs)
+		print('leak: {} std {}'.format(np.mean(leak_list), np.std(leak_list)), file=fs)
+		print('leak_hann: {} std {}'.format(np.mean(leak_hann_list), np.std(leak_list)), file=fs)
+	return
+
+'''
+Computes wasserstein distance between true and gen distributions for mag and phase.
+true_hist, gen_hist: each are a list of [mag_bins, mag_weights, phase_bins, phase_weights].
+'''
+def mag_phase_dist(true_hist, gen_hist):
+	mag_wd = scipy.stats.wasserstein_distance(
+			true_hist[0], gen_hist[0], true_hist[1], gen_hist[1])
+	phase_wd = scipy.stats.wasserstein_distance(
+			true_hist[2], gen_hist[2], true_hist[3], gen_hist[3])
+	return mag_wd, phase_wd
+
+
+
+
+
+
+
+
 
 
 

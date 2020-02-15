@@ -9,7 +9,8 @@ import tf_ganist
 import sys
 from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
-					
+from util import eval_toy_exp
+
 '''
 Drawing Freq Components
 '''
@@ -76,6 +77,36 @@ if __name__ == '__main__':
 	log_dir = 'logs_draw/'
 	
 	'''
+	Eval toy experiments.
+	'''
+	for i in range(10, 20)
+		exp_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/{}'.format(i)
+		eval_toy_exp(exp_dir, im_size=128)
+		break
+
+	'''
+	Filter draw
+	'''
+	### kernel
+	#im_size = 128
+	#ksize = 41
+	#sigma = 1.
+	#t = np.linspace(-20, 20, ksize)
+	##t = np.linspace(-20, 20, 81) ## for 128x128 images
+	#bump = np.exp(0.5 * -t**2/sigma**2)
+	#bump /= np.sum(bump) # normalize the integral to 1
+	#kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
+	#im_data = np.zeros((1, im_size, im_size, 1))
+	#im_data[0, :ksize, :ksize, 0] = kernel
+	#apply_fft_win(im_data, 
+	#		join(log_dir, 'fft_gauss_kernel_ksize{}_imsize{}.png'.format(ksize, im_size)), 
+	#		windowing=False)
+	#apply_fft_win(im_data, 
+	#		join(log_dir, 'fft_gauss_kernel_ksize{}_imsize{}_hann.png'.format(ksize, im_size)), 
+	#		windowing=True)
+	#single_draw(im_data[0], join(log_dir, 'gauss_kernel_ksize{}_imsize{}.png'.format(ksize, im_size)))
+
+	'''
 	FFT and IFFT
 	'''
 	#celeba_data = read_celeba(128, data_size=10)
@@ -94,22 +125,22 @@ if __name__ == '__main__':
 	'''
 	Cosine sampler
 	'''
-	data_size = 50000
-	freq_centers = [(64/128., 64/128.)]
-	im_size = 128
-	im_data = np.zeros((data_size, im_size, im_size, 1))
-	freq_str = ''
-	for fc in freq_centers:
-		sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=1)
-		im_data += sampler.sample_data(data_size)
-		freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
-	im_data /= len(freq_centers)
-	test_feats = None
-	true_fft = apply_fft_win(im_data[:1000], 
-			join(log_dir, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
-	true_fft_hann = apply_fft_win(im_data[:1000], 
-			join(log_dir, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
-	freq_density(true_fft, freq_centers, im_size, join(log_dir, 'freq_density_size{}'.format(im_size)))
+	#data_size = 50000
+	#freq_centers = [(64/128., 64/128.)]
+	#im_size = 128
+	#im_data = np.zeros((data_size, im_size, im_size, 1))
+	#freq_str = ''
+	#for fc in freq_centers:
+	#	sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=1)
+	#	im_data += sampler.sample_data(data_size)
+	#	freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+	#im_data /= len(freq_centers)
+	#test_feats = None
+	#true_fft = apply_fft_win(im_data[:1000], 
+	#		join(log_dir, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
+	#true_fft_hann = apply_fft_win(im_data[:1000], 
+	#		join(log_dir, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
+	#freq_density(true_fft, freq_centers, im_size, join(log_dir, 'freq_density_size{}'.format(im_size)))
 	
 	'''
 	CUB FFT test
