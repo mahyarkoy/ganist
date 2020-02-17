@@ -80,10 +80,10 @@ if __name__ == '__main__':
 	'''
 	Eval toy experiments.
 	'''
-	for i in range(13, 20):
-		exp_dir = glob.glob('/dresden/users/mk1391/evl/ganist_toy_logs/{}_*/'.format(i))[0]
-		eval_toy_exp(exp_dir, im_size=128)
-		break
+	#for i in range(13, 20):
+	#	exp_dir = glob.glob('/dresden/users/mk1391/evl/ganist_toy_logs/{}_*/'.format(i))[0]
+	#	eval_toy_exp(exp_dir, im_size=128)
+	#	break
 
 	'''
 	Eval distribution distance
@@ -158,7 +158,7 @@ if __name__ == '__main__':
 	Cosine sampler
 	'''
 	#data_size = 50000
-	#freq_centers = [(64/128., 64/128.)]
+	#freq_centers = [(61/128., 0/128.)]
 	#im_size = 128
 	#im_data = np.zeros((data_size, im_size, im_size, 1))
 	#freq_str = ''
@@ -167,11 +167,10 @@ if __name__ == '__main__':
 	#	im_data += sampler.sample_data(data_size)
 	#	freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
 	#im_data /= len(freq_centers)
-	#test_feats = None
 	#true_fft = apply_fft_win(im_data[:1000], 
 	#		join(log_dir, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
-	#true_fft_hann = apply_fft_win(im_data[:1000], 
-	#		join(log_dir, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
+	##true_fft_hann = apply_fft_win(im_data[:1000], 
+	##		join(log_dir, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
 	#freq_density(true_fft, freq_centers, im_size, join(log_dir, 'freq_density_size{}'.format(im_size)))
 	
 	'''

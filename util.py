@@ -354,7 +354,7 @@ def freq_density(fft, freqs, im_size, path, mag_density=None, phase_density=None
 	freq_hist = dict()
 	for fx, fy in freqs:
 		assert np.abs(fx) <= im_size//2 and np.abs(fy) <= im_size//2
-		data = fft[:, (im_size//2+fx) % im_size, (im_size//2+fy) % im_size]
+		data = fft[:, (im_size//2+fy) % im_size, (im_size//2+fx) % im_size]
 		mag = np.abs(data) / im_size**2 * freqs.shape[0]
 		mag *= 1. if (fx == 0 and fy == 0) or \
 				(fx == 0 and np.abs(fy) == im_size//2) or \
