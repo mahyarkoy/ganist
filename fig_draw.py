@@ -143,12 +143,18 @@ if __name__ == '__main__':
 	'''
 	### kernel
 	im_size = 128
-	krange = 40
+	krange = 25
 	ksize = 2*krange+1
 	sigma = 1.
 	t = np.linspace(-krange, krange, ksize)
+	blur_levels = [0., 1.]
+	blur_num = 7
+	blur_delta = 1. / 8
+	### reducing the filter radius by blur_delta every step
+	for i in range(blur_num):
+		blur_levels.append(1. / (1. / blur_levels[-1] - blur_delta))
 	##t = np.linspace(-20, 20, 81) ## for 128x128 images
-	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	#blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
 	fig = plt.figure(0, figsize=(8*len(blur_levels),6))
 	fig.clf()
 	for i, sigma in enumerate(blur_levels):
@@ -166,9 +172,9 @@ if __name__ == '__main__':
 			im_data[0, 0, 0, 0] = 1.
 		ax = fig.add_subplot(1, len(blur_levels), i+1)
 		apply_fft_win(im_data, None, windowing=False, plot_ax=ax)
-		ax.set_title('Normalized Power Spectrum STD {}'.format(sigma))
+		ax.set_title('Normalized Power Spectrum STD {:.2f}'.format(sigma))
 
-	fig.savefig(join(log_dir, 'gauss_response_blur_levels_krange{}.png'.format(krange)), dpi=300)
+	fig.savefig(join(log_dir, 'gauss_response_blur_levels_delta_krange{}.png'.format(krange)), dpi=300)
 
 	'''
 	FFT and IFFT

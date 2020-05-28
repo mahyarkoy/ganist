@@ -638,14 +638,14 @@ class Ganist:
 	def build_wgan(self, im_input, zi_input, im_size):
 		### generators
 		g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
-				im_size=im_size, sub_scope='main')
+				im_size=im_size, sub_scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
 		gen_collect = [g_layer]
 		im_collect = [im_input]
 		comb_list = [g_layer]
 
 		### discriminators
 		d_loss, g_loss, rg_grad_norm_output = \
-				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='main')
+				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
 		d_loss_list = [d_loss]
 		g_loss_list = [g_loss]
 		rg_grad_norm_list = [rg_grad_norm_output]

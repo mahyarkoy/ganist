@@ -754,7 +754,7 @@ def blur_images_levels(imgs, blur_levels, blur_type='gauss'):
 		imgs_blur_list = list()
 		for b in blur_levels:
 			if b == 0:
-				imgs_blur_list,append(imgs)
+				imgs_blur_list.append(imgs)
 			else:
 				#imgs_blur_list.append(blur_images(imgs, b, blur_type))
 				imgs_blur_list.append(imgs - blur_images(imgs, b, blur_type)) ## high pass filter
@@ -1537,8 +1537,16 @@ if __name__ == '__main__':
 	### read and process data
 	sample_size = 50000
 	draw_size = 1000
-	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
-	blur_levels = [0., 10., 9., 8., 7., 6., 5., 4., 3., 2., 1.] ## *high pass
+	#blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	#blur_levels = [0., 10., 9., 8., 7., 6., 5., 4., 3., 2., 1.] ## *high pass
+	blur_levels = [1.]
+	blur_num = 7
+	blur_delta = 1. / 8
+	### reducing the filter radius by blur_delta every step
+	for i in range(blur_num):
+		blur_levels.append(1. / (1. / blur_levels[-1] - blur_delta))
+	### for high pass
+	blur_levels = [0.] + blur_levels[::-1]
 	#blur_levels = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
 
 	'''
@@ -1727,7 +1735,7 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	im_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
 	im_size = 128
 	train_size = 50000
 	im_paths = readim_path_from_dir(im_dir)
@@ -1951,13 +1959,14 @@ if __name__ == '__main__':
 	#### plot fid_levels
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
-	ax.plot(blur_levels, fid_list)
+	ax.plot(fid_list)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_title('FID levels')
 	ax.set_xlabel('Filter sigma')
 	#ax.set_xlabel('Filter Size')
 	ax.set_ylabel('FID')
-	ax.set_xticks(blur_levels)
+	ax.set_xticks(range(len(blur_levels)))
+	ax.set_xticklabels(map('{:.2f}'.format, blur_levels))
 	#ax.legend(loc=0)
 	fig.savefig(log_path+'/fid_levels.png', dpi=300)
 	plt.close(fig)
@@ -1968,13 +1977,14 @@ if __name__ == '__main__':
 	### plot fid_levels_r
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
-	ax.plot(blur_levels, fid_list_r)
+	ax.plot(fid_list_r)
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_title('FID levels')
 	ax.set_xlabel('Filter sigma')
 	#ax.set_xlabel('Filter Size')
 	ax.set_ylabel('FID')
-	ax.set_xticks(blur_levels)
+	ax.set_xticks(range(len(blur_levels)))
+	ax.set_xticklabels(map('{:.2f}'.format, blur_levels))
 	#ax.legend(loc=0)
 	fig.savefig(log_path+'/fid_levels_r.png', dpi=300)
 	plt.close(fig)
