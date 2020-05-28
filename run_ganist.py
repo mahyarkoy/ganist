@@ -753,7 +753,11 @@ def blur_images_levels(imgs, blur_levels, blur_type='gauss'):
 	else:
 		imgs_blur_list = list()
 		for b in blur_levels:
-			imgs_blur_list.append(blur_images(imgs, b, blur_type))
+			if b == 0:
+				imgs_blur_list,append(imgs)
+			else:
+				#imgs_blur_list.append(blur_images(imgs, b, blur_type))
+				imgs_blur_list.append(imgs - blur_images(imgs, b, blur_type)) ## high pass filter
 		return imgs_blur_list
 
 def blur_images(imgs, sigma, blur_type='gauss'):
@@ -1531,8 +1535,10 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_sum_vae)
 
 	### read and process data
-	sample_size = 5000
+	sample_size = 50000
+	draw_size = 1000
 	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	blur_levels = [0., 10., 9., 8., 7., 6., 5., 4., 3., 2., 1.] ## *high pass
 	#blur_levels = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
 
 	'''
@@ -1721,18 +1727,20 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	#im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
-	#im_size = 128
-	#train_size = 50000
-	#im_paths = readim_path_from_dir(im_dir)
-	#np.random.shuffle(im_paths)
+	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	im_size = 128
+	train_size = 50000
+	im_paths = readim_path_from_dir(im_dir)
+	np.random.shuffle(im_paths)
 	#### prepare test features
-	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
-	#	im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
+	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
+		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
 	#### prepare train images and features
 	#im_data = readim_from_path(im_paths[:train_size], 
 	#	im_size, center_crop=(121, 89), verbose=True)
-	##train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
+	im_data = readim_from_path(im_paths[:train_size], 
+		im_size, center_crop=(121, 89), verbose=True)
+	train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
 	#lsun_lmdb_dir = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_lmdb/'
@@ -1760,24 +1768,24 @@ if __name__ == '__main__':
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### cosine sampler
-	data_size = 50000
-	freq_centers = [(0/128., 0/128.), (3/128., 3/128.), (41/128., 41/128.)]
-	im_size = 128
-	im_data = np.zeros((data_size, im_size, im_size, ganist.data_dim[-1]))
-	freq_str = ''
-	for fc in freq_centers:
-		sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=ganist.data_dim[-1])
-		im_data += sampler.sample_data(data_size)
-		freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
-	im_data /= len(freq_centers)
-	im_labels = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
-			size=[data_size, ganist.z_dim])
-	test_feats = None
-	true_fft = apply_fft_win(im_data[:10000], 
-			join(log_path, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
-	true_fft_hann = apply_fft_win(im_data[:10000], 
-			join(log_path, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
-	true_hist = freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size)))
+	#data_size = 50000
+	#freq_centers = [(0/128., 0/128.), (3/128., 3/128.), (41/128., 41/128.)]
+	#im_size = 128
+	#im_data = np.zeros((data_size, im_size, im_size, ganist.data_dim[-1]))
+	#freq_str = ''
+	#for fc in freq_centers:
+	#	sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=ganist.data_dim[-1])
+	#	im_data += sampler.sample_data(data_size)
+	#	freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+	#im_data /= len(freq_centers)
+	#im_labels = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
+	#		size=[data_size, ganist.z_dim])
+	#test_feats = None
+	#true_fft = apply_fft_win(im_data[:10000], 
+	#		join(log_path, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
+	#true_fft_hann = apply_fft_win(im_data[:10000], 
+	#		join(log_path, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
+	#true_hist = freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size)))
 	
 	'''
 	DATASET INITIAL EVALS
@@ -1789,10 +1797,10 @@ if __name__ == '__main__':
 	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
 	im_block_draw(train_imgs[:25], 5, join(log_path,'true_samples.png'), border=True)
 	### draw blurred images ## *TOY
-	#blur_draw_size = 10
-	#blur_im_list = blur_images_levels(train_imgs[:blur_draw_size], blur_levels)
-	#blur_im = np.stack(blur_im_list, axis=0)
-	#block_draw(blur_im, join(log_path,'blur_im_samples.png'), border=True)
+	blur_draw_size = 10
+	blur_im_list = blur_images_levels(train_imgs[:blur_draw_size], blur_levels)
+	blur_im = np.stack(blur_im_list, axis=0)
+	block_draw(blur_im, join(log_path,'blur_im_samples.png'), border=True)
 	### draw real samples pyramid
 	#sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
 	#	sample_size=10, im_data=train_imgs[:10])
@@ -1801,21 +1809,22 @@ if __name__ == '__main__':
 	GAN SETUP SECTION
 	'''
 	### train ganist
-	train_ganist(ganist, train_imgs, test_feats, train_labs)
+	#train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
 	#load_path = join(log_path_snap, 'model_best.h5') ## *TOY
-	#load_path = '/media/evl/Public/Mahyar/ganist_lap_logs/25_logs_fsm_wganbn_8g64_d128_celeba128cc/run_0/snapshots/model_best.h5'
-	#ganist.load(load_path.format(run_seed)) ## *TOY
+	load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
+	ganist.load(load_path.format(run_seed)) ## *TOY
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_samples = sample_ganist(ganist, 10000, output_type='rec', zi_data=train_labs)[0]
-	#g_feats = TFutil.get().extract_feats(None, sample_size, 
-	#	blur_levels=blur_levels, ganist=ganist) ## *TOY
+	g_sample_size = draw_size # 10000 ## *TOY
+	g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
+	g_feats = TFutil.get().extract_feats(None, sample_size, 
+		blur_levels=blur_levels, ganist=ganist) ## *TOY
 	print('>>> g_samples shape: {}'.format(g_samples.shape))
 	im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
 	im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
@@ -1823,25 +1832,26 @@ if __name__ == '__main__':
 	#sys.exit(0)
 
 	### *TOY
-	gen_fft = apply_fft_win(g_samples[:10000], 
-			join(log_path, 'fft_gen{}_size{}'.format(freq_str, g_samples.shape[1])), windowing=False)
-	gen_fft_hann = apply_fft_win(g_samples[:10000], 
-			join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
-	freq_leakage(true_fft, gen_fft, 
-			join(log_path, 'leakage{}_size{}'.format(freq_str, g_samples.shape[1])))
-	freq_leakage(true_fft_hann, gen_fft_hann, 
-			join(log_path, 'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1])))
-	gen_hist = freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size)))
+	#gen_fft = apply_fft_win(g_samples[:10000], 
+	#		join(log_path, 'fft_gen{}_size{}'.format(freq_str, g_samples.shape[1])), windowing=False)
+	#gen_fft_hann = apply_fft_win(g_samples[:10000], 
+	#		join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
+	#freq_leakage(true_fft, gen_fft, 
+	#		join(log_path, 'leakage{}_size{}'.format(freq_str, g_samples.shape[1])))
+	#freq_leakage(true_fft_hann, gen_fft_hann, 
+	#		join(log_path, 'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1])))
+	#gen_hist = freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size)))
 	### compute the wasserstein distance between the dists for each freq
-	freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
-	with open(join(log_path, 'wd_mag_phase.txt'), 'w+') as fs:
-		for fx, fy in freqs:
-			mag_wd, phase_wd = mag_phase_wass_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
-			mag_tv, phase_tv = mag_phase_total_variation(true_hist[(fx, fy)], gen_hist[(fx, fy)])
-			print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
-			print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
-			print('mag_tv_fx{}_fy{}: {}'.format(fx, fy, mag_tv), file=fs)
-			print('phase_tv_fx{}_fy{}: {}'.format(fx, fy, phase_tv), file=fs)
+	#freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
+	#with open(join(log_path, 'wd_mag_phase.txt'), 'w+') as fs:
+	#	for fx, fy in freqs:
+	#		mag_wd, phase_wd = mag_phase_wass_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+	#		mag_tv, phase_tv = mag_phase_total_variation(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+	#		print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
+	#		print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
+	#		print('mag_tv_fx{}_fy{}: {}'.format(fx, fy, mag_tv), file=fs)
+	#		print('phase_tv_fx{}_fy{}: {}'.format(fx, fy, phase_tv), file=fs)
+	
 	'''
 	Read from PGGAN and construct features
 	'''
@@ -1936,41 +1946,41 @@ if __name__ == '__main__':
 	Multi Level FID
 	'''
 	### compute multi level fid (second line for real data fid levels) ## *TOY
-	#fid_list = compute_fid_levels(g_feats, test_feats)
-	##fid_list_r = compute_fid_levels(train_feats, test_feats)
+	fid_list = compute_fid_levels(g_feats, test_feats)
+	fid_list_r = compute_fid_levels(train_feats, test_feats)
 	#### plot fid_levels
-	#fig, ax = plt.subplots(figsize=(8, 6))
-	#ax.clear()
-	#ax.plot(blur_levels, fid_list)
-	#ax.grid(True, which='both', linestyle='dotted')
-	#ax.set_title('FID levels')
-	#ax.set_xlabel('Filter sigma')
-	##ax.set_xlabel('Filter Size')
-	#ax.set_ylabel('FID')
-	#ax.set_xticks(blur_levels)
-	##ax.legend(loc=0)
-	#fig.savefig(log_path+'/fid_levels.png', dpi=300)
-	#plt.close(fig)
-	#### save fids
-	#with open(log_path+'/fid_levels.cpk', 'wb+') as fs:
-	#	pk.dump([blur_levels, fid_list], fs)
+	fig, ax = plt.subplots(figsize=(8, 6))
+	ax.clear()
+	ax.plot(blur_levels, fid_list)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_title('FID levels')
+	ax.set_xlabel('Filter sigma')
+	#ax.set_xlabel('Filter Size')
+	ax.set_ylabel('FID')
+	ax.set_xticks(blur_levels)
+	#ax.legend(loc=0)
+	fig.savefig(log_path+'/fid_levels.png', dpi=300)
+	plt.close(fig)
+	### save fids
+	with open(log_path+'/fid_levels.cpk', 'wb+') as fs:
+		pk.dump([blur_levels, fid_list], fs)
 
 	### plot fid_levels_r
-	#fig, ax = plt.subplots(figsize=(8, 6))
-	#ax.clear()
-	#ax.plot(blur_levels, fid_list_r)
-	#ax.grid(True, which='both', linestyle='dotted')
-	#ax.set_title('FID levels')
-	#ax.set_xlabel('Filter sigma')
-	##ax.set_xlabel('Filter Size')
-	#ax.set_ylabel('FID')
-	#ax.set_xticks(blur_levels)
-	##ax.legend(loc=0)
-	#fig.savefig(log_path+'/fid_levels_r.png', dpi=300)
-	#plt.close(fig)
-	#### save fids
-	#with open(log_path+'/fid_levels_r.cpk', 'wb+') as fs:
-	#	pk.dump([blur_levels, fid_list_r], fs)
+	fig, ax = plt.subplots(figsize=(8, 6))
+	ax.clear()
+	ax.plot(blur_levels, fid_list_r)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_title('FID levels')
+	ax.set_xlabel('Filter sigma')
+	#ax.set_xlabel('Filter Size')
+	ax.set_ylabel('FID')
+	ax.set_xticks(blur_levels)
+	#ax.legend(loc=0)
+	fig.savefig(log_path+'/fid_levels_r.png', dpi=300)
+	plt.close(fig)
+	### save fids
+	with open(log_path+'/fid_levels_r.cpk', 'wb+') as fs:
+		pk.dump([blur_levels, fid_list_r], fs)
 
 	sess.close()
 

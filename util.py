@@ -32,7 +32,11 @@ def read_celeba(im_size, data_size=1000):
 Reads path names given the directory and type extension.
 '''
 def readim_path_from_dir(im_dir, im_type='*.jpg'):
-	return [fn for fn in glob.glob(join(im_dir, im_type))]
+	im_path = join(im_dir, im_type)
+	im_paths = [fn for fn in glob.glob(im_path)]
+	if len(im_paths) == 0:
+		raise NameError('{} does not exists!'.format(im_path))
+	return im_paths
 
 '''
 Reads 3-channel images from the given paths.
@@ -269,7 +273,7 @@ Apply FFT to greyscaled images, then average power, normalize and plot.
 im_data shape: (b, h, w, c)
 return: shifted and flipped axis 1 fft, shape (b, h, w)
 '''
-def apply_fft_win(im_data, path, windowing=True):
+def apply_fft_win(im_data, path, windowing=True, plot_ax=None):
 	### windowing
 	win_size = im_data.shape[1]
 	win = np.hanning(im_data.shape[1])
@@ -295,9 +299,13 @@ def apply_fft_win(im_data, path, windowing=True):
 	im_fft_mean /= fft_max_power  
 	
 	### plot mean fft
-	fig = plt.figure(0, figsize=(8,6))
-	fig.clf()
-	ax = fig.add_subplot(1,1,1)
+	if plot_ax is None:
+		fig = plt.figure(0, figsize=(8,6))
+		fig.clf()
+		ax = fig.add_subplot(1,1,1)
+	else:
+		ax = plot_ax
+
 	np.clip(im_fft_mean, 1e-20, None, out=im_fft_mean)
 	pa = ax.imshow(np.log(im_fft_mean), cmap=plt.get_cmap('inferno'), vmin=-13)
 	ax.set_title('Log Average Frequency Spectrum')
@@ -312,14 +320,17 @@ def apply_fft_win(im_data, path, windowing=True):
 		ax.set_xticklabels([-0.5, 0])
 		ax.set_yticks(ticks_loc_y)
 		ax.set_yticklabels(['', 0, -0.5])
-	fig.colorbar(pa)
+	
+	if plot_ax is None:
+		fig.colorbar(pa)
 
-	### save (if image prefix is not provided, save both image and pickle data)
-	if path[-4:] != '.png':
-		with open(path+'.pk', 'wb+') as fs:
-			pk.dump(im_fft, fs)
-		path += '.png'
-	fig.savefig(path, dpi=300)
+		### save (if image prefix is not provided, save both image and pickle data)
+		if path[-4:] != '.png':
+			with open(path+'.pk', 'wb+') as fs:
+				pk.dump(im_fft, fs)
+			path += '.png'
+		fig.savefig(path, dpi=300)
+
 	return im_fft
 
 '''

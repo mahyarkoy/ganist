@@ -139,15 +139,47 @@ if __name__ == '__main__':
 	#single_draw(im_data[0], join(log_dir, 'gauss_kernel_ksize{}_imsize{}.png'.format(ksize, im_size)))
 
 	'''
+	Filter draw range
+	'''
+	### kernel
+	im_size = 128
+	krange = 40
+	ksize = 2*krange+1
+	sigma = 1.
+	t = np.linspace(-krange, krange, ksize)
+	##t = np.linspace(-20, 20, 81) ## for 128x128 images
+	blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	fig = plt.figure(0, figsize=(8*len(blur_levels),6))
+	fig.clf()
+	for i, sigma in enumerate(blur_levels):
+		if sigma != 0:
+			bump = np.exp(0.5 * -t**2/sigma**2)
+			bump /= np.sum(bump) # normalize the integral to 1
+			kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
+			im_data = np.zeros((1, im_size, im_size, 1))
+			im_data[0, :ksize, :ksize, 0] = kernel
+			#im_in = np.zeros((1, im_size, im_size, 1))
+			#im_in[0, krange, krange, 0] = 1.
+			#im_data = im_in - im_data
+		else:
+			im_data = np.zeros((1, im_size, im_size, 1))
+			im_data[0, 0, 0, 0] = 1.
+		ax = fig.add_subplot(1, len(blur_levels), i+1)
+		apply_fft_win(im_data, None, windowing=False, plot_ax=ax)
+		ax.set_title('Normalized Power Spectrum STD {}'.format(sigma))
+
+	fig.savefig(join(log_dir, 'gauss_response_blur_levels_krange{}.png'.format(krange)), dpi=300)
+
+	'''
 	FFT and IFFT
 	'''
 	#celeba_data = read_celeba(128, data_size=10)
 	#ffts, greys = apply_fft_images(celeba_data, reshape=True)
 	#phase = np.angle(ffts)
-	#mag = 10. #np.abs(ffts)
+	#mag = np.random.uniform(0., 8240., ffts.shape) #np.abs(ffts)
 	#ffts = mag * np.exp(phase * 1.j)
 	#revs = apply_ifft_images(ffts[:, :, :, 0])
-	#pyramid_draw([greys, revs, greys-revs], join(log_dir, 'revs.png'))
+	#pyramid_draw([greys, revs, greys-revs], join(log_dir, 'mag_rand_uni_revs.png'))
 
 	'''
 	Leakage test
