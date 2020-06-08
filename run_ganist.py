@@ -39,6 +39,7 @@ from fft_test import apply_fft_images
 from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density, read_image, readim_from_path, readim_path_from_dir
 from util import block_draw, im_color_borders
 from util import mag_phase_wass_dist, mag_phase_total_variation
+from collections import defaultdict
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
@@ -827,17 +828,18 @@ class CUB_Sampler:
 		max_per_class = test_size // (np.amax(self.cls)+1)
 		test_select = list()
 		train_select =  list()
-		c_pre = None
-		count = 0
+		cls_dict = defaultdict(list)
+		
 		for i, c in enumerate(self.cls):
-			if c != c_pre:
-				count = 0
-			if count < max_per_class:
-				test_select.append(i)
-				count += 1
-			else:
-				train_select.append(i)
-			c_pre = c
+			cls_dict[c].append(i)
+
+		for c in cls_dict.keys():
+			np.random.shuffle(cls_dict[c])
+			test_select.extend(cls_dict[c][:max_per_class])
+			train_select.extend(cls_dict[c][max_per_class:])
+
+		np.random.shuffle(test_select)
+		np.random.shuffle(train_select)
 		return np.array(test_select), np.array(train_select)
 
 	def sample_data(self, data_size=None):
@@ -1751,28 +1753,27 @@ if __name__ == '__main__':
 	train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
-	#lsun_lmdb_dir = '/media/evl/Public/Mahyar/Data/lsun/bedroom_train_lmdb/'
+	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
 	#im_size = 128
-	#train_size = 2000
+	#train_size = 40000
 	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=sample_size+train_size)
-	#### prepare test features
+	#np.random.shuffle(lsun_data)
+	##### prepare test features
 	#test_data = lsun_data[train_size:train_size+sample_size]
 	#test_feats = TFutil.get().extract_feats(test_data, sample_size, blur_levels=blur_levels)
-	#### prepare train images and features
+	##### prepare train images and features
 	#im_data = lsun_data[:train_size]
-	#np.random.shuffle(im_data) ### warning: lsun_data becomes shuffled
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### read cub 128
 	#cub_dir = '/dresden/users/mk1391/evl/Data/cub/CUB_200_2011/'
 	#im_size = 128
-	#### prepare test features
+	##### prepare test features
 	#cub_test_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='test', test_size=sample_size)
 	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=cub_test_sampler)
-	#### prepare train images and features
+	##### prepare train images and features
 	#cub_train_sampler = CUB_Sampler(cub_dir, im_size=im_size, order='train', test_size=sample_size)
 	#im_data = cub_train_sampler.sample_data()
-	#np.random.shuffle(im_data) ### warning: im_data becomes shuffled
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### cosine sampler

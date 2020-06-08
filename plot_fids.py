@@ -24,8 +24,8 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_celeba128cc_gauss41/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/4_logs_wganbn_lap3_celeba128cc_fid50_gwrong_realonly/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/logs_wganbn_cub128bb/run_%d/fid_levels_r.cpk'
-	evl_path+'ganist_lap_logs/logs_wganbn_celeba128cc_hpfid/run_%d/fid_levels_r.cpk',
-	evl_path+'ganist_lap_logs/logs_wganbn_celeba128cc_hpfid/run_%d/fid_levels.cpk'
+	evl_path+'ganist_lap_logs/42_logs_wganbn_celeba128cc_hpfid/run_%d/fid_levels_r.cpk',
+	evl_path+'ganist_lap_logs/42_logs_wganbn_celeba128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/logs_wganbn_cub128bb/run_%d/fid_levels.cpk',
 	#evl_path+'pggan_logs/logs_cub128bb/logs_gdsmall_cub128bb_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/logs_wganbn_bedroom128cc/run_%d/fid_levels_r.cpk',
@@ -92,7 +92,14 @@ def plot_fid_levels(ax, pathname, pname, pcolor):
 	ax.plot(fid_mean+fid_std, linestyle='--', linewidth=0.5, color=pcolor)
 	ax.plot(fid_mean-fid_std, linestyle='--', linewidth=0.5, color=pcolor)
 	ax.set_xticks(range(len(blur_levels)))
-	ax.set_xticklabels(map(str, blur_levels))
+	
+	### for regular SD labels
+	ax.set_xticklabels(map('{:.2f}'.format, blur_levels))
+	
+	### for fractions: in terms of the cutoff radius of first filter which is M/(2*pi)
+	#frac_labels = ['0', '1', r'$\frac{7}{8}$', r'$\frac{6}{8}$', r'$\frac{5}{8}$', 
+	#	r'$\frac{4}{8}$', r'$\frac{3}{8}$', r'$\frac{2}{8}$', r'$\frac{1}{8}$']
+	#ax.set_xticklabels(frac_labels)
 	print(blur_levels)
 	
 if __name__ == '__main__':
@@ -100,21 +107,22 @@ if __name__ == '__main__':
 	fig = plt.figure(0, figsize=(8,6))
 	ax = fig.add_subplot(1,1,1)
 	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_xlabel('Low Pass Filter Std')
+	ax.set_xlabel(r'Low-pass $\sigma$')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('FID Levels High Pass: CelebA 128')
+	ax.set_title('FID HP Levels: CelebA 128')
 
 	### plot
 	pnames = ['True', 'WGAN-GP']
-	pcolors = [0, 1] ## add 0 for real, 6 pggan
-	for i, p in enumerate(fid_paths):
+	pcolors = [0] ## add 0 for real, 6 pggan
+	for i, _ in enumerate(pcolors):
+		p = fid_paths[i]
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
 	#fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_celeba128cc.pdf')
 	#fig.savefig('/home/mahyar/miss_details_images/temp/fids50_true_cub128bb.pdf')
-	fig.savefig(evl_path+'ganist_lap_logs/plots/fids50_hp_wganbn_celeba128cc_5ktemp.pdf')
+	fig.savefig(evl_path+'ganist_lap_logs/plots/fids_hp_wganbn_celeba128cc_true.pdf')
 
 
 

@@ -151,8 +151,10 @@ if __name__ == '__main__':
 	blur_num = 7
 	blur_delta = 1. / 8
 	### reducing the filter radius by blur_delta every step
+	blur_init = blur_levels[-1]
 	for i in range(blur_num):
-		blur_levels.append(1. / (1. / blur_levels[-1] - blur_delta))
+		blur_levels.append(
+			1. / ((1. / blur_levels[-1]) - (blur_delta / blur_init)))
 	##t = np.linspace(-20, 20, 81) ## for 128x128 images
 	#blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
 	fig = plt.figure(0, figsize=(8*len(blur_levels),6))
@@ -172,9 +174,9 @@ if __name__ == '__main__':
 			im_data[0, 0, 0, 0] = 1.
 		ax = fig.add_subplot(1, len(blur_levels), i+1)
 		apply_fft_win(im_data, None, windowing=False, plot_ax=ax)
-		ax.set_title('Normalized Power Spectrum STD {:.2f}'.format(sigma))
+		ax.set_title(r'Normalized Power Spectrum $\sigma=${:.2f}'.format(sigma))
 
-	fig.savefig(join(log_dir, 'gauss_response_blur_levels_delta_krange{}.png'.format(krange)), dpi=300)
+	fig.savefig(join(log_dir, 'gauss_response_blur_levels_delta_krange{}_ir1.png'.format(krange)), dpi=300)
 
 	'''
 	FFT and IFFT

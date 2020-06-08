@@ -226,7 +226,7 @@ def tf_binomial_blur(im, kernel):
 tf applies gaussian blur.
 im: shape [b, h, w, c]
 '''
-def tf_gauss_blur(im, sigma, krange=20):
+def tf_gauss_blur(im, sigma, krange=25):
 	if sigma == 0:
 		return im
 	ksize = 2*krange + 1
