@@ -1750,7 +1750,7 @@ if __name__ == '__main__':
 	#	im_size, center_crop=(121, 89), verbose=True)
 	im_data = readim_from_path(im_paths[:train_size], 
 		im_size, center_crop=(121, 89), verbose=True)
-	train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
+	#train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
 	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
@@ -1822,21 +1822,21 @@ if __name__ == '__main__':
 
 	### load ganist
 	#load_path = join(log_path_snap, 'model_best.h5') ## *TOY
-	load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
-	ganist.load(load_path.format(run_seed)) ## *TOY
+	#load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
+	#ganist.load(load_path.format(run_seed)) ## *TOY
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_sample_size = draw_size # 10000 ## *TOY
-	g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
-	g_feats = TFutil.get().extract_feats(None, sample_size, 
-		blur_levels=blur_levels, ganist=ganist) ## *TOY
-	print('>>> g_samples shape: {}'.format(g_samples.shape))
-	im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
-	im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
+	#g_sample_size = draw_size # 10000 ## *TOY
+	#g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
+	#g_feats = TFutil.get().extract_feats(None, sample_size, 
+	#	blur_levels=blur_levels, ganist=ganist) ## *TOY
+	#print('>>> g_samples shape: {}'.format(g_samples.shape))
+	#im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
+	#im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
 	#sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10) ## *TOY
 	#sys.exit(0)
 
@@ -1874,15 +1874,16 @@ if __name__ == '__main__':
 	#from theano import tensor as T
 	#import lasagne
 	### tensorflow (comment when using theano pggan)
-	#sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
+	sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
 
 	#net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cub128bb/results_gdsmall_cub_1/000-pgan-cub-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
-	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
-	#pg_samples = pg_sampler.sample_data(1024)
-	#print('>>> pg_samples shape: {}'.format(pg_samples.shape))
-	#im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
-	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
+	net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/gdsmall_results_{seed}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	pg_samples = pg_sampler.sample_data(1024)
+	print('>>> pg_samples shape: {}'.format(pg_samples.shape))
+	im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
 
 	'''
 	Read data from ImageNet and BigGan
@@ -1956,7 +1957,7 @@ if __name__ == '__main__':
 	'''
 	### compute multi level fid (second line for real data fid levels) ## *TOY
 	fid_list = compute_fid_levels(g_feats, test_feats)
-	fid_list_r = compute_fid_levels(train_feats, test_feats)
+	#fid_list_r = compute_fid_levels(train_feats, test_feats)
 	#### plot fid_levels
 	fig, ax = plt.subplots(figsize=(8, 6))
 	ax.clear()
@@ -1976,22 +1977,22 @@ if __name__ == '__main__':
 		pk.dump([blur_levels, fid_list], fs)
 
 	### plot fid_levels_r
-	fig, ax = plt.subplots(figsize=(8, 6))
-	ax.clear()
-	ax.plot(fid_list_r)
-	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_title('FID levels')
-	ax.set_xlabel('Filter sigma')
-	#ax.set_xlabel('Filter Size')
-	ax.set_ylabel('FID')
-	ax.set_xticks(range(len(blur_levels)))
-	ax.set_xticklabels(map('{:.2f}'.format, blur_levels))
-	#ax.legend(loc=0)
-	fig.savefig(log_path+'/fid_levels_r.png', dpi=300)
-	plt.close(fig)
-	### save fids
-	with open(log_path+'/fid_levels_r.cpk', 'wb+') as fs:
-		pk.dump([blur_levels, fid_list_r], fs)
+	#fig, ax = plt.subplots(figsize=(8, 6))
+	#ax.clear()
+	#ax.plot(fid_list_r)
+	#ax.grid(True, which='both', linestyle='dotted')
+	#ax.set_title('FID levels')
+	#ax.set_xlabel('Filter sigma')
+	##ax.set_xlabel('Filter Size')
+	#ax.set_ylabel('FID')
+	#ax.set_xticks(range(len(blur_levels)))
+	#ax.set_xticklabels(map('{:.2f}'.format, blur_levels))
+	##ax.legend(loc=0)
+	#fig.savefig(log_path+'/fid_levels_r.png', dpi=300)
+	#plt.close(fig)
+	#### save fids
+	#with open(log_path+'/fid_levels_r.cpk', 'wb+') as fs:
+	#	pk.dump([blur_levels, fid_list_r], fs)
 
 	sess.close()
 
