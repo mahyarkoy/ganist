@@ -282,10 +282,10 @@ fc: f_center/f_sample which must be in [0, 0.5]
 '''
 def tf_freq_shift(im, fc_x, fc_y):
 	im = tf.convert_to_tensor(im, dtype=tf_dtype)
-	im_size = im.get_shape().as_list()[1]
+	b, h, w, c = im.get_shape().as_list()
 
-	kernel_loc = 2.*np.pi*fc_x * np.arange(im_size).reshape((1, 1, im_size, 1)) + \
-		2.*np.pi*fc_y * np.arange(im_size).reshape((1, im_size, 1, 1))
+	kernel_loc = 2.*np.pi*fc_x * np.arange(w).reshape((1, 1, w, 1)) + \
+		2.*np.pi*fc_y * np.arange(h).reshape((1, h, 1, 1))
 	kernel_cos = np.cos(kernel_loc)
 	kernel_sin = np.sin(kernel_loc)
 	kernel_cos = tf.convert_to_tensor(kernel_cos, dtype=tf_dtype)

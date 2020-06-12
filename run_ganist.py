@@ -746,7 +746,9 @@ def sample_ganist(ganist, sample_size, sampler=None, batch_size=64,
 			gen_only=True, zi_data=batch_zi, 
 			output_type=output_type, filter_only=filter_only))
 
-	return [np.concatenate([s[i] for s in res_list], axis=0)[:sample_size, ...] for i in range(len(res_list[0]))]
+	shifter = lambda x: x
+	shifter = lambda x: TFutil.get().freq_shift(x, 0.5, 0.5) # uncomment for freq shift
+	return [np.concatenate([shifter(s[i]) for s in res_list], axis=0)[:sample_size, ...] for i in range(len(res_list[0]))]
 
 def blur_images_levels(imgs, blur_levels, blur_type='gauss'):
 	if blur_type == 'binomial':
@@ -885,14 +887,16 @@ class PG_Sampler:
 				for batch_start in range(0, data_size, batch_size):
 					latents = np.random.randn(batch_size, *self.Gs.input_shapes[0][1:])
 					labels = np.zeros([latents.shape[0]] + self.Gs.input_shapes[1][1:])
-					images = self.Gs.run(latents, labels)
-					data_list.append(images.transpose(0, 2, 3, 1)) # NCHW => NHWC
+					images = self.Gs.run(latents, labels).transpose(0, 2, 3, 1) # NCHW => NHWC
+					images = TFutil.get().freq_shift(images, 0.5, 0.5) # uncomment for freq shift
+					data_list.append(images)
 		else:
 			for batch_start in range(0, data_size, batch_size):
 				latents = np.random.randn(batch_size, *self.Gs.input_shape[1:]).astype(np.float32)
 				labels = np.zeros((batch_size, 0), dtype=np.float32)
-				images = self.gen_fn(latents, labels)
-				data_list.append(images.transpose(0, 2, 3, 1)) # NCHW => NHWC
+				images = self.gen_fn(latents, labels).transpose(0, 2, 3, 1) # NCHW => NHWC
+				images = TFutil.get().freq_shift(images, 0.5, 0.5) # uncomment for freq shift
+				data_list.append(images)
 
 		return np.concatenate(data_list, axis=0)[:data_size]
 
@@ -915,6 +919,7 @@ class TFutil:
 			self.blur_dict_gauss = dict()
 			self.im_dict = dict()
 			self.upsample_dict = dict()
+			self.freq_shift_dict = dict()
 			self.inception_input = inception_input
 			self.inception_feat = inception_feat
 
@@ -1015,6 +1020,27 @@ class TFutil:
 			imgs_us[batch_start:batch_end, ...] = self.sess.run(us_layer, 
 				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
 		return imgs_us
+
+	def freq_shift(self, imgs, fc_x, fc_y, batch_size=64):
+		imgs_size = imgs.shape[0]
+		imgs_sh = np.array(imgs)
+		### find or construct image placeholder
+		im_key = imgs.shape[1:]
+		if im_key not in self.im_dict:
+			self.im_dict[im_key] = \
+				tf.placeholder(tf.float32, (None,)+imgs.shape[1:])
+		im_layer = self.im_dict[im_key]
+		### find or construct shift for the given image placeholder
+		f_key = im_key + (fc_x, fc_y)
+		if f_key not in self.freq_shift_dict:
+			self.freq_shift_dict[f_key], _ = tf_ganist.tf_freq_shift(im_layer, fc_x, fc_y)
+		sh_layer = self.freq_shift_dict[f_key]
+		### apply
+		for batch_start in range(0, imgs_size, batch_size):
+			batch_end = min(batch_start+batch_size, imgs_size)
+			imgs_sh[batch_start:batch_end, ...] = self.sess.run(sh_layer, 
+				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
+		return imgs_sh
 
 	'''
 	If sampler is provided: samples by calling sample_data on the sampler (class object)
@@ -1878,11 +1904,12 @@ if __name__ == '__main__':
 
 	#net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cub128bb/results_gdsmall_cub_1/000-pgan-cub-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
-	net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/gdsmall_results_{seed}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/results_gdsmall_nomirror_sceleba_{seed}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
 	pg_samples = pg_sampler.sample_data(1024)
 	print('>>> pg_samples shape: {}'.format(pg_samples.shape))
 	im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
+	im_block_draw(TFutil.get().freq_shift(pg_samples, 0.5, 0.5), 5, log_path+'/pggan_samples_sh.png', border=True)
 	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
 
 	'''

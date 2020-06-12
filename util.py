@@ -188,6 +188,19 @@ def im_color_borders(im_data, im_labels, max_label=None, color_map=None, color_s
 	return rgb_colors_t
 
 '''
+Shifts im frequencies with fc_x, fc_y and returns cos and sin components.
+im: shape [b, h, w, c]
+fc: f_center/f_sample which must be in [0, 0.5]
+'''
+def np_freq_shift(im, fc_x, fc_y):
+	b, h, w, c = im.shape
+	kernel_loc = 2.*np.pi*fc_x * np.arange(w).reshape((1, 1, w, 1)) + \
+		2.*np.pi*fc_y * np.arange(h).reshape((1, h, 1, 1))
+	kernel_cos = np.cos(kernel_loc)
+	kernel_sin = np.sin(kernel_loc)
+	return im * kernel_cos, im * kernel_sin
+
+'''
 DFT of the 2d discrete non-periodic input image.
 im: must be 2d array
 freqs: a 1d array of freqs to evaluate the dft at (max 0.5)
