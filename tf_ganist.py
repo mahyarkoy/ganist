@@ -602,7 +602,7 @@ def build_gen_v2(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 	train_phase = True
 	use_pixelnorm = True
 	use_batchnorm = False
-	user_wscale = True
+	use_wscale = True
 	with tf.variable_scope('g_net'):
 		with tf.variable_scope(sub_scope):
 			def pn(x): 
@@ -636,6 +636,7 @@ def build_gen_v2(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 
 def build_dis_v2(data_layer, train_phase, im_size, sub_scope='or', reuse=False):
 	act = lrelu
+	use_wscale = True
 	with tf.variable_scope('d_net', reuse=reuse):
 		with tf.variable_scope(sub_scope):
 
