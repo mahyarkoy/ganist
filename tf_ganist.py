@@ -10,13 +10,116 @@ import os
 tf_dtype = tf.float32
 np_dtype = 'float32'
 
-### Operations
-def lrelu(x, leak=0.1, name="lrelu"):
-	with tf.variable_scope(name):
-		f1 = 0.5 * (1 + leak)
-		f2 = 0.5 * (1 - leak)
-		return f1 * x + f2 * abs(x)
+### Operations from pggan
+#----------------------------------------------------------------------------
+# Get/create weight tensor for a convolutional or fully-connected layer.
 
+def get_weight(shape, gain=np.sqrt(2), use_wscale=False, fan_in=None):
+	if fan_in is None: fan_in = np.prod(shape[:-1])
+	std = gain / np.sqrt(fan_in) # He init
+	if use_wscale:
+		wscale = tf.constant(np.float32(std), name='wscale')
+		return tf.get_variable('weight', shape=shape, initializer=tf.initializers.random_normal()) * wscale
+	else:
+		return tf.get_variable('weight', shape=shape, initializer=tf.initializers.random_normal(0, std))
+
+#----------------------------------------------------------------------------
+# Fully-connected layer.
+
+def dense_ws(x, fmaps, gain=np.sqrt(2), use_wscale=False, scope='dense', reuse=False):
+	with tf.variable_scope(scope, reuse=reuse):
+		if len(x.shape) > 2:
+			x = tf.reshape(x, [-1, np.prod(x.get_shape().as_list()[1:])])
+		w = get_weight([x.shape[-1].value, fmaps], gain=gain, use_wscale=use_wscale)
+		w = tf.cast(w, x.dtype)
+		return tf.matmul(x, w)
+
+#----------------------------------------------------------------------------
+# Convolutional layer.
+
+def conv2d_ws(x, fmaps, kernel=5, gain=np.sqrt(2), use_wscale=False, scope='conv', reuse=False):
+	with tf.variable_scope(scope, reuse=reuse):
+		assert kernel >= 1 and kernel % 2 == 1
+		w = get_weight([kernel, kernel, x.shape[-1].value, fmaps], gain=gain, use_wscale=use_wscale)
+		w = tf.cast(w, x.dtype)
+		return tf.nn.conv2d(x, w, strides=[1,1,1,1], padding='SAME')
+
+#----------------------------------------------------------------------------
+# Apply bias to the given activation tensor.
+
+def apply_bias(x, scope='bias', reuse=False):
+	with tf.variable_scope(scope, reuse=reuse):
+		b = tf.get_variable('bias', shape=[x.shape[-1]], initializer=tf.initializers.zeros())
+		b = tf.cast(b, x.dtype)
+		if len(x.shape) == 2:
+			return x + b
+		else:
+			return x + tf.reshape(b, [1, 1, 1, -1])
+
+#----------------------------------------------------------------------------
+# Leaky ReLU activation. Same as tf.nn.leaky_relu, but supports FP16.
+
+def lrelu(x, alpha=0.2):
+	with tf.name_scope('LeakyRelu'):
+		alpha = tf.constant(alpha, dtype=x.dtype, name='alpha')
+		return tf.maximum(x * alpha, x)
+
+#----------------------------------------------------------------------------
+# Nearest-neighbor upscaling layer.
+
+def upscale2d(x, factor=2):
+	assert isinstance(factor, int) and factor >= 1
+	if factor == 1: return x
+	s = x.shape
+	x = tf.reshape(x, [-1, s[1], 1, s[2], 1, s[3]])
+	x = tf.tile(x, [1, 1, factor, 1, factor, 1])
+	x = tf.reshape(x, [-1, s[1] * factor, s[2] * factor, s[3]])
+	return x
+
+#----------------------------------------------------------------------------
+# Fused upscale2d + conv2d.
+# Faster and uses less memory than performing the operations separately.
+
+def upscale2d_conv2d(x, fmaps, kernel=5, gain=np.sqrt(2), use_wscale=False, scope='us_conv', reuse=False):
+	with tf.variable_scope(scope, reuse=reuse):
+		assert kernel >= 1 and kernel % 2 == 1
+		w = get_weight([kernel, kernel, fmaps, x.shape[-1].value], gain=gain, use_wscale=use_wscale, fan_in=(kernel**2)*x.shape[-1].value)
+		w = tf.pad(w, [[1,1], [1,1], [0,0], [0,0]], mode='CONSTANT')
+		w = tf.add_n([w[1:, 1:], w[:-1, 1:], w[1:, :-1], w[:-1, :-1]])
+		w = tf.cast(w, x.dtype)
+		os = [tf.shape(x)[0], x.shape[1] * 2, x.shape[2] * 2, fmaps]
+		return tf.nn.conv2d_transpose(x, w, os, strides=[1,2,2,1], padding='SAME')
+
+#----------------------------------------------------------------------------
+# Box filter downscaling layer.
+
+def downscale2d(x, factor=2):
+	assert isinstance(factor, int) and factor >= 1
+	if factor == 1: return x
+	ksize = [1, factor, factor, 1]
+	return tf.nn.avg_pool(x, ksize=ksize, strides=ksize, padding='VALID') # NOTE: requires tf_config['graph_options.place_pruned_graph'] = True
+
+#----------------------------------------------------------------------------
+# Fused conv2d + downscale2d.
+# Faster and uses less memory than performing the operations separately.
+
+def conv2d_downscale2d(x, fmaps, kernel=5, gain=np.sqrt(2), use_wscale=False, scope='conv_ds', reuse=False):
+	with tf.variable_scope(scope, reuse=reuse):
+		assert kernel >= 1 and kernel % 2 == 1
+		w = get_weight([kernel, kernel, x.shape[-1].value, fmaps], gain=gain, use_wscale=use_wscale)
+		w = tf.pad(w, [[1,1], [1,1], [0,0], [0,0]], mode='CONSTANT')
+		w = tf.add_n([w[1:, 1:], w[:-1, 1:], w[1:, :-1], w[:-1, :-1]]) * 0.25
+		w = tf.cast(w, x.dtype)
+		return tf.nn.conv2d(x, w, strides=[1,2,2,1], padding='SAME')
+
+#----------------------------------------------------------------------------
+# Pixelwise feature vector normalization.
+
+def pixel_norm(x, epsilon=1e-8):
+	return x * tf.rsqrt(tf.reduce_mean(tf.square(x), axis=-1, keepdims=True) + epsilon)
+
+		
+### Operations
 def conv2d(input_, output_dim,
 		   k_h=5, k_w=5, d_h=1, d_w=1, k_init=tf.contrib.layers.xavier_initializer(),
 		   scope=None, reuse=False, 
@@ -401,6 +504,161 @@ def fs_layer(layer, fc_x, fc_y, out_size):
 	#print('>>> FS_Layer shape: {}'.format(out.get_shape().as_list()))
 	return out
 
+def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
+	train_phase = True
+	ol = list()
+	with tf.variable_scope('g_net'):
+		with tf.variable_scope(sub_scope):
+			bn = tf.contrib.layers.batch_norm
+			### setup based on size
+			if im_size == 32:
+				z_fc = act(bn(dense(zi, 4*4*256, scope='fcz'),
+					is_training=train_phase))
+				h0 = tf.reshape(z_fc, [-1, 4, 4, 256])
+				h1 = h0
+			elif im_size == 64:
+				z_fc = act(bn(dense(zi, 4*4*512, scope='fcz'),
+					is_training=train_phase))
+				h0 = tf.reshape(z_fc, [-1, 4, 4, 512])
+				#h1 = h0
+				h0_us = tf.image.resize_nearest_neighbor(h0, [8, 8], name='us0')
+				h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
+					is_training=train_phase))
+			elif im_size == 128:
+				z_fc = act(bn(dense(zi, 8*8*512, scope='fcz'),
+					is_training=train_phase))
+				h0 = tf.reshape(z_fc, [-1, 8, 8, 512])
+				h0_us = tf.image.resize_nearest_neighbor(h0, [16, 16], name='us0')
+				h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
+					is_training=train_phase))
+			else:
+				raise ValueError('{} for generator im_size is not defined!'.format(im_size))
+
+			### us version: decoding fc code with upsampling and conv hidden layers
+			h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
+			h2 = act(bn(conv2d(h1_us, 128, scope='conv1'),
+				is_training=train_phase))
+
+			h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
+			h3 = act(bn(conv2d(h2_us, 64, scope='conv2'),
+				is_training=train_phase))
+		
+			h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
+			h4 = conv2d(h3_us, data_dim[-1], scope='conv3')
+
+			### resnext version
+			'''
+			btnk_dim = 64
+			h2 = resnext(h1, 128, btnk_dim, 'res1', train_phase, 
+						op_type='up', bn=False, act=act)
+			h3 = resnext(h2, 64, btnk_dim//2, 'res2', train_phase,
+						op_type='up', bn=False, act=act)
+			h4 = resnext(h3, 32, btnk_dim//4, 'res3', train_phase, 
+						op_type='up', bn=False, act=act)
+			h5 = conv2d(h4, data_dim[-1], scope='convo')
+			'''
+			o = tf.tanh(h4)
+		return o
+
+def build_dis_v1(data_layer, train_phase, im_size, sub_scope='or', reuse=False):
+	act = lrelu
+	with tf.variable_scope('d_net'):
+		with tf.variable_scope(sub_scope):
+			bn = tf.contrib.layers.batch_norm
+
+			### encoding the 28*28*3 image with conv into 3*3*256
+			h0 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv0', reuse=reuse))
+			h1 = act(conv2d(h0, 128, d_h=2, d_w=2, scope='conv1', reuse=reuse))
+			h2 = act(conv2d(h1, 256, d_h=2, d_w=2, scope='conv2', reuse=reuse))
+			#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
+			'''
+			### resnext version
+			btnk_dim = 64
+			h1 = resnext(data_layer, 32, btnk_dim//4, 'res1', train_phase, 
+						op_type='down', bn=False, act=act, reuse=reuse)
+			h2 = resnext(h1, 64, btnk_dim//2, 'res2', train_phase, 
+						op_type='down', bn=False, act=act, reuse=reuse)
+			h3 = resnext(h2, 128, btnk_dim, 'res3', train_phase, 
+						op_type='down', bn=False, act=act, reuse=reuse)
+			'''
+
+			### im_size setup
+			if im_size == 32:
+				h3 = h2
+			elif im_size == 64:
+				h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+			elif im_size == 128:
+				h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
+			else:
+				raise ValueError('{} for discriminator im_size is not defined!'.format(im_size))
+
+			### fully connected discriminator
+			flat = tf.contrib.layers.flatten(h3)
+			o = dense(flat, 1, scope='fco', reuse=reuse)
+			return o, flat
+
+def build_gen_v2(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
+	act = lrelu
+	train_phase = True
+	use_pixelnorm = True
+	use_batchnorm = False
+	user_wscale = True
+	with tf.variable_scope('g_net'):
+		with tf.variable_scope(sub_scope):
+			def pn(x): 
+				return pixel_norm(x, epsilon=1e-8) if use_pixelnorm else x
+			def bn(x, **kwargs): 
+				return tf.contrib.layers.batch_norm(x, is_training=kwargs['is_training']) if use_batchnorm else x
+
+			### setup based on size
+			if im_size == 32:
+				z_fc = pn(act(apply_bias(dense_ws(zi, 4*4*256, use_wscale=use_wscale, scope='fcz'), scope='fcz')))
+				h0 = tf.reshape(z_fc, [-1, 4, 4, 256])
+				h1 = h0
+			elif im_size == 64:
+				z_fc = pn(act(apply_bias(dense_ws(zi, 4*4*512, use_wscale=use_wscale, scope='fcz'), scope='fcz')))
+				h0 = tf.reshape(z_fc, [-1, 4, 4, 512])
+				#h1 = h0
+				h1 = pn(act(apply_bias(upscale2d_conv2d(h0, 256, use_wscale=use_wscale, scope='conv0'), scope='conv0')))
+			elif im_size == 128:
+				z_fc = pn(act(apply_bias(dense_ws(zi, 8*8*512, use_wscale=use_wscale, scope='fcz'), scope='fcz')))
+				h0 = tf.reshape(z_fc, [-1, 8, 8, 512])
+				h1 = pn(act(apply_bias(upscale2d_conv2d(h0, 256, use_wscale=use_wscale, scope='conv0'), scope='conv0')))
+			else:
+				raise ValueError('{} for generator im_size is not defined!'.format(im_size))
+
+			### us version: decoding fc code with upsampling and conv hidden layers
+			h2 = pn(act(apply_bias(upscale2d_conv2d(h1, 128, use_wscale=use_wscale, scope='conv1'), scope='conv1')))
+			h3 = pn(act(apply_bias(upscale2d_conv2d(h2, 64, use_wscale=use_wscale, scope='conv2'), scope='conv2')))
+			h4 = apply_bias(upscale2d_conv2d(h3, data_dim[-1], use_wscale=use_wscale, scope='conv3'), scope='conv3')
+			o = tf.tanh(h4)
+		return o
+
+def build_dis_v2(data_layer, train_phase, im_size, sub_scope='or', reuse=False):
+	act = lrelu
+	with tf.variable_scope('d_net', reuse=reuse):
+		with tf.variable_scope(sub_scope):
+
+			### encoding the image with conv and downsampling
+			h0 = act(apply_bias(conv2d_downscale2d(data_layer, 64, use_wscale=use_wscale, scope='conv0'), scope='conv0'))
+			h1 = act(apply_bias(conv2d_downscale2d(h0, 128, use_wscale=use_wscale, scope='conv1'), scope='conv1'))
+			h2 = act(apply_bias(conv2d_downscale2d(h1, 256, use_wscale=use_wscale, scope='conv2'), scope='conv2'))
+
+			### im_size setup
+			if im_size == 32:
+				h3 = h2
+			elif im_size == 64:
+				h3 = act(apply_bias(conv2d_downscale2d(h2, 512, use_wscale=use_wscale, scope='conv3'), scope='conv3'))
+			elif im_size == 128:
+				h3 = act(apply_bias(conv2d_downscale2d(h2, 512, use_wscale=use_wscale, scope='conv3'), scope='conv3'))
+			else:
+				raise ValueError('{} for discriminator im_size is not defined!'.format(im_size))
+
+			### fully connected discriminator
+			flat = tf.reshape(h3, [-1, np.prod(h3.get_shape().as_list()[1:])])
+			o = dense_ws(h3, 1, scope='fco')
+			return o, flat
+
 ### GAN Class definition
 class Ganist:
 	def __init__(self, sess, log_dir='logs'):
@@ -446,6 +704,8 @@ class Ganist:
 		#self.g_act = tf.tanh
 		self.d_act = lrelu
 		self.g_act = tf.nn.relu
+		self.build_gen = build_gen_v2
+		self.build_dis = build_dis_v2
 
 		### init graph and session
 		self.build_graph()
@@ -513,7 +773,7 @@ class Ganist:
 		#		g_layer_list.append(tf_binomial_blur(tf_upsample(comb_list[-1]), 2.*blur_kernel))
 		#else:
 		for i in range(2*len(freq_list)):
-			g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
+			g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 				im_size=gen_size, sub_scope='level_{}_{}'.format(scope, i))
 			g_layer_list.append(g_layer)
 			gen_collect.append(g_layer)
@@ -529,14 +789,14 @@ class Ganist:
 			g_lp_list.append(g_us)
 
 		### build delta generator (must use im_size in recursive case)
-		g_delta = self.build_gen(zi_input, self.g_act, self.train_phase, 
+		g_delta = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 			im_size=im_size, sub_scope='level_{}_delta'.format(scope))#[:, :, :, 0:3]
 		gen_collect.append(g_delta)
 		g_delta_lp = g_delta #tf_binomial_blur(tf_upsample(g_delta), 2.*blur_kernel)
 		g_delta_ds = tf_downsample(tf_binomial_blur(
 			tf_downsample(tf_binomial_blur(g_delta, blur_kernel)), blur_kernel))
 		
-		#g_delta_fill = self.build_gen(zi_input, self.g_act, self.train_phase, 
+		#g_delta_fill = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 		#	im_size=im_size, sub_scope='level_{}_delta_fill'.format(scope))#[:, :, :, 0:3]
 		#gen_collect.append(g_delta_fill)
 		#g_delta_hp, _ = tf_freq_shift(g_delta_fill, 0.5, 0.5)
@@ -608,9 +868,9 @@ class Ganist:
 
 	def build_wgan_fs(self, im_input, zi_input, im_size):
 		### generators
-		g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
+		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 				im_size=im_size, sub_scope='main')
-		g_layer2 = self.build_gen(zi_input, self.g_act, self.train_phase, 
+		g_layer2 = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 				im_size=im_size, sub_scope='comp')
 		g_layer2, _ = tf_freq_shift(g_layer2, 0.5, 0.5)
 
@@ -637,20 +897,38 @@ class Ganist:
 
 	def build_wgan(self, im_input, zi_input, im_size):
 		### generators
-		g_layer = self.build_gen(zi_input, self.g_act, self.train_phase, 
-				im_size=im_size, sub_scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
+		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='main') ### subscope 'l2' for older wganbn, 'main' for more recent
 		gen_collect = [g_layer]
 		im_collect = [im_input]
 		comb_list = [g_layer]
 
 		### discriminators
 		d_loss, g_loss, rg_grad_norm_output = \
-				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
+				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='main') ### subscope 'l2' for older wganbn, 'main' for more recent
 		d_loss_list = [d_loss]
 		g_loss_list = [g_loss]
 		rg_grad_norm_list = [rg_grad_norm_output]
 
-		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list	
+		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
+
+	def build_wgan_gshift(self, im_input, zi_input, im_size):
+		### generators
+		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='main') ### subscope 'l2' for older wganbn, 'main' for more recent
+		g_layer, _ = tf_freq_shift(g_layer, 0.5, 0.5)
+		gen_collect = [g_layer]
+		im_collect = [im_input]
+		comb_list = [g_layer]
+
+		### discriminators
+		d_loss, g_loss, rg_grad_norm_output = \
+				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='main') ### subscope 'l2' for older wganbn, 'main' for more recent
+		d_loss_list = [d_loss]
+		g_loss_list = [g_loss]
+		rg_grad_norm_list = [rg_grad_norm_output]
+
+		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
 
 	def build_graph(self):
 		with tf.name_scope('ganist'):
@@ -907,99 +1185,6 @@ class Ganist:
 			raise ValueError('>>> g_loss_type: %s is not defined!' % self.g_loss_type)
 
 		return tf.reduce_mean(g_loss)
-
-	def build_gen(self, zi, act, train_phase, im_size, sub_scope='or'):
-		train_phase = True
-		ol = list()
-		with tf.variable_scope('g_net'):
-			with tf.variable_scope(sub_scope):
-				bn = tf.contrib.layers.batch_norm
-				### setup based on size
-				if im_size == 32:
-					z_fc = act(bn(dense(zi, 4*4*256, scope='fcz'),
-						is_training=train_phase))
-					h0 = tf.reshape(z_fc, [-1, 4, 4, 256])
-					h1 = h0
-				elif im_size == 64:
-					z_fc = act(bn(dense(zi, 4*4*512, scope='fcz'),
-						is_training=train_phase))
-					h0 = tf.reshape(z_fc, [-1, 4, 4, 512])
-					#h1 = h0
-					h0_us = tf.image.resize_nearest_neighbor(h0, [8, 8], name='us0')
-					h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
-						is_training=train_phase))
-				elif im_size == 128:
-					z_fc = act(bn(dense(zi, 8*8*512, scope='fcz'),
-						is_training=train_phase))
-					h0 = tf.reshape(z_fc, [-1, 8, 8, 512])
-					h0_us = tf.image.resize_nearest_neighbor(h0, [16, 16], name='us0')
-					h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
-						is_training=train_phase))
-				else:
-					raise ValueError('{} for generator im_size is not defined!'.format(im_size))
-
-				### us version: decoding fc code with upsampling and conv hidden layers
-				h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
-				h2 = act(bn(conv2d(h1_us, 128, scope='conv1'),
-					is_training=train_phase))
-
-				h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
-				h3 = act(bn(conv2d(h2_us, 64, scope='conv2'),
-					is_training=train_phase))
-			
-				h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
-				h4 = conv2d(h3_us, self.data_dim[-1], scope='conv3')
-
-				### resnext version
-				'''
-				btnk_dim = 64
-				h2 = resnext(h1, 128, btnk_dim, 'res1', train_phase, 
-							op_type='up', bn=False, act=act)
-				h3 = resnext(h2, 64, btnk_dim//2, 'res2', train_phase,
-							op_type='up', bn=False, act=act)
-				h4 = resnext(h3, 32, btnk_dim//4, 'res3', train_phase, 
-							op_type='up', bn=False, act=act)
-				h5 = conv2d(h4, self.data_dim[-1], scope='convo')
-				'''
-				o = tf.tanh(h4)
-			return o
-
-	def build_dis(self, data_layer, train_phase, im_size, sub_scope='or', reuse=False):
-		act = self.d_act
-		with tf.variable_scope('d_net'):
-			with tf.variable_scope(sub_scope):
-				bn = tf.contrib.layers.batch_norm
-
-				### encoding the 28*28*3 image with conv into 3*3*256
-				h0 = act(conv2d(data_layer, 64, d_h=2, d_w=2, scope='conv0', reuse=reuse))
-				h1 = act(conv2d(h0, 128, d_h=2, d_w=2, scope='conv1', reuse=reuse))
-				h2 = act(conv2d(h1, 256, d_h=2, d_w=2, scope='conv2', reuse=reuse))
-				#h4 = conv2d(h2, 1, d_h=1, d_w=1, k_h=1, k_w=1, padding='VALID', scope='conv4', reuse=reuse)
-				'''
-				### resnext version
-				btnk_dim = 64
-				h1 = resnext(data_layer, 32, btnk_dim//4, 'res1', train_phase, 
-							op_type='down', bn=False, act=act, reuse=reuse)
-				h2 = resnext(h1, 64, btnk_dim//2, 'res2', train_phase, 
-							op_type='down', bn=False, act=act, reuse=reuse)
-				h3 = resnext(h2, 128, btnk_dim, 'res3', train_phase, 
-							op_type='down', bn=False, act=act, reuse=reuse)
-				'''
-
-				### im_size setup
-				if im_size == 32:
-					h3 = h2
-				elif im_size == 64:
-					h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
-				elif im_size == 128:
-					h3 = act(conv2d(h2, 512, d_h=2, d_w=2, scope='conv3', reuse=reuse))
-				else:
-					raise ValueError('{} for discriminator im_size is not defined!'.format(im_size))
-
-				### fully connected discriminator
-				flat = tf.contrib.layers.flatten(h3)
-				o = dense(flat, 1, scope='fco', reuse=reuse)
-				return o, flat
 
 	def build_fc(self, hidden_layer, reuse=False):
 		with tf.variable_scope('d_net'):

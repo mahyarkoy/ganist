@@ -526,7 +526,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 			draw_path = log_path_draw+'/gen_sample_%d' % itr_total if itr_total % draw_step == 0 \
 				else None
 			fid_dist, net_stats = eval_ganist(ganist, eval_feats, draw_path, labs=train_labs)
-			#eval_logs.append(fid_dist) ## *TOY
+			eval_logs.append(fid_dist) ## comment for *TOY
 			stats_logs.append(net_stats)
 
 			### log g layer stats
@@ -692,7 +692,7 @@ def train_ganist(ganist, im_data, eval_feats, labels=None):
 			#	plot_layer_stats(d_nz_list, itrs_logs, 'd_nz', log_path, beta_conf=0)
 
 			### save best model
-			if False: #fid_dist < fid_best: ### *TOY
+			if fid_dist < fid_best: ### False for *TOY
 				fid_best = fid_dist
 				fid_best_itr = itr_total
 				ganist.save(log_path_snap+'/model_best.h5')
@@ -746,9 +746,7 @@ def sample_ganist(ganist, sample_size, sampler=None, batch_size=64,
 			gen_only=True, zi_data=batch_zi, 
 			output_type=output_type, filter_only=filter_only))
 
-	shifter = lambda x: x
-	shifter = lambda x: TFutil.get().freq_shift(x, 0.5, 0.5) # uncomment for freq shift
-	return [np.concatenate([shifter(s[i]) for s in res_list], axis=0)[:sample_size, ...] for i in range(len(res_list[0]))]
+	return [np.concatenate([s[i] for s in res_list], axis=0)[:sample_size, ...] for i in range(len(res_list[0]))]
 
 def blur_images_levels(imgs, blur_levels, blur_type='gauss'):
 	if blur_type == 'binomial':
@@ -888,14 +886,12 @@ class PG_Sampler:
 					latents = np.random.randn(batch_size, *self.Gs.input_shapes[0][1:])
 					labels = np.zeros([latents.shape[0]] + self.Gs.input_shapes[1][1:])
 					images = self.Gs.run(latents, labels).transpose(0, 2, 3, 1) # NCHW => NHWC
-					images = TFutil.get().freq_shift(images, 0.5, 0.5) # uncomment for freq shift
 					data_list.append(images)
 		else:
 			for batch_start in range(0, data_size, batch_size):
 				latents = np.random.randn(batch_size, *self.Gs.input_shape[1:]).astype(np.float32)
 				labels = np.zeros((batch_size, 0), dtype=np.float32)
 				images = self.gen_fn(latents, labels).transpose(0, 2, 3, 1) # NCHW => NHWC
-				images = TFutil.get().freq_shift(images, 0.5, 0.5) # uncomment for freq shift
 				data_list.append(images)
 
 		return np.concatenate(data_list, axis=0)[:data_size]
@@ -1021,9 +1017,9 @@ class TFutil:
 				feed_dict={im_layer: imgs[batch_start:batch_end, ...]})
 		return imgs_us
 
-	def freq_shift(self, imgs, fc_x, fc_y, batch_size=64):
+	def freq_shift(self, imgs, fc_x, fc_y, batch_size=64, make_copy=True):
 		imgs_size = imgs.shape[0]
-		imgs_sh = np.array(imgs)
+		imgs_sh = np.array(imgs) if make_copy else imgs
 		### find or construct image placeholder
 		im_key = imgs.shape[1:]
 		if im_key not in self.im_dict:
@@ -1048,7 +1044,8 @@ class TFutil:
 	If im_data is provided: if ganist is provided then filters with ganist (filter only) else selects from im_data
 	'''
 	def extract_feats(self, im_data, sample_size, blur_levels=[0], 
-			ganist=None, im_paths=None, batch_size=1024, im_size=128, center_crop=None, sampler=None):
+			ganist=None, im_paths=None, batch_size=1024, im_size=128, 
+			center_crop=None, sampler=None):
 		feat_size = self.inception_feat.get_shape().as_list()[-1]
 		feat_list = [np.zeros((sample_size, feat_size)) for _ in range(len(blur_levels))]
 		print('>>> Extrating features')
@@ -1071,6 +1068,7 @@ class TFutil:
 					sample_ganist(ganist, batch_size, z_im=im_data[batch_start:batch_end], 
 						filter_only=True, output_type='rec')[0]
 			### blur images
+			im = TFutil.get().freq_shift(im, 0.5, 0.5) ## uncomment for freq shift dataset
 			im_blurs = blur_images_levels(im, blur_levels)
 			### extract features
 			for i, imb in enumerate(im_blurs):
@@ -1162,31 +1160,31 @@ Returns the energy distance of a trained GANist, and draws block images of GAN s
 '''
 def eval_ganist(ganist, eval_feats, draw_path=None, sampler=None, labs=None):
 	### sample and batch size
-	#sample_size = eval_feats[0].shape[0] ## *TOY
+	sample_size = eval_feats[0].shape[0] ## comment for *TOY
 	batch_size = 64
 	draw_size = 5
 	sampler = sampler if sampler is not None else ganist.step
 	
 	### collect real and gen samples **mt**
 	g_samples = sample_ganist(ganist, draw_size**2, sampler=sampler, output_type='rec', zi_data=labs)[0]
-	#g_feats = TFutil.get().extract_feats(None, sample_size, 
-	#	blur_levels=[0], ganist=ganist) ## *TOY
+	g_feats = TFutil.get().extract_feats(None, sample_size, 
+		blur_levels=[0], ganist=ganist) ## comment for *TOY
 
 	### draw block image of gen samples
 	if draw_path is not None:
-		#g_samples = g_samples.reshape([-1] + ganist.data_dim)
 		im_block_draw(g_samples, draw_size, draw_path+'.png', border=True)
-		#sample_pyramid_with_fft(ganist, draw_path+'_pyramid.png', 10) ## *TOY
-		g_samples = sample_ganist(ganist, 10000, sampler=sampler, output_type='rec', zi_data=labs)[0] ## *TOY
-		gen_fft = apply_fft_win(g_samples[:10000], draw_path+'_fft_size{}.png'.format(g_samples.shape[1]), windowing=False) ## *TOY
-		freq_density(gen_fft, freq_centers, ganist.data_dim[1], draw_path+'_freq_density_size{}'.format(ganist.data_dim[1])) ## *TOY
+		im_block_draw(TFutil.get().freq_shift(g_samples, 0.5, 0.5), 5, draw_path+'_sh.png', border=True)
+		#sample_pyramid_with_fft(ganist, draw_path+'_pyramid.png', 10) ## comment for *TOY
+		#g_samples = sample_ganist(ganist, 10000, sampler=sampler, output_type='rec', zi_data=labs)[0] ## uncomment for *TOY
+		#gen_fft = apply_fft_win(g_samples[:10000], draw_path+'_fft_size{}.png'.format(g_samples.shape[1]), windowing=False) ## uncomment for *TOY
+		#freq_density(gen_fft, freq_centers, ganist.data_dim[1], draw_path+'_freq_density_size{}'.format(ganist.data_dim[1])) ## uncomment for *TOY
 
 	### get network stats
 	net_stats = ganist.step(None, None, stats_only=True)
 
 	### fid
 	fid = 0
-	#fid = compute_fid(g_feats[0], eval_feats[0]) ## *TOY
+	fid = compute_fid(g_feats[0], eval_feats[0]) ## comment for *TOY
 
 	return fid, net_stats
 
@@ -1772,10 +1770,10 @@ if __name__ == '__main__':
 	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
 		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
 	#### prepare train images and features
-	#im_data = readim_from_path(im_paths[:train_size], 
-	#	im_size, center_crop=(121, 89), verbose=True)
 	im_data = readim_from_path(im_paths[:train_size], 
 		im_size, center_crop=(121, 89), verbose=True)
+	### freq shift the celeba
+	im_data = TFutil.get().freq_shift(im_data, 0.5, 0.5, make_copy=False)
 	#train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
@@ -1830,12 +1828,18 @@ if __name__ == '__main__':
 	train_labs = None ### *L2LOSS im_labels
 	print('>>> Shape of training images: {}'.format(train_imgs.shape))
 	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
-	im_block_draw(train_imgs[:25], 5, join(log_path,'true_samples.png'), border=True)
-	### draw blurred images ## *TOY
+	im_draw = TFutil.get().freq_shift(train_imgs[:draw_size], 0.5, 0.5)
+	im_block_draw(train_imgs[:25], 5, 
+		join(log_path,'true_samples.png'), border=True)
+	im_block_draw(TFutil.get().freq_shift(train_imgs[:25], 0.5, 0.5), 5, 
+		join(log_path,'true_samples_sh.png'), border=True)
+	### draw blurred images ## comment for *TOY
 	blur_draw_size = 10
-	blur_im_list = blur_images_levels(train_imgs[:blur_draw_size], blur_levels)
-	blur_im = np.stack(blur_im_list, axis=0)
-	block_draw(blur_im, join(log_path,'blur_im_samples.png'), border=True)
+	#im_blur = train_imgs[:blur_draw_size]
+	im_blur = TFutil.get().freq_shift(train_imgs[:blur_draw_size], 0.5, 0.5) ## uncomment for freq shift dataset
+	im_blur_list = blur_images_levels(im_blur, blur_levels)
+	im_blur = np.stack(im_blur_list, axis=0)
+	block_draw(im_blur, join(log_path,'blur_im_samples.png'), border=True)
 	### draw real samples pyramid
 	#sample_pyramid_with_fft(ganist, log_path+'/real_samples_pyramid.png', 
 	#	sample_size=10, im_data=train_imgs[:10])
@@ -1844,26 +1848,27 @@ if __name__ == '__main__':
 	GAN SETUP SECTION
 	'''
 	### train ganist
-	#train_ganist(ganist, train_imgs, test_feats, train_labs)
+	train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
-	#load_path = join(log_path_snap, 'model_best.h5') ## *TOY
+	load_path = join(log_path_snap, 'model_best.h5') ## comment for *TOY
 	#load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
-	#ganist.load(load_path.format(run_seed)) ## *TOY
+	ganist.load(load_path.format(run_seed)) ##comment for *TOY
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	#g_sample_size = draw_size # 10000 ## *TOY
-	#g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
-	#g_feats = TFutil.get().extract_feats(None, sample_size, 
-	#	blur_levels=blur_levels, ganist=ganist) ## *TOY
-	#print('>>> g_samples shape: {}'.format(g_samples.shape))
-	#im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
+	g_sample_size = draw_size # 10000 ## *TOY
+	g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
+	g_feats = TFutil.get().extract_feats(None, sample_size, 
+		blur_levels=blur_levels, ganist=ganist) ## comment for *TOY
+	print('>>> g_samples shape: {}'.format(g_samples.shape))
+	im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
+	im_block_draw(TFutil.get().freq_shift(g_samples, 0.5, 0.5), 5, log_path+'/gen_samples_sh.png', border=True)
 	#im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
-	#sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10) ## *TOY
+	#sample_pyramid_with_fft(ganist, log_path+'/gen_samples_pyramid.png', sample_size=10) ## comment for *TOY
 	#sys.exit(0)
 
 	### *TOY
@@ -1900,17 +1905,17 @@ if __name__ == '__main__':
 	#from theano import tensor as T
 	#import lasagne
 	### tensorflow (comment when using theano pggan)
-	sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
+	#sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
 
 	#net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cub128bb/results_gdsmall_cub_1/000-pgan-cub-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
-	net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/results_gdsmall_nomirror_sceleba_{seed}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
-	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
-	pg_samples = pg_sampler.sample_data(1024)
-	print('>>> pg_samples shape: {}'.format(pg_samples.shape))
-	im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
-	im_block_draw(TFutil.get().freq_shift(pg_samples, 0.5, 0.5), 5, log_path+'/pggan_samples_sh.png', border=True)
-	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/results_gdsmall_nomirror_sceleba_{run_seed}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	#pg_samples = pg_sampler.sample_data(1024)
+	#print('>>> pg_samples shape: {}'.format(pg_samples.shape))
+	#im_block_draw(pg_samples, 5, log_path+'/pggan_samples.png', border=True)
+	#im_block_draw(TFutil.get().freq_shift(pg_samples, 0.5, 0.5), 5, log_path+'/pggan_samples_sh.png', border=True)
+	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
 
 	'''
 	Read data from ImageNet and BigGan
@@ -1982,7 +1987,7 @@ if __name__ == '__main__':
 	'''
 	Multi Level FID
 	'''
-	### compute multi level fid (second line for real data fid levels) ## *TOY
+	### compute multi level fid (second line for real data fid levels) ## comment for *TOY
 	fid_list = compute_fid_levels(g_feats, test_feats)
 	#fid_list_r = compute_fid_levels(train_feats, test_feats)
 	#### plot fid_levels
