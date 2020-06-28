@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from run_ganist import block_draw, im_block_draw
-from run_ganist import TFutil, sample_ganist, create_lsun, CUB_Sampler
+from run_ganist import TFutil, sample_ganist, create_lsun, CUB_Sampler, PG_Sampler
 from fft_test import apply_fft_images
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -10,7 +10,12 @@ import sys
 from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
 from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
+from util import Logger
 import glob
+import os
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
+os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
 
 '''
 Drawing Freq Components
@@ -75,7 +80,9 @@ def leakage_test(log_dir, im_size=128, ksize=128, fc_x=43./128, fc_y=1./128):
 FFT on GANIST
 '''
 if __name__ == '__main__':
-	log_dir = 'logs_draw/'
+	#log_dir = 'logs_draw/'
+	log_dir = '/dresden/users/mk1391/evl/eval_samples/'
+	os.makedirs(log_dir, exist_ok=True)
 	
 	'''
 	Eval toy experiments.
@@ -142,41 +149,41 @@ if __name__ == '__main__':
 	Filter draw range
 	'''
 	### kernel
-	im_size = 128
-	krange = 25
-	ksize = 2*krange+1
-	sigma = 1.
-	t = np.linspace(-krange, krange, ksize)
-	blur_levels = [0., 1.]
-	blur_num = 7
-	blur_delta = 1. / 8
-	### reducing the filter radius by blur_delta every step
-	blur_init = blur_levels[-1]
-	for i in range(blur_num):
-		blur_levels.append(
-			1. / ((1. / blur_levels[-1]) - (blur_delta / blur_init)))
-	##t = np.linspace(-20, 20, 81) ## for 128x128 images
-	#blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
-	fig = plt.figure(0, figsize=(8*len(blur_levels),6))
-	fig.clf()
-	for i, sigma in enumerate(blur_levels):
-		if sigma != 0:
-			bump = np.exp(0.5 * -t**2/sigma**2)
-			bump /= np.sum(bump) # normalize the integral to 1
-			kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
-			im_data = np.zeros((1, im_size, im_size, 1))
-			im_data[0, :ksize, :ksize, 0] = kernel
-			#im_in = np.zeros((1, im_size, im_size, 1))
-			#im_in[0, krange, krange, 0] = 1.
-			#im_data = im_in - im_data
-		else:
-			im_data = np.zeros((1, im_size, im_size, 1))
-			im_data[0, 0, 0, 0] = 1.
-		ax = fig.add_subplot(1, len(blur_levels), i+1)
-		apply_fft_win(im_data, None, windowing=False, plot_ax=ax)
-		ax.set_title(r'Normalized Power Spectrum $\sigma=${:.2f}'.format(sigma))
-
-	fig.savefig(join(log_dir, 'gauss_response_blur_levels_delta_krange{}_ir1.png'.format(krange)), dpi=300)
+	#im_size = 128
+	#krange = 25
+	#ksize = 2*krange+1
+	#sigma = 1.
+	#t = np.linspace(-krange, krange, ksize)
+	#blur_levels = [0., 1.]
+	#blur_num = 7
+	#blur_delta = 1. / 8
+	#### reducing the filter radius by blur_delta every step
+	#blur_init = blur_levels[-1]
+	#for i in range(blur_num):
+	#	blur_levels.append(
+	#		1. / ((1. / blur_levels[-1]) - (blur_delta / blur_init)))
+	###t = np.linspace(-20, 20, 81) ## for 128x128 images
+	##blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
+	#fig = plt.figure(0, figsize=(8*len(blur_levels),6))
+	#fig.clf()
+	#for i, sigma in enumerate(blur_levels):
+	#	if sigma != 0:
+	#		bump = np.exp(0.5 * -t**2/sigma**2)
+	#		bump /= np.sum(bump) # normalize the integral to 1
+	#		kernel = bump[:, np.newaxis] * bump[np.newaxis, :]
+	#		im_data = np.zeros((1, im_size, im_size, 1))
+	#		im_data[0, :ksize, :ksize, 0] = kernel
+	#		#im_in = np.zeros((1, im_size, im_size, 1))
+	#		#im_in[0, krange, krange, 0] = 1.
+	#		#im_data = im_in - im_data
+	#	else:
+	#		im_data = np.zeros((1, im_size, im_size, 1))
+	#		im_data[0, 0, 0, 0] = 1.
+	#	ax = fig.add_subplot(1, len(blur_levels), i+1)
+	#	apply_fft_win(im_data, None, windowing=False, plot_ax=ax)
+	#	ax.set_title(r'Normalized Power Spectrum $\sigma=${:.2f}'.format(sigma))
+#
+	#fig.savefig(join(log_dir, 'gauss_response_blur_levels_delta_krange{}_ir1.png'.format(krange)), dpi=300)
 
 	'''
 	FFT and IFFT
@@ -243,24 +250,110 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	#config.gpu_options.allow_growth = True
-	#sess = tf.Session(config=config)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	config.gpu_options.allow_growth = True
+	sess = tf.Session(config=config)
 	### init TFutil
-	#tfutil = TFutil(sess)
+	tfutil = TFutil(sess)
 
-	#data_size = 1000
-	### create a ganist instance
-	#ganist = tf_ganist.Ganist(sess, log_dir)
-	### init variables
-	#sess.run(tf.global_variables_initializer())
-	### load ganist
-	#load_path = log_dir_snap+'/model_best.h5'
-	#ganist.load(load_path.format(run_seed))
-	### sample
-	#g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
-	#apply_fft_win(g_samples, log_dir+'fft_wganbn_sh16_comb9_hann.png')
+	'''
+	GAN generate data
+	'''
+	data_size = 1000
+
+	### ganist load samples
+	g_name = '5_logs_wganbn_celeba128cc_fid50'
+	ganist = tf_ganist.Ganist(sess, log_dir)
+	sess.run(tf.global_variables_initializer())
+	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_0/snapshots/model_best.h5'
+	ganist.load(net_path)
+	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+
+	### pggan load samples
+	#g_name = 'results_gdsmall_nomirror_sceleba_0'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	#g_samples = pg_sampler.sample_data(data_size)
+
+	### load samples from pickle file
+	#with open(join(log_dir, f'{g_name}_samples.pk'), 'rb') as fs:
+	#	g_samples = pk.load(fs)
 	
+	'''
+	Power spectrum difference
+	'''
+	r_name = 'celeba128cc'
+	r_samples = read_celeba(128, data_size)
+
+	#r_name = 'bedroom128cc'
+	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
+	#im_size = 128
+	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=128, max_images=data_size)
+
+	Logger(log_dir, fname=f'log_{g_name}_{r_name}')
+
+	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
+	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
+	with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
+		pk.dump(g_samples, fs)
+
+	def windowing(imgs):
+		win_size = imgs.shape[1]
+		win = np.hanning(imgs.shape[1])
+		win = np.outer(win, win).reshape((win_size, win_size, 1))
+		return win*imgs
+
+	def fft_norm(imgs):
+		imgs_fft, _ = apply_fft_images(imgs, reshape=False)
+		fft_power = np.abs(imgs_fft)**2
+		fft_mean = np.mean(im_fft_power, axis=0)
+		fft_norm /= np.sum(im_fft_mean)
+		np.clip(fft_norm, 1e-20, None, out=fft_norm)
+		return fft_norm
+
+	### calculate figure data
+	r_fft_norm = fft_norm(windowing(r_samples))
+	g_fft_norm = fft_norm(windowing(g_samples))
+	fig_data = list()
+	fig_data.append(np.abs(np.log(r_fft_norm) - np.log(g_fft_norm)))
+	fig_data.append(np.log(r_fft_norm))
+	fig_data.append(np.log(g_fft_norm))
+	Logger.print('Leakage percentage (TV): {:.2f}'.format(50. * np.sum(np.abs(r_fft_norm - g_fft_norm))))
+
+	### draw figure
+	fig = plt.figure(0, figsize=(8,6))
+	fig.clf()
+	
+	ax = fig.add_subplot(1,3,1)
+	pa = ax.imshow(fig_data[0], cmap=plt.get_cmap('inferno'))
+	fig.colorbar(pa)
+	
+	ax = fig.add_subplot(1,3,2)
+	pa = ax.imshow(fig_data[1], cmap=plt.get_cmap('inferno'))
+	fig.colorbar(pa)
+	
+	ax = fig.add_subplot(1,3,3)
+	pa = ax.imshow(fig_data[2], cmap=plt.get_cmap('inferno'))
+	fig.colorbar(pa)
+
+	ax.set_title('Power Spectrum: Diff - Real - Gen')
+	dft_size = r_samples.shape[1]
+	ticks_loc_x = [0, dft_size//2]
+	ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
+	ax.set_xticks(ticks_loc_x)
+	ax.set_xticklabels([-0.5, 0])
+	ax.set_yticks(ticks_loc_y)
+	ax.set_yticklabels(['', 0, -0.5])
+	fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}.png'), dpi=300)
+
 	### close session
-	#sess.close()
+	sess.close()
+
+
+
+
+
+
+
+

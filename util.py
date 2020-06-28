@@ -15,6 +15,37 @@ from progressbar import ETA, Bar, Percentage, ProgressBar
 import matplotlib.cm as mat_cm
 import re
 import scipy
+import logging
+import os
+
+'''
+Logger
+'''
+class Logger:
+	__instance = None
+	@staticmethod
+	def print(msg):
+		if Logger.__instance == None:
+			raise Exception('Logger class is not initialized!')
+		else:
+			Logger.__instance.logger.debug(msg)
+
+	def __init__(self, log_dir, fname='log'):
+		if Logger.__instance != None:
+			raise Exception('Logger is a singleton class and is already initialized!')
+		else:
+			Logger.__instance = self
+			self.logger = logging.getLogger()
+			self.logger.setLevel(logging.DEBUG)
+			log_path = join(log_dir, fname)
+			for i in range(100):
+				if not os.path.exists(log_path+'.txt'): break
+				log_path += f'_{i:02}'
+			self.path = log_path+'.txt'
+			output_file_handler = logging.FileHandler(self.path)
+			stdout_handler = logging.StreamHandler(sys.stdout)
+			self.logger.addHandler(output_file_handler)
+			self.logger.addHandler(stdout_handler)
 
 '''
 Reads CelebA Data.

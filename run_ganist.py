@@ -1048,6 +1048,10 @@ class TFutil:
 			center_crop=None, sampler=None):
 		feat_size = self.inception_feat.get_shape().as_list()[-1]
 		feat_list = [np.zeros((sample_size, feat_size)) for _ in range(len(blur_levels))]
+
+		use_shifter = False ## set to True for freq shift dataset
+		def shifter(x): return TFutil.get().freq_shift(x, 0.5, 0.5) if use_shifter else x
+
 		print('>>> Extrating features')
 		widgets = ["Extract Feats", Percentage(), Bar(), ETA()]
 		pbar = ProgressBar(maxval=sample_size, widgets=widgets)
@@ -1061,14 +1065,14 @@ class TFutil:
 				im = sampler.sample_data(batch_len)
 			elif im_data is None:
 				im = sample_ganist(ganist, batch_len, output_type='rec')[0] if ganist is not None else \
-					readim_from_path(im_paths[batch_start:batch_end], 
-						im_size, center_crop=center_crop)
+					shifter(readim_from_path(im_paths[batch_start:batch_end], 
+						im_size, center_crop=center_crop))
 			else:
 				im = im_data[batch_start:batch_end] if ganist is None else \
 					sample_ganist(ganist, batch_size, z_im=im_data[batch_start:batch_end], 
 						filter_only=True, output_type='rec')[0]
 			### blur images
-			im = TFutil.get().freq_shift(im, 0.5, 0.5) ## uncomment for freq shift dataset
+			im = shifter(im)
 			im_blurs = blur_images_levels(im, blur_levels)
 			### extract features
 			for i, imb in enumerate(im_blurs):

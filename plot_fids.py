@@ -25,14 +25,20 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/4_logs_wganbn_lap3_celeba128cc_fid50_gwrong_realonly/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/logs_wganbn_cub128bb/run_%d/fid_levels_r.cpk'
 	evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
-	evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
-	evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
+	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
+	#evl_path+'ganist_lap_logs/47_logs_wganbn_gshift_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
+	#evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
+	#evl_path+'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/results_gdsmall_sbedroom_0/run_%d/fid_levels.cpk'
+	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/44_logs_wganbn_bedroom128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
+	#evl_path+'ganist_lap_logs/46_logs_wgan_sbedroom128cc_hpfid/run_%d/fid_levels.cpk',
+	#evl_path+'ganist_lap_logs/49_logs_wgan_gshift_sbedroom128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/43_logs_wganbn_cub128bb_hpfid_constrad8/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/43_logs_wganbn_cub128bb_hpfid_constrad8/run_%d/fid_levels.cpk'
-	#evl_path+'pggan_logs/logs_bedroom128cc/logs_pggan_bedroom128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
+	#evl_path+'pggan_logs/logs_bedroom128cc_sh/logs_pggan_sbedroom128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
-	#evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
+	evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
+	evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_outsh_sceleba128cc_hpfid/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/logs_wganbn_bedroom128cc/run_%d/fid_levels_r.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/logs_wganbn_bedroom128cc/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/35_logs_lap3_reconst_celeba128cc/run_%d/fid_levels.cpk',
@@ -106,6 +112,7 @@ def plot_fid_levels(ax, pathname, pname, pcolor):
 	#	r'$\frac{4}{8}$', r'$\frac{3}{8}$', r'$\frac{2}{8}$', r'$\frac{1}{8}$']
 	#ax.set_xticklabels(frac_labels)
 	print(blur_levels)
+	print(f'mean is {fid_mean[0]} and std is {fid_std[0]}')
 	
 if __name__ == '__main__':
 	### prepare plot
@@ -115,11 +122,11 @@ if __name__ == '__main__':
 	ax.set_xlabel(r'Low-pass $\sigma$')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('FID HP Levels: CelebA vs SCelebA 128')
+	ax.set_title('FID HP Levels: SCelebA 128')
 
 	### plot
-	pnames = ['True', 'WGAN-CelebA', 'WGAN-SCelebA']
-	pcolors = [0, 1, 5] ## add 0 for real, 6 pggan
+	pnames = ['True', 'PGGAN', 'PGGAN-FSG']
+	pcolors = [0, 6, 2] ## add 0 for real, pggan 6 and 4, wgan 1 and 5
 	for i, _ in enumerate(pcolors):
 		p = fid_paths[i]
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
@@ -127,7 +134,7 @@ if __name__ == '__main__':
 	ax.legend(loc=0)
 	#fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_celeba128cc.pdf')
 	#fig.savefig('/home/mahyar/miss_details_images/temp/fids50_true_cub128bb.pdf')
-	fig.savefig(evl_path+'ganist_lap_logs/plots/fids_hp_wganbn_celeba_sceleba128cc.pdf')
+	fig.savefig(evl_path+'ganist_lap_logs/plots/fids_hp_pggan_vs_outsh_sceleba128cc.pdf')
 
 
 
