@@ -251,17 +251,15 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	config.gpu_options.allow_growth = True
-	sess = tf.Session(config=config)
-	### init TFutil
-	tfutil = TFutil(sess)
+	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	#config.gpu_options.allow_growth = True
+	#sess = tf.Session(config=config)
 
 	'''
 	GAN generate data
 	'''
-	data_size = 1000
+	data_size = 10000
 
 	### ganist load samples
 	g_name = '5_logs_wganbn_celeba128cc_fid50'
@@ -278,7 +276,7 @@ if __name__ == '__main__':
 	#g_samples = pg_sampler.sample_data(data_size)
 
 	### load samples from pickle file
-	#with open(join(log_dir, f'{g_name}_samples.pk'), 'rb') as fs:
+	#with open(join(log_dir, f'{g_name}_samples_{data_size}.pk'), 'rb') as fs:
 	#	g_samples = pk.load(fs)
 	
 	'''
@@ -296,8 +294,8 @@ if __name__ == '__main__':
 
 	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
 	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
-	with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
-		pk.dump(g_samples, fs)
+	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
+	#	pk.dump(g_samples, fs)
 
 	def windowing(imgs):
 		win_size = imgs.shape[1]
@@ -305,28 +303,39 @@ if __name__ == '__main__':
 		win = np.outer(win, win).reshape((win_size, win_size, 1))
 		return win*imgs
 
-	def fft_norm(imgs):
+	def fft_mean(imgs):
 		imgs_fft, _ = apply_fft_images(imgs, reshape=False)
 		fft_power = np.abs(imgs_fft)**2
 		fft_mean = np.mean(fft_power, axis=0)
-		fft_mean /= np.sum(fft_mean)
 		np.clip(fft_mean, 1e-20, None, out=fft_mean)
 		return fft_mean
 
-	### calculate figure data
-	r_fft_norm = fft_norm(windowing(r_samples))
-	g_fft_norm = fft_norm(windowing(g_samples))
+	### read figure data
+	#with open(join(log_dir, f'{g_name}_{r_name}_fft_mean.pk'), 'rb') as fs:
+	#	g_fft_mean, r_fft_mean = pk.load(fs)
+
+	### calculate fft mean
+	r_fft_mean = fft_mean(windowing(r_samples))
+	g_fft_mean = fft_mean(windowing(g_samples))
+	with open(join(log_dir, f'{g_name}_{r_name}_fft_mean.pk'), 'wb+') as fs:
+		pk.dump([g_fft_mean, r_fft_mean], fs)
+
+	### prepare figure data
 	fig_data = list()
-	fig_data.append(np.abs(np.log(r_fft_norm) - np.log(g_fft_norm)))
-	fig_data.append(np.log(r_fft_norm))
-	fig_data.append(np.log(g_fft_norm))
-	Logger.print('Leakage percentage (TV): {:.2f}'.format(50. * np.sum(np.abs(r_fft_norm - g_fft_norm))))
+	fig_data.append(np.log10(g_fft_mean) - np.log10(r_fft_mean))
+	fig_data.append(np.log10(r_fft_mean/np.amax(r_fft_mean)))
+	fig_data.append(np.log10(g_fft_mean/np.amax(g_fft_mean)))
+	Logger.print('Leakage percentage (TV): {:.2f}'.format(
+		50. * np.sum(np.abs(r_fft_mean/np.sum(r_fft_mean) - g_fft_mean/np.sum(g_fft_mean)))))
 
 	### draw figure
 	fig_names = ['Diff', 'True', 'GAN']
-	fig, axes = plt.subplots(1, 3, figsize=(6, 8), num=0)
+	fig_opts = [{'vmin': -1., 'vmax': 1., 'cmap': plt.get_cmap('bwr')}, 
+				{'vmin': -7., 'cmap': plt.get_cmap('inferno')}, 
+				{'vmin': -7., 'cmap': plt.get_cmap('inferno')}]
+	fig, axes = plt.subplots(1, 3, figsize=(24, 6), num=0)
 	for i, ax in enumerate(axes.ravel()):
-		im = ax.imshow(fig_data[i], cmap=plt.get_cmap('inferno'))
+		im = ax.imshow(fig_data[i], **fig_opts[i])
 		ax.set_title(fig_names[i])
 		dft_size = r_samples.shape[1]
 		ticks_loc_x = [0, dft_size//2]
@@ -335,12 +344,12 @@ if __name__ == '__main__':
 		ax.set_xticklabels([-0.5, 0])
 		ax.set_yticks(ticks_loc_y)
 		ax.set_yticklabels(['', 0, -0.5])
-		fig.colorbar(im, ax=ax)
+		plt.colorbar(im, ax=ax)
 
 	fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}.png'), dpi=300)
 
 	### close session
-	sess.close()
+	#sess.close()
 
 
 
