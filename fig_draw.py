@@ -292,7 +292,7 @@ if __name__ == '__main__':
 	#im_size = 128
 	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=128, max_images=data_size)
 
-	SingleLogger(log_dir, fname=f'log_{g_name}_{r_name}')
+	Logger(log_dir, fname=f'log_{g_name}_{r_name}')
 
 	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
 	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
@@ -320,32 +320,23 @@ if __name__ == '__main__':
 	fig_data.append(np.abs(np.log(r_fft_norm) - np.log(g_fft_norm)))
 	fig_data.append(np.log(r_fft_norm))
 	fig_data.append(np.log(g_fft_norm))
-	SingleLogger.print('Leakage percentage (TV): {:.2f}'.format(50. * np.sum(np.abs(r_fft_norm - g_fft_norm))))
+	Logger.print('Leakage percentage (TV): {:.2f}'.format(50. * np.sum(np.abs(r_fft_norm - g_fft_norm))))
 
 	### draw figure
-	fig = plt.figure(0, figsize=(8,6))
-	fig.clf()
-	
-	ax = fig.add_subplot(1,3,1)
-	pa = ax.imshow(fig_data[0], cmap=plt.get_cmap('inferno'))
-	fig.colorbar(pa, ax=ax)
-	
-	ax = fig.add_subplot(1,3,2)
-	pa = ax.imshow(fig_data[1], cmap=plt.get_cmap('inferno'))
-	fig.colorbar(pa, ax=ax)
-	
-	ax = fig.add_subplot(1,3,3)
-	pa = ax.imshow(fig_data[2], cmap=plt.get_cmap('inferno'))
-	fig.colorbar(pa, ax=ax)
+	fig_names = ['Diff', 'True', 'GAN']
+	fig, axes = plt.subplots(1, 3, figsize=(6, 8), num=0)
+	for i, ax in enumerate(axes.ravel()):
+		im = ax.imshow(fig_data[i], cmap=plt.get_cmap('inferno'))
+		ax.set_title(fig_names[i])
+		dft_size = r_samples.shape[1]
+		ticks_loc_x = [0, dft_size//2]
+		ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
+		ax.set_xticks(ticks_loc_x)
+		ax.set_xticklabels([-0.5, 0])
+		ax.set_yticks(ticks_loc_y)
+		ax.set_yticklabels(['', 0, -0.5])
+		fig.colorbar(im, ax=ax)
 
-	ax.set_title('Power Spectrum: Diff - Real - Gen')
-	dft_size = r_samples.shape[1]
-	ticks_loc_x = [0, dft_size//2]
-	ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
-	ax.set_xticks(ticks_loc_x)
-	ax.set_xticklabels([-0.5, 0])
-	ax.set_yticks(ticks_loc_y)
-	ax.set_yticklabels(['', 0, -0.5])
 	fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}.png'), dpi=300)
 
 	### close session

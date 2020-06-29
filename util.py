@@ -21,7 +21,7 @@ import os
 '''
 Logger
 '''
-class SingleLogger:
+class Logger:
 	__instance = None
 	@staticmethod
 	def print(msg):
@@ -35,7 +35,7 @@ class SingleLogger:
 			raise Exception('Logger is a singleton class and is already initialized!')
 		else:
 			Logger.__instance = self
-			self.logger = logging.getLogger()
+			self.logger = logging.getLogger(__name__)
 			self.logger.setLevel(logging.DEBUG)
 			log_path = join(log_dir, fname)
 			for i in range(100):
