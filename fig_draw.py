@@ -13,6 +13,7 @@ from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
 from util import Logger
 import glob
 import os
+import pickle as pk
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
@@ -291,7 +292,7 @@ if __name__ == '__main__':
 	#im_size = 128
 	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=128, max_images=data_size)
 
-	Logger(log_dir, fname=f'log_{g_name}_{r_name}')
+	SingleLogger(log_dir, fname=f'log_{g_name}_{r_name}')
 
 	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
 	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
@@ -307,10 +308,10 @@ if __name__ == '__main__':
 	def fft_norm(imgs):
 		imgs_fft, _ = apply_fft_images(imgs, reshape=False)
 		fft_power = np.abs(imgs_fft)**2
-		fft_mean = np.mean(im_fft_power, axis=0)
-		fft_norm /= np.sum(im_fft_mean)
-		np.clip(fft_norm, 1e-20, None, out=fft_norm)
-		return fft_norm
+		fft_mean = np.mean(fft_power, axis=0)
+		fft_mean /= np.sum(fft_mean)
+		np.clip(fft_mean, 1e-20, None, out=fft_mean)
+		return fft_mean
 
 	### calculate figure data
 	r_fft_norm = fft_norm(windowing(r_samples))
@@ -319,7 +320,7 @@ if __name__ == '__main__':
 	fig_data.append(np.abs(np.log(r_fft_norm) - np.log(g_fft_norm)))
 	fig_data.append(np.log(r_fft_norm))
 	fig_data.append(np.log(g_fft_norm))
-	Logger.print('Leakage percentage (TV): {:.2f}'.format(50. * np.sum(np.abs(r_fft_norm - g_fft_norm))))
+	SingleLogger.print('Leakage percentage (TV): {:.2f}'.format(50. * np.sum(np.abs(r_fft_norm - g_fft_norm))))
 
 	### draw figure
 	fig = plt.figure(0, figsize=(8,6))
@@ -327,15 +328,15 @@ if __name__ == '__main__':
 	
 	ax = fig.add_subplot(1,3,1)
 	pa = ax.imshow(fig_data[0], cmap=plt.get_cmap('inferno'))
-	fig.colorbar(pa)
+	fig.colorbar(pa, ax=ax)
 	
 	ax = fig.add_subplot(1,3,2)
 	pa = ax.imshow(fig_data[1], cmap=plt.get_cmap('inferno'))
-	fig.colorbar(pa)
+	fig.colorbar(pa, ax=ax)
 	
 	ax = fig.add_subplot(1,3,3)
 	pa = ax.imshow(fig_data[2], cmap=plt.get_cmap('inferno'))
-	fig.colorbar(pa)
+	fig.colorbar(pa, ax=ax)
 
 	ax.set_title('Power Spectrum: Diff - Real - Gen')
 	dft_size = r_samples.shape[1]

@@ -21,7 +21,7 @@ import os
 '''
 Logger
 '''
-class Logger:
+class SingleLogger:
 	__instance = None
 	@staticmethod
 	def print(msg):
@@ -40,7 +40,7 @@ class Logger:
 			log_path = join(log_dir, fname)
 			for i in range(100):
 				if not os.path.exists(log_path+'.txt'): break
-				log_path += f'_{i:02}'
+				log_path = join(log_dir, fname) + f'_{i:02}'
 			self.path = log_path+'.txt'
 			output_file_handler = logging.FileHandler(self.path)
 			stdout_handler = logging.StreamHandler(sys.stdout)
