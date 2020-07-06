@@ -148,8 +148,8 @@ def fft_test(log_dir, sess=None):
 	fft_diff = np.abs(r_fft_mean - g_fft_mean)
 	total_var = 100. * np.sum(np.abs(r_fft_density - g_fft_density)) / 2.
 	Logger.print('>>> fft_test_{g_name}_{r_name}: Leakage percentage (TV): {total_var}')
-	bins_loc = [1./(np.pi*2*s) for s in blur_levels[::-1]]
-	bins = np.zeros(len(bins_count))
+	bins_loc = [0.] + [1./(np.pi*2*s) for s in blur_levels[::-1]]
+	bins = np.zeros(len(bins_loc))
 	bins_count = np.array(bins)
 	#bins_loc = [np.arange(2, 50, 2) / 100.]
 	fft_h, fft_w = fft_diff.shape
@@ -159,9 +159,10 @@ def fft_test(log_dir, sess=None):
 		for u in range(fft_w):
 			fft_hc = fft_h//2
 			fft_wc = fft_w//2
-			freq = np.sqrt(((v - fft_hc + 1 - fft_h%2)**2. + (u - fft_wc)**2.) / (fft_hc**2 + fft_wc**2))
-			for bin_id, bin_freq in enumerate(bins_loc):
-				if freq < bin_freq:
+			freq = np.sqrt(((v - fft_hc + 1 - fft_h%2)/fft_hc)**2. + ((u - fft_wc)/fft_wc)**2)
+			for i, bin_freq in enumerate(bins_loc[::-1]):
+				if freq >= bin_freq:
+					bin_id = len(bins_loc) - i - 1
 					bins[bin_id] += fft_diff[v, u]
 					bins_count[bin_id] += 1
 					break
@@ -193,7 +194,7 @@ def fft_test(log_dir, sess=None):
 			ax.set_xticks(range(len(bins_loc)))
 			ax.set_xticklabels(map('{:.2f}'.format, np.ceil(bins_loc)))
 			break
-			
+
 		im = ax.imshow(fig_data[i], **fig_opts[i])
 		ax.set_title(fig_names[i])
 		dft_size = im_size
