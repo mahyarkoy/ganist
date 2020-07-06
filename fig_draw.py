@@ -2,7 +2,6 @@ import numpy as np
 import tensorflow as tf
 from run_ganist import block_draw, im_block_draw
 from run_ganist import TFutil, sample_ganist, create_lsun, CUB_Sampler, PG_Sampler
-from fft_test import apply_fft_images
 import matplotlib.pyplot as plt
 from PIL import Image
 import tf_ganist
@@ -10,7 +9,7 @@ import sys
 from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
 from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
-from util import Logger
+from util import Logger, readim_path_from_dir, readim_from_path
 import glob
 import os
 import pickle as pk
@@ -68,6 +67,146 @@ def leakage_test(log_dir, im_size=128, ksize=128, fc_x=43./128, fc_y=1./128):
 	single_draw(im_data[0], 
 		join(log_dir, 'tanh_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, int(im_size*fc_x), int(im_size*fc_y))))
 
+def fft_test(log_dir, sess=None):
+	data_size = 1000
+	im_size = 128
+
+	### ganist load g_samples
+	g_name = '5_logs_wganbn_celeba128cc_fid50'
+	#ganist = tf_ganist.Ganist(sess, log_dir)
+	#sess.run(tf.global_variables_initializer())
+	#net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_0/snapshots/model_best.h5'
+	#ganist.load(net_path)
+	#g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+
+	### pggan load g_samples
+	#g_name = 'gdsmall_results_0'
+	#sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	#g_samples = pg_sampler.sample_data(data_size)
+
+	### load g_samples from pickle file
+	with open(join(log_dir, f'{g_name}_samples_{data_size}.pk'), 'rb') as fs:
+		g_samples = pk.load(fs)
+
+	### load g_samples from image file
+	#g_name = 'logs_ganms_or_celeba128cc'
+	#g_sample_dir = f'/dresden/users/mk1391/evl/ganist_lsun_logs/layer_stats/temp/{g_name}/run_0/samples/'
+	#g_samples = readim_from_path(
+	#	readim_path_from_dir(g_sample_dir, im_type='*.jpg')[:data_size], im_size, center_crop=(64,64), verbose=True)
+	
+	### load r_samples
+	r_name = 'celeba128cc'
+	r_samples = read_celeba(im_size, data_size)
+
+	#r_name = 'bedroom128cc'
+	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
+	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=data_size)
+
+	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
+	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
+	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
+	#	pk.dump(g_samples, fs)
+
+	def windowing(imgs, skip=False):
+		if skip: return imgs
+		win_size = imgs.shape[1]
+		win = np.hanning(imgs.shape[1])
+		win = np.outer(win, win).reshape((win_size, win_size, 1))
+		return win*imgs
+
+	def fft_norm(imgs):
+		imgs_fft, _ = apply_fft_images(imgs, reshape=False)
+		fft_power = np.abs(imgs_fft)**2
+		fft_avg = np.mean(fft_power, axis=0)
+		np.clip(fft_avg, 1e-20, None, out=fft_avg)
+		return fft_avg
+
+	### calculate fft mean
+	r_fft_mean = fft_norm(windowing(r_samples))
+	g_fft_mean = fft_norm(windowing(g_samples))
+
+	### fft mean data from file
+	#with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'rb') as fs:
+	#	g_fft_mean, r_fft_mean = pk.load(fs)
+
+	### write fft mean data to file
+	with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'wb+') as fs:
+		pk.dump([g_fft_mean, r_fft_mean], fs)
+
+	### compute aggregated frequency difference
+	blur_levels = [1.]
+	blur_num = 7
+	blur_delta = 1. / 8
+	blur_init = blur_levels[-1]
+	for i in range(blur_num):
+		blur_levels.append(
+			1. / ((1. / blur_levels[-1]) - (blur_delta / blur_init)))
+	r_fft_density = r_fft_mean / np.sum(r_fft_mean)
+	g_fft_density = g_fft_mean / np.sum(g_fft_mean)
+	fft_diff = np.abs(r_fft_mean - g_fft_mean)
+	total_var = 100. * np.sum(np.abs(r_fft_density - g_fft_density)) / 2.
+	Logger.print('>>> fft_test_{g_name}_{r_name}: Leakage percentage (TV): {total_var}')
+	bins_loc = [1./(np.pi*2*s) for s in blur_levels[::-1]]
+	bins = np.zeros(len(bins_count))
+	bins_count = np.array(bins)
+	#bins_loc = [np.arange(2, 50, 2) / 100.]
+	fft_h, fft_w = fft_diff.shape
+	Logger.print('>>> freq bins:')
+	for v in range(fft_h):
+		bin_str = ''
+		for u in range(fft_w):
+			fft_hc = fft_h//2
+			fft_wc = fft_w//2
+			freq = np.sqrt(((v - fft_hc + 1 - fft_h%2)**2. + (u - fft_wc)**2.) / (fft_hc**2 + fft_wc**2))
+			for bin_id, bin_freq in enumerate(bins_loc):
+				if freq < bin_freq:
+					bins[bin_id] += fft_diff[v, u]
+					bins_count[bin_id] += 1
+					break
+			bin_str += f'{bin_id}\t'
+		Logger.print(bin_str)
+
+	Logger.print(f'>>> freq bins:\t{bins_loc}')
+	Logger.print(f'>>> freq diff density:\t{bins / bins_count}')
+
+	### prepare figure data
+	fig_data = list()
+	fig_data.append(np.abs(np.log(r_fft_mean) - np.log(g_fft_mean)))
+	fig_data.append(np.log(r_fft_mean / np.amax(r_fft_mean)))
+	fig_data.append(np.log(g_fft_mean / np.amax(g_fft_mean)))
+	
+	### draw figure
+	fig_names = ['Diff', 'True', 'GAN']
+	fig_opts = [{'cmap': plt.get_cmap('binary'), 'vmin': 0, 'vmax': 10}, 
+				{'cmap': plt.get_cmap('inferno'), 'vmin': -13, 'vmax': 0}, 
+				{'cmap': plt.get_cmap('inferno'), 'vmin': -13, 'vmax': 0}]
+	fig, axes = plt.subplots(1, 4, figsize=(24, 6), num=0)
+	for i, ax in enumerate(axes.ravel()):
+		if i > len(fig_names):
+			ax.grid(True, which='both', linestyle='dotted')
+			ax.set_xlabel(r'Frequency bins')
+			ax.set_ylabel('Power diff density')
+			ax.set_title('Power diff density')
+			ax.plot(bins / bins_count)
+			ax.set_xticks(range(len(bins_loc)))
+			ax.set_xticklabels(map('{:.2f}'.format, np.ceil(bins_loc)))
+			break
+			
+		im = ax.imshow(fig_data[i], **fig_opts[i])
+		ax.set_title(fig_names[i])
+		dft_size = im_size
+		ticks_loc_x = [0, dft_size//2]
+		ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
+		ax.set_xticks(ticks_loc_x)
+		ax.set_xticklabels([-0.5, 0])
+		ax.set_yticks(ticks_loc_y)
+		ax.set_yticklabels(['', 0, -0.5])
+		plt.colorbar(im, ax=ax)
+
+	fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}.png'), dpi=300)
+
 #celeba_data = read_celeba(32)
 #apply_fft_win(celeba_data, log_dir+'/fft_celeba32cc_hann.png')
 
@@ -84,6 +223,7 @@ if __name__ == '__main__':
 	#log_dir = 'logs_draw/'
 	log_dir = '/dresden/users/mk1391/evl/eval_samples/'
 	os.makedirs(log_dir, exist_ok=True)
+	Logger(log_dir, fname='log_file')
 	
 	'''
 	Eval toy experiments.
@@ -251,102 +391,17 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
+	sess = None
 	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
 	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 	#config.gpu_options.allow_growth = True
 	#sess = tf.Session(config=config)
 
 	'''
-	GAN generate data
+	FFT Test
 	'''
-	data_size = 10000
+	fft_test(log_dir, sess)
 
-	### ganist load samples
-	g_name = '5_logs_wganbn_celeba128cc_fid50'
-	ganist = tf_ganist.Ganist(sess, log_dir)
-	sess.run(tf.global_variables_initializer())
-	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_0/snapshots/model_best.h5'
-	ganist.load(net_path)
-	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
-
-	### pggan load samples
-	#g_name = 'results_gdsmall_nomirror_sceleba_0'
-	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
-	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
-	#g_samples = pg_sampler.sample_data(data_size)
-
-	### load samples from pickle file
-	#with open(join(log_dir, f'{g_name}_samples_{data_size}.pk'), 'rb') as fs:
-	#	g_samples = pk.load(fs)
-	
-	'''
-	Power spectrum difference
-	'''
-	r_name = 'celeba128cc'
-	r_samples = read_celeba(128, data_size)
-
-	#r_name = 'bedroom128cc'
-	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
-	#im_size = 128
-	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=128, max_images=data_size)
-
-	Logger(log_dir, fname=f'log_{g_name}_{r_name}')
-
-	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
-	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
-	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
-	#	pk.dump(g_samples, fs)
-
-	def windowing(imgs):
-		win_size = imgs.shape[1]
-		win = np.hanning(imgs.shape[1])
-		win = np.outer(win, win).reshape((win_size, win_size, 1))
-		return win*imgs
-
-	def fft_mean(imgs):
-		imgs_fft, _ = apply_fft_images(imgs, reshape=False)
-		fft_power = np.abs(imgs_fft)**2
-		fft_mean = np.mean(fft_power, axis=0)
-		np.clip(fft_mean, 1e-20, None, out=fft_mean)
-		return fft_mean
-
-	### read figure data
-	#with open(join(log_dir, f'{g_name}_{r_name}_fft_mean.pk'), 'rb') as fs:
-	#	g_fft_mean, r_fft_mean = pk.load(fs)
-
-	### calculate fft mean
-	r_fft_mean = fft_mean(windowing(r_samples))
-	g_fft_mean = fft_mean(windowing(g_samples))
-	with open(join(log_dir, f'{g_name}_{r_name}_fft_mean.pk'), 'wb+') as fs:
-		pk.dump([g_fft_mean, r_fft_mean], fs)
-
-	### prepare figure data
-	fig_data = list()
-	fig_data.append(np.log10(g_fft_mean) - np.log10(r_fft_mean))
-	fig_data.append(np.log10(r_fft_mean/np.amax(r_fft_mean)))
-	fig_data.append(np.log10(g_fft_mean/np.amax(g_fft_mean)))
-	Logger.print('Leakage percentage (TV): {:.2f}'.format(
-		50. * np.sum(np.abs(r_fft_mean/np.sum(r_fft_mean) - g_fft_mean/np.sum(g_fft_mean)))))
-
-	### draw figure
-	fig_names = ['Diff', 'True', 'GAN']
-	fig_opts = [{'vmin': -1., 'vmax': 1., 'cmap': plt.get_cmap('bwr')}, 
-				{'vmin': -7., 'cmap': plt.get_cmap('inferno')}, 
-				{'vmin': -7., 'cmap': plt.get_cmap('inferno')}]
-	fig, axes = plt.subplots(1, 3, figsize=(24, 6), num=0)
-	for i, ax in enumerate(axes.ravel()):
-		im = ax.imshow(fig_data[i], **fig_opts[i])
-		ax.set_title(fig_names[i])
-		dft_size = r_samples.shape[1]
-		ticks_loc_x = [0, dft_size//2]
-		ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
-		ax.set_xticks(ticks_loc_x)
-		ax.set_xticklabels([-0.5, 0])
-		ax.set_yticks(ticks_loc_y)
-		ax.set_yticklabels(['', 0, -0.5])
-		plt.colorbar(im, ax=ax)
-
-	fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}.png'), dpi=300)
 
 	### close session
 	#sess.close()

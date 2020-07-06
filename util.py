@@ -73,7 +73,7 @@ def readim_path_from_dir(im_dir, im_type='*.jpg'):
 Reads 3-channel images from the given paths.
 returns: image array with shape (len(im_paths), im_size, im_size, 3)
 '''
-def readim_from_path(im_paths, im_size=64, center_crop=None, verbose=False):
+def readim_from_path(im_paths, im_size=64, verbose=False, **kwargs):
 	data_size = len(im_paths)
 	im_data = np.zeros((data_size, im_size, im_size, 3))
 	if verbose:
@@ -83,7 +83,7 @@ def readim_from_path(im_paths, im_size=64, center_crop=None, verbose=False):
 	for i, fn in enumerate(im_paths):
 		if verbose:
 			pbar.update(i)
-		im_data[i, ...] = read_image(fn, im_size, center_crop=center_crop)
+		im_data[i, ...] = read_image(fn, im_size, **kwargs)
 	return im_data
 
 '''

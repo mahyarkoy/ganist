@@ -20,9 +20,9 @@ def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_c
 		cy, cx = center_crop
 		im_array = np.asarray(im)
 		im_crop = im_array[cy-im_size//2:cy+im_size//2, cx-im_size//2:cx+im_size//2]
-		im.close()
 		im_o = (im_crop / 255.0) * 2.0 - 1.0
 		im_o = im_o[:, :, :3]
+		im.close()
 		return im_o if not verbose else (im_o, w, h)
 	### crop and resize for all other datasets
 	if sqcrop:
@@ -91,8 +91,8 @@ def apply_fft(im, freqs=None):
 	return imf_proc, im_gray
 
 def apply_fft_file(im_path, im_size=64, center_crop=None):
-	im = read_image(im_path, im_size, center_crop)
-	imf_proc, im_gray = apply_fft(im)
+	im = read_image(im_path, im_size, center_crop=center_crop)
+	imf_proc, im_gray = apply_fft(windowing(im))
 	return imf_proc, im_gray
 
 def apply_fft_dir(im_dir, data_size=100, im_size=64, im_type='/*.jpg', center_crop=None):
@@ -100,7 +100,7 @@ def apply_fft_dir(im_dir, data_size=100, im_size=64, im_type='/*.jpg', center_cr
 	imf_data = np.zeros((data_size, im_size, im_size))
 	cntr = 0
 	for fn in glob.glob(im_dir+im_type):
-		imf_proc, im_gray = apply_fft_file(fn, im_size, center_crop)
+		imf_proc, im_gray = apply_fft_file(fn, im_size, center_crop=center_crop)
 		im_data[cntr, ...] = im_gray
 		imf_data[cntr, ...] = imf_proc
 		cntr += 1
@@ -113,7 +113,7 @@ def apply_fft_images(ims, reshape=False):
 	im_data = np.zeros((data_size, h, w))
 	imf_data = np.zeros((data_size, h, w))
 	for cntr, im in enumerate(ims):
-		imf_proc, im_gray = apply_fft(im)
+		imf_proc, im_gray = apply_fft(windowing(im))
 		im_data[cntr, ...] = im_gray
 		imf_data[cntr, ...] = imf_proc
 
@@ -121,6 +121,13 @@ def apply_fft_images(ims, reshape=False):
 		im_data = im_data.reshape((data_size, h, w, 1))
 		imf_data = imf_data.reshape((data_size, h, w, 1))
 	return imf_data, im_data
+
+def windowing(imgs, skip=False):
+		if skip: return imgs
+		win_size = imgs.shape[1]
+		win = np.hanning(imgs.shape[1])
+		win = np.outer(win, win).reshape((win_size, win_size, 1))
+		return win*imgs
 
 if __name__ == '__main__':
 	### single image test fft vs dft
@@ -147,11 +154,12 @@ if __name__ == '__main__':
 	#g_dir = '/media/evl/Public/Mahyar/Data/image_net/biggan/per_class_samples'
 	#im_dir = '/media/evl/Public/Mahyar/Data/lsun/cat/'
 	#g_dir = '/media/evl/Public/Mahyar/Data/stylegan/cat/'
-	im_dir = '/media/evl/Public/Mahyar/Data/celeba/img_align_celeba/'
+	im_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
 	#g_dir = '/media/evl/Public/Mahyar/Data/prog_gan/celeba_128/'
-	g_dir = '/media/evl/Public/Mahyar/ganist_lap_logs/temp/logs_wganbn_lap3_celeba128cc/run_0/samples/'
-	save_path = '/home/mahyar/'
-	data_size = 1000
+	#g_dir = '/media/evl/Public/Mahyar/ganist_lap_logs/temp/logs_wganbn_lap3_celeba128cc/run_0/samples/'
+	g_dir = '/dresden/users/mk1391/evl/ganist_lsun_logs/layer_stats/temp/logs_ganms_or_celeba128cc/run_0/samples/'
+	save_path = '/dresden/users/mk1391/evl/eval_samples/'
+	data_size = 100
 	im_size = 128
 	imf, img = apply_fft_dir(im_dir, data_size=data_size, im_size=im_size, center_crop=(121, 89))
 	g_imf, g_img = apply_fft_dir(g_dir, data_size=data_size, im_size=im_size, center_crop=(64, 64))
@@ -168,7 +176,7 @@ if __name__ == '__main__':
 	ax = fig.add_subplot(1,1,1)
 	pa = ax.imshow(np.log(imf_agg) - np.log(g_imf_agg), cmap=plt.get_cmap('bwr'), vmin=-5, vmax=5)
 	fig.colorbar(pa)
-	fig.savefig(save_path+'/fft_diff_lap3_wganbn_celeba_128.jpg', dpi=300)
+	fig.savefig(save_path+'/fft_diff_wganbn_celeba_128.jpg', dpi=300)
 	
 	fig.clf()
 	ax = fig.add_subplot(1,1,1)
@@ -180,7 +188,7 @@ if __name__ == '__main__':
 	ax = fig.add_subplot(1,1,1)
 	pa = ax.imshow(np.log(g_imf_agg), cmap=plt.get_cmap('hot'), vmin=0, vmax=20)
 	fig.colorbar(pa)
-	fig.savefig(save_path+'/fft_lap3_wganbn_celeba_128.jpg', dpi=300)
+	fig.savefig(save_path+'/fft_wganbn_celeba_128.jpg', dpi=300)
 	
 	#plt.imshow(np.log(imf_agg) - np.log(g_imf_agg))
 	#plt.xlim(44, 84)
