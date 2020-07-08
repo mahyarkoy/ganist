@@ -68,7 +68,7 @@ def leakage_test(log_dir, im_size=128, ksize=128, fc_x=43./128, fc_y=1./128):
 		join(log_dir, 'tanh_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, int(im_size*fc_x), int(im_size*fc_y))))
 
 def fft_test(log_dir, sess=None):
-	data_size = 1000
+	data_size = 10000
 	im_size = 128
 
 	### ganist load g_samples
@@ -87,8 +87,8 @@ def fft_test(log_dir, sess=None):
 	#g_samples = pg_sampler.sample_data(data_size)
 
 	### load g_samples from pickle file
-	with open(join(log_dir, f'{g_name}_samples_{data_size}.pk'), 'rb') as fs:
-		g_samples = pk.load(fs)
+	#with open(join(log_dir, f'{g_name}_samples_{data_size}.pk'), 'rb') as fs:
+	#	g_samples = pk.load(fs)
 
 	### load g_samples from image file
 	#g_name = 'logs_ganms_or_celeba128cc'
@@ -98,14 +98,15 @@ def fft_test(log_dir, sess=None):
 	
 	### load r_samples
 	r_name = 'celeba128cc'
-	r_samples = read_celeba(im_size, data_size)
+	#r_samples = read_celeba(im_size, data_size)
 
 	#r_name = 'bedroom128cc'
 	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
 	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=data_size)
 
-	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
-	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
+	Logger.add_file_handler(f'log_{g_name}_{r_name}_{data_size}')
+	#im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
+	#im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
 	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
 	#	pk.dump(g_samples, fs)
 
@@ -124,16 +125,16 @@ def fft_test(log_dir, sess=None):
 		return fft_avg
 
 	### calculate fft mean
-	r_fft_mean = fft_norm(windowing(r_samples))
-	g_fft_mean = fft_norm(windowing(g_samples))
+	#r_fft_mean = fft_norm(windowing(r_samples))
+	#g_fft_mean = fft_norm(windowing(g_samples))
 
-	### fft mean data from file
-	#with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'rb') as fs:
-	#	g_fft_mean, r_fft_mean = pk.load(fs)
+	### read fft mean data from file
+	with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'rb') as fs:
+		g_fft_mean, r_fft_mean = pk.load(fs)
 
 	### write fft mean data to file
-	with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'wb+') as fs:
-		pk.dump([g_fft_mean, r_fft_mean], fs)
+	#with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'wb+') as fs:
+	#	pk.dump([g_fft_mean, r_fft_mean], fs)
 
 	### compute aggregated frequency difference
 	blur_levels = [1.]
@@ -145,13 +146,13 @@ def fft_test(log_dir, sess=None):
 			1. / ((1. / blur_levels[-1]) - (blur_delta / blur_init)))
 	r_fft_density = r_fft_mean / np.sum(r_fft_mean)
 	g_fft_density = g_fft_mean / np.sum(g_fft_mean)
-	fft_diff = np.abs(r_fft_mean - g_fft_mean)
+	fft_diff = np.abs(np.log(r_fft_mean) - np.log(g_fft_mean))
 	total_var = 100. * np.sum(np.abs(r_fft_density - g_fft_density)) / 2.
-	Logger.print('>>> fft_test_{g_name}_{r_name}: Leakage percentage (TV): {total_var}')
+	Logger.print(f'>>> fft_test_{g_name}_{r_name}: Leakage percentage (TV): {total_var}')
 	bins_loc = [0.] + [1./(np.pi*2*s) for s in blur_levels[::-1]]
+	#bins_loc = [0.] + list(np.arange(1, 50) / 100.)
 	bins = np.zeros(len(bins_loc))
 	bins_count = np.array(bins)
-	#bins_loc = [np.arange(2, 50, 2) / 100.]
 	fft_h, fft_w = fft_diff.shape
 	Logger.print('>>> freq bins:')
 	for v in range(fft_h):
@@ -166,7 +167,7 @@ def fft_test(log_dir, sess=None):
 					bins[bin_id] += fft_diff[v, u]
 					bins_count[bin_id] += 1
 					break
-			bin_str += f'{bin_id}\t'
+			bin_str += f'{bin_id}'
 		Logger.print(bin_str)
 
 	Logger.print(f'>>> freq bins:\t{bins_loc}')
@@ -179,20 +180,25 @@ def fft_test(log_dir, sess=None):
 	fig_data.append(np.log(g_fft_mean / np.amax(g_fft_mean)))
 	
 	### draw figure
-	fig_names = ['Diff', 'True', 'GAN']
-	fig_opts = [{'cmap': plt.get_cmap('binary'), 'vmin': 0, 'vmax': 10}, 
+	fig_names = ['diff', 'true', 'gan', 'agg']
+	fig_opts = [{'cmap': plt.get_cmap('inferno'), 'vmin': 0}, 
 				{'cmap': plt.get_cmap('inferno'), 'vmin': -13, 'vmax': 0}, 
 				{'cmap': plt.get_cmap('inferno'), 'vmin': -13, 'vmax': 0}]
-	fig, axes = plt.subplots(1, 4, figsize=(24, 6), num=0)
-	for i, ax in enumerate(axes.ravel()):
-		if i > len(fig_names):
+	#fig, axes = plt.subplots(1, 4, figsize=(24, 6), num=0, gridspec_kw={'width_ratios': [1, 1, 1, 2]})
+	fig = plt.figure(0, figsize=(8,6))
+	for i in range(len(fig_names)):
+		fig.clf()
+		ax = fig.add_subplot(1,1,1)
+		if fig_names[i] == 'agg':
 			ax.grid(True, which='both', linestyle='dotted')
 			ax.set_xlabel(r'Frequency bins')
 			ax.set_ylabel('Power diff density')
 			ax.set_title('Power diff density')
 			ax.plot(bins / bins_count)
 			ax.set_xticks(range(len(bins_loc)))
-			ax.set_xticklabels(map('{:.2f}'.format, np.ceil(bins_loc)))
+			xticklabels = [np.format_float_positional(v, 2) for v in bins_loc]
+			ax.set_xticklabels(xticklabels)
+			fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
 			break
 
 		im = ax.imshow(fig_data[i], **fig_opts[i])
@@ -204,9 +210,9 @@ def fft_test(log_dir, sess=None):
 		ax.set_xticklabels([-0.5, 0])
 		ax.set_yticks(ticks_loc_y)
 		ax.set_yticklabels(['', 0, -0.5])
-		plt.colorbar(im, ax=ax)
+		plt.colorbar(im)#, ax=ax, fraction=0.046, pad=0.04)
 
-	fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}.png'), dpi=300)
+		fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
 
 #celeba_data = read_celeba(32)
 #apply_fft_win(celeba_data, log_dir+'/fft_celeba32cc_hann.png')

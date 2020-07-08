@@ -30,6 +30,16 @@ class Logger:
 		else:
 			Logger.__instance.logger.debug(msg)
 
+	@staticmethod
+	def add_file_handler(fname):
+		if Logger.__instance == None:
+			raise Exception('Logger class is not initialized!')
+		else:
+			inst = Logger.__instance
+			log_path = inst.get_unique_path(join(inst.log_dir, fname))
+			output_file_handler = logging.FileHandler(log_path)
+			inst.logger.addHandler(output_file_handler)
+
 	def __init__(self, log_dir, fname='log'):
 		if Logger.__instance != None:
 			raise Exception('Logger is a singleton class and is already initialized!')
@@ -37,15 +47,19 @@ class Logger:
 			Logger.__instance = self
 			self.logger = logging.getLogger(__name__)
 			self.logger.setLevel(logging.DEBUG)
-			log_path = join(log_dir, fname)
-			for i in range(100):
-				if not os.path.exists(log_path+'.txt'): break
-				log_path = join(log_dir, fname) + f'_{i:02}'
-			self.path = log_path+'.txt'
-			output_file_handler = logging.FileHandler(self.path)
+			self.log_dir = log_dir
 			stdout_handler = logging.StreamHandler(sys.stdout)
-			self.logger.addHandler(output_file_handler)
 			self.logger.addHandler(stdout_handler)
+			self.add_file_handler(fname)
+
+	def get_unique_path(self, path, default_ext='txt'):
+		ext = path.strip().split('.')[-1] if '.' in path else default_ext
+		uni_path = path[:-len(ext)] if '.' in path else path
+		for i in range(100):
+			if not os.path.exists(f'{uni_path}.{ext}'):
+				break
+			uni_path = uni_path[:-3] + f'_{i:02}' if i > 0 else uni_path + f'_{i:02}'
+		return f'{uni_path}.{ext}'
 
 '''
 Reads CelebA Data.
