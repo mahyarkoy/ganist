@@ -13,6 +13,7 @@ from util import Logger, readim_path_from_dir, readim_from_path
 import glob
 import os
 import pickle as pk
+import argparse
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
@@ -67,22 +68,36 @@ def leakage_test(log_dir, im_size=128, ksize=128, fc_x=43./128, fc_y=1./128):
 	single_draw(im_data[0], 
 		join(log_dir, 'tanh_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, int(im_size*fc_x), int(im_size*fc_y))))
 
-def fft_test(log_dir, sess=None):
+def fft_test(log_dir, sess=None, run_seed=0):
 	data_size = 10000
 	im_size = 128
 
+	use_shifter = True ## set to True for freq shift dataset
+	def shifter(x): return TFutil.get().freq_shift(x, 0.5, 0.5) if use_shifter else x	
+
 	### ganist load g_samples
-	g_name = '5_logs_wganbn_celeba128cc_fid50'
-	#ganist = tf_ganist.Ganist(sess, log_dir)
-	#sess.run(tf.global_variables_initializer())
-	#net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_0/snapshots/model_best.h5'
-	#ganist.load(net_path)
-	#g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+	#g_name = '5_logs_wganbn_celeba128cc_fid50'
+	#g_name = '14_logs_wganbn_celeba128cc_fssetup_fshift'
+	#g_name = '38_logs_wganbn_bedroom128cc'
+	#g_name = '46_logs_wgan_sbedroom128cc_hpfid'
+	g_name = '22_logs_wganbn_gshift_celeba128cc_fshift'
+	#g_name = '49_logs_wgan_gshift_sbedroom128cc_hpfid'
+	ganist = tf_ganist.Ganist(sess, log_dir)
+	sess.run(tf.global_variables_initializer())
+	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
+	ganist.load(net_path)
+	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
 
 	### pggan load g_samples
-	#g_name = 'gdsmall_results_0'
 	#sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
+	#g_name = f'gdsmall_results_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#g_name = f'results_gdsmall_outsh_nomirror_sceleba_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#g_name = f'results_gdsmall_sbedroom_{run_seed}'
+	#g_name = f'results_gdsmall_outsh_nomirror_sbedroom_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
 	#g_samples = pg_sampler.sample_data(data_size)
 
@@ -95,18 +110,23 @@ def fft_test(log_dir, sess=None):
 	#g_sample_dir = f'/dresden/users/mk1391/evl/ganist_lsun_logs/layer_stats/temp/{g_name}/run_0/samples/'
 	#g_samples = readim_from_path(
 	#	readim_path_from_dir(g_sample_dir, im_type='*.jpg')[:data_size], im_size, center_crop=(64,64), verbose=True)
-	
+
 	### load r_samples
-	r_name = 'celeba128cc'
-	#r_samples = read_celeba(im_size, data_size)
+	r_name = 'sceleba128cc'
+	r_samples = read_celeba(im_size, data_size)
 
-	#r_name = 'bedroom128cc'
+	#r_name = 'sbedroom128cc'
 	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
-	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=data_size)
+	#r_samples, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=data_size)
 
+	r_samples = shifter(r_samples)
+	
+	assert r_samples.shape[0] == data_size, f'r_samples count of {r_samples.shape[0]} != data_size count of {data_size}'
 	Logger.add_file_handler(f'log_{g_name}_{r_name}_{data_size}')
-	#im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
-	#im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_samples.png'), border=True)
+	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
+	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_{r_name}_samples.png'), border=True)
+	im_block_draw(shifter(r_samples), 5, join(log_dir, f'{r_name}_samples_sh.png'), border=True)
+	im_block_draw(shifter(g_samples), 5, join(log_dir, f'{g_name}_{r_name}_samples_sh.png'), border=True)
 	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
 	#	pk.dump(g_samples, fs)
 
@@ -125,16 +145,16 @@ def fft_test(log_dir, sess=None):
 		return fft_avg
 
 	### calculate fft mean
-	#r_fft_mean = fft_norm(windowing(r_samples))
-	#g_fft_mean = fft_norm(windowing(g_samples))
+	r_fft_mean = fft_norm(windowing(r_samples))
+	g_fft_mean = fft_norm(windowing(g_samples))
 
 	### read fft mean data from file
-	with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'rb') as fs:
-		g_fft_mean, r_fft_mean = pk.load(fs)
+	#with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'rb') as fs:
+	#	g_fft_mean, r_fft_mean = pk.load(fs)
 
 	### write fft mean data to file
-	#with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'wb+') as fs:
-	#	pk.dump([g_fft_mean, r_fft_mean], fs)
+	with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'wb+') as fs:
+		pk.dump([g_fft_mean, r_fft_mean], fs)
 
 	### compute aggregated frequency difference
 	blur_levels = [1.]
@@ -228,8 +248,18 @@ FFT on GANIST
 '''
 if __name__ == '__main__':
 	#log_dir = 'logs_draw/'
-	log_dir = '/dresden/users/mk1391/evl/eval_samples/'
-	os.makedirs(log_dir, exist_ok=True)
+	#log_dir = '/dresden/users/mk1391/evl/eval_samples/'
+	#os.makedirs(log_dir, exist_ok=True)
+	
+	arg_parser = argparse.ArgumentParser()
+	arg_parser.add_argument('-l', '--log-dir', dest='log_dir', required=True, help='log directory to store logs.')
+	arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
+	args = arg_parser.parse_args()
+	log_dir = args.log_dir
+	run_seed = int(args.seed)
+	np.random.seed(run_seed)
+	tf.set_random_seed(run_seed)
+	
 	Logger(log_dir, fname='log_file')
 	
 	'''
@@ -399,15 +429,16 @@ if __name__ == '__main__':
 	TENSORFLOW SETUP
 	'''
 	sess = None
-	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	#config.gpu_options.allow_growth = True
-	#sess = tf.Session(config=config)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	config.gpu_options.allow_growth = True
+	sess = tf.Session(config=config)
+	TFutil(sess)
 
 	'''
 	FFT Test
 	'''
-	fft_test(log_dir, sess)
+	fft_test(log_dir, sess=sess, run_seed=run_seed)
 
 
 	### close session

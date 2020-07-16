@@ -7,8 +7,9 @@ mkdir -p $target
 for i in {0..2}
 do
 	mkdir -p $fname/run_$i
-	python run_ganist.py -l $fname/run_$i -e $eval_step -s $i
+	python fig_draw.py -l $fname/run_$i -s $i
+	#python run_ganist.py -l $fname/run_$i -e $eval_step -s $i
 done
 cp -r $fname $target
-cp run_ganist.py $target/$fname
-cp tf_ganist.py $target/$fname
+#cp run_ganist.py $target/$fname
+#cp tf_ganist.py $target/$fname

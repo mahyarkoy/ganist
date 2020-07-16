@@ -899,14 +899,14 @@ class Ganist:
 	def build_wgan(self, im_input, zi_input, im_size):
 		### generators
 		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-				im_size=im_size, sub_scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
+				im_size=im_size, sub_scope='main') ### subscope 'l2' for older wganbn, 'main' for more recent
 		gen_collect = [g_layer]
 		im_collect = [im_input]
 		comb_list = [g_layer]
 
 		### discriminators
 		d_loss, g_loss, rg_grad_norm_output = \
-				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
+				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='main') ### subscope 'l2' for older wganbn, 'main' for more recent
 		d_loss_list = [d_loss]
 		g_loss_list = [g_loss]
 		rg_grad_norm_list = [rg_grad_norm_output]
@@ -916,7 +916,7 @@ class Ganist:
 	def build_wgan_gshift(self, im_input, zi_input, im_size):
 		### generators
 		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-				im_size=im_size, sub_scope='main') ### subscope 'l2' for older wganbn, 'main' for more recent
+				im_size=im_size, sub_scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
 		g_layer, _ = tf_freq_shift(g_layer, 0.5, 0.5)
 		gen_collect = [g_layer]
 		im_collect = [im_input]
@@ -924,7 +924,7 @@ class Ganist:
 
 		### discriminators
 		d_loss, g_loss, rg_grad_norm_output = \
-				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='main') ### subscope 'l2' for older wganbn, 'main' for more recent
+				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
 		d_loss_list = [d_loss]
 		g_loss_list = [g_loss]
 		rg_grad_norm_list = [rg_grad_norm_output]
@@ -941,7 +941,7 @@ class Ganist:
 			### apply regular wgan
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
-				self.build_wgan(self.im_input, self.zi_input, 
+				self.build_wgan_gshift(self.im_input, self.zi_input, 
 					im_size=self.data_dim[0])
 			self.im_input_rec = self.im_collect[-1]
 
