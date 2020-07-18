@@ -89,7 +89,7 @@ def fft_test(log_dir, sess=None, run_seed=0):
 	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
 
 	### pggan load g_samples
-	#sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
+	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
 	#g_name = f'gdsmall_results_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'

@@ -473,7 +473,7 @@ class COS_Sampler:
 				(np.abs(self.fc_x) == 0.5 and self.fc_y == 0) or \
 				(self.fc_x == 0 and np.abs(self.fc_y) == 0.5) or \
 				(np.abs(self.fc_x) == 0.5 and np.abs(self.fc_y) == 0.5) else phase
-		return mag * (np.cos(phase)*np.cos(self.kernel_loc) + np.sin(phase)*np.sin(self.kernel_loc))
+		return mag * np.cos(self.kernel_loc + phase)
 
 '''
 Evaluate the mean and average of stats in toy experiments over several runs.
@@ -579,6 +579,35 @@ def mag_phase_total_variation(true_hist, gen_hist):
 	phase_tv = np.sum(np.abs(
 			true_hist[3]/np.sum(true_hist[3]) - gen_hist[3]/np.sum(gen_hist[3]))) / 2.
 	return mag_tv, phase_tv
+
+def fft_eval(im_data, dname, freq_centers, freq_str, log_dir):
+	im_size = im_data.shape[2]
+	im_fft = apply_fft_win(im_data, 
+		os.path.join(log_dir, f'fft_{dname}{freq_str}_size{im_size}'), windowing=False)
+	im_fft_hann = apply_fft_win(im_data, 
+		os.path.join(log_dir, f'fft_{dname}{freq_str}_size{im_size}_hann'), windowing=True)
+	im_hist = freq_density(im_fft, freq_centers, im_size, 
+		os.path.join(log_dir, f'freq_density_{dname}_size{im_size}'))
+	return im_fft, im_fft_hann, im_hist
+	
+def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None):
+	freq_str = sum([f'_fx{int(fx*im_size)}fy{int(fy*im_size)}' for fx, fy in freq_centers])
+	gen_fft, gen_fft_hann, gen_hist = fft_eval(gen_samples, dname, freq_centers, freq_str, log_dir=result_subdir)
+	if true_fft is not None:
+		fft_leakage = freq_leakage(true_fft, gen_fft)
+		freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
+		with open(join(result_subdir, f'wd_mag_phase_{dname}{freq_str}.txt'), 'w+') as fs:
+			for fx, fy in freqs:
+				mag_wd, phase_wd = mag_phase_wass_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+				mag_tv, phase_tv = mag_phase_total_variation(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+				print(f'mag_wd_fx{fx}_fy{fy}: {mag_wd}', file=fs)
+				print(f'phase_wd_fx{fx}_fy{fy}: {phase_wd}', file=fs)
+				print(f'mag_tv_fx{fx}_fy{fy}: {mag_tv}', file=fs)
+				print(f'phase_tv_fx{fx}_fy{fy}: {phase_tv}', file=fs)
+			print(f'>>> true_total_power: {np.sum(np.mean(np.abs(true_fft)**2, axis=0))}')
+			print(f'>>> gen_total_power: {np.sum(np.mean(np.abs(gen_fft)**2, axis=0))}')
+			print(f'>>> leakage ratio: {fft_leakage}')
+	return gen_fft, gen_fft_hann, gen_hist
 
 
 

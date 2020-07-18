@@ -20,6 +20,7 @@ global_color_locs = np.arange(10) / 10.
 global_color_set = global_cmap(global_color_locs)
 
 evl_path = '/dresden/users/mk1391/evl/'
+log_dir = 'logs_miss_details_iclr/'
 fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_celeba128cc_gauss41/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/4_logs_wganbn_lap3_celeba128cc_fid50_gwrong_realonly/run_%d/fid_levels_r.cpk',
@@ -27,17 +28,19 @@ fid_paths = [
 	#evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'ganist_lap_logs/47_logs_wganbn_gshift_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
-	#evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
+	#evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	#evl_path+'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/results_gdsmall_sbedroom_0/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	evl_path+'ganist_lap_logs/44_logs_wganbn_bedroom128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
+	evl_path+'ganist_lap_logs/44_logs_wganbn_bedroom128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/46_logs_wgan_sbedroom128cc_hpfid/run_%d/fid_levels.cpk',
 	#evl_path+'ganist_lap_logs/49_logs_wgan_gshift_sbedroom128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/43_logs_wganbn_cub128bb_hpfid_constrad8/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/43_logs_wganbn_cub128bb_hpfid_constrad8/run_%d/fid_levels.cpk'
-	evl_path+'pggan_logs/logs_bedroom128cc_sh/logs_pggan_sbedroom128cc_hpfid/run_%d/fid_levels.cpk',
-	evl_path+'pggan_logs/logs_bedroom128cc_sh/logs_pggan_outsh_sbedroom128cc_hpfid/run_%d/fid_levels.cpk'
-	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
+	#evl_path+'pggan_logs/logs_bedroom128cc/logs_pggan_bedroom128cc_hpfid/run_%d/fid_levels.cpk'
+	#evl_path+'pggan_logs/logs_bedroom128cc_sh/logs_pggan_sbedroom128cc_hpfid/run_%d/fid_levels.cpk',
+	#evl_path+'pggan_logs/logs_bedroom128cc_sh/logs_pggan_outsh_sbedroom128cc_hpfid/run_%d/fid_levels.cpk'
+	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	#evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_outsh_sceleba128cc_hpfid/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/logs_wganbn_bedroom128cc/run_%d/fid_levels_r.cpk',
@@ -104,9 +107,12 @@ def plot_fid_levels(ax, pathname, pname, pcolor):
 	ax.plot(fid_mean+fid_std, linestyle='--', linewidth=0.5, color=pcolor)
 	ax.plot(fid_mean-fid_std, linestyle='--', linewidth=0.5, color=pcolor)
 	ax.set_xticks(range(len(blur_levels)))
+
+	### cut off frequency conversion
+	blur_cutoff = [0.] + [1./(np.pi*2*s) for s in blur_levels if s > 0]
 	
 	### for regular SD labels
-	ax.set_xticklabels(map('{:.2f}'.format, blur_levels))
+	ax.set_xticklabels(map('{:.2f}'.format, blur_cutoff))
 	
 	### for fractions: in terms of the cutoff radius of first filter which is M/(2*pi)
 	#frac_labels = ['0', '1', r'$\frac{7}{8}$', r'$\frac{6}{8}$', r'$\frac{5}{8}$', 
@@ -120,22 +126,23 @@ if __name__ == '__main__':
 	fig = plt.figure(0, figsize=(8,6))
 	ax = fig.add_subplot(1,1,1)
 	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_xlabel(r'Low-pass $\sigma$')
+	ax.set_xlabel(r'High-pass Cut-off Frequency')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('FID HP Levels: SBedroom 128')
+	ax.set_title('FID HP Levels: Bedroom 128')
 
 	### plot
-	pnames = ['True', 'PGGAN', 'PGGAN-FSG']
-	pcolors = [0, 6, 2] ## add 0 for real, pggan 6 and 4, wgan 1 and 5
+	pnames = ['True', 'WGAN']
+	pcolors = [0, 1] ## add 0 for real, pggan 6 and 4, wgan 1 and 5
 	for i, _ in enumerate(pcolors):
 		p = fid_paths[i]
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
+	log_path = os.path.join(log_dir, 'fids_hp_wgan_bedroom128cc.pdf')
 	#fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_celeba128cc.pdf')
 	#fig.savefig('/home/mahyar/miss_details_images/temp/fids50_true_cub128bb.pdf')
-	fig.savefig(evl_path+'ganist_lap_logs/plots/fids_hp_pggan_vs_outsh_sbedroom128cc.pdf')
+	fig.savefig(log_path)
 
 
 

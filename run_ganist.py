@@ -1523,8 +1523,8 @@ if __name__ == '__main__':
 	'''
 	arg_parser = argparse.ArgumentParser()
 	arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
-	arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
 	arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
+	arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
 	args = arg_parser.parse_args()
 	log_path = args.log_path
 	eval_int = int(args.eval_int)
@@ -1909,7 +1909,7 @@ if __name__ == '__main__':
 	#from theano import tensor as T
 	#import lasagne
 	### tensorflow (comment when using theano pggan)
-	#sys.path.insert(0, '/dresden/users/mk1391/evl/Data/pggan_model')
+	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
 
 	#net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cub128bb/results_gdsmall_cub_1/000-pgan-cub-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
