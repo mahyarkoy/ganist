@@ -590,11 +590,12 @@ def fft_eval(im_data, dname, freq_centers, freq_str, log_dir):
 		os.path.join(log_dir, f'freq_density_{dname}_size{im_size}'))
 	return im_fft, im_fft_hann, im_hist
 	
-def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None):
+def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None, true_fft_hann=None):
 	freq_str = sum([f'_fx{int(fx*im_size)}fy{int(fy*im_size)}' for fx, fy in freq_centers])
 	gen_fft, gen_fft_hann, gen_hist = fft_eval(gen_samples, dname, freq_centers, freq_str, log_dir=result_subdir)
 	if true_fft is not None:
 		fft_leakage = freq_leakage(true_fft, gen_fft)
+		fft_leakage_hann = freq_leakage(true_fft_hann, gen_fft_hann)
 		freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
 		with open(join(result_subdir, f'wd_mag_phase_{dname}{freq_str}.txt'), 'w+') as fs:
 			for fx, fy in freqs:
@@ -607,6 +608,9 @@ def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None):
 			print(f'>>> true_total_power: {np.sum(np.mean(np.abs(true_fft)**2, axis=0))}')
 			print(f'>>> gen_total_power: {np.sum(np.mean(np.abs(gen_fft)**2, axis=0))}')
 			print(f'>>> leakage ratio: {fft_leakage}')
+			print(f'>>> true_total_power_hann: {np.sum(np.mean(np.abs(true_fft_hann)**2, axis=0))}')
+			print(f'>>> gen_total_power_hann: {np.sum(np.mean(np.abs(gen_fft_hann)**2, axis=0))}')
+			print(f'>>> leakage ratio hann: {fft_leakage_hann}')
 	return gen_fft, gen_fft_hann, gen_hist
 
 
