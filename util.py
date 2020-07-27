@@ -435,8 +435,8 @@ def freq_density(fft, freqs, im_size, path, mag_density=None, phase_density=None
 		fig.clf()
 		ax_mag = fig.add_subplot(2,1,1)
 		ax_phase = fig.add_subplot(2,1,2)
-		mag_count, mag_bins, _ = ax_mag.hist(mag, 100, range=(0., 1.), density=True)
-		phase_count, phase_bins, _ = ax_phase.hist(phase, 100, range=(-np.pi, np.pi), density=True)
+		mag_count, mag_bins, _ = ax_mag.hist(mag, 128, range=(0., 1.), density=True)
+		phase_count, phase_bins, _ = ax_phase.hist(phase, 128, range=(-np.pi, np.pi), density=True)
 		freq_hist[(fx, fy)] = [mag_bins, mag_count, phase_bins, phase_count]
 		with open(path+'_fx{}_fy{}'.format(fx, fy)+'.pk', 'wb+') as fs:
 			pk.dump([mag_bins, mag_count, phase_bins, phase_count], fs)

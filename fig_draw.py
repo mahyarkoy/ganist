@@ -9,7 +9,7 @@ import sys
 from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
 from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
-from util import Logger, readim_path_from_dir, readim_from_path
+from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval
 import glob
 import os
 import pickle as pk
@@ -382,20 +382,25 @@ if __name__ == '__main__':
 	'''
 	Cosine sampler
 	'''
-	#data_size = 50000
-	#freq_centers = [(61/128., 0/128.)]
-	#im_size = 128
-	#im_data = np.zeros((data_size, im_size, im_size, 1))
-	#freq_str = ''
-	#for fc in freq_centers:
-	#	sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=1)
-	#	im_data += sampler.sample_data(data_size)
-	#	freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
-	#im_data /= len(freq_centers)
+	data_size = 10000
+	freq_centers = [(0/128., 0/128.)]
+	im_size = 128
+	im_data = np.zeros((data_size, im_size, im_size, 1))
+	freq_str = ''
+	for fc in freq_centers:
+		sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=1)
+		im_data += sampler.sample_data(data_size)
+		freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+	im_data /= len(freq_centers)
+	im_data = 255. * (im_data + 1.) / 2.
+	im_data = im_data.astype(np.float32)
+	im_data = np.rint(im_data).clip(0, 255).astype(np.uint8)
+	im_data = im_data / 255. * 2. - 1.
+	true_fft, true_fft_hann, true_hist = cosine_eval(im_data, 'true', freq_centers, log_dir=log_dir)
 	#true_fft = apply_fft_win(im_data[:1000], 
 	#		join(log_dir, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
-	##true_fft_hann = apply_fft_win(im_data[:1000], 
-	##		join(log_dir, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
+	#true_fft_hann = apply_fft_win(im_data[:1000], 
+	#		join(log_dir, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
 	#freq_density(true_fft, freq_centers, im_size, join(log_dir, 'freq_density_size{}'.format(im_size)))
 	
 	'''
@@ -428,18 +433,17 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	sess = None
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	config.gpu_options.allow_growth = True
-	sess = tf.Session(config=config)
-	TFutil(sess)
+	#sess = None
+	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	#config.gpu_options.allow_growth = True
+	#sess = tf.Session(config=config)
+	#TFutil(sess)
 
 	'''
 	FFT Test
 	'''
-	fft_test(log_dir, sess=sess, run_seed=run_seed)
-
+	#fft_test(log_dir, sess=sess, run_seed=run_seed)
 
 	### close session
 	#sess.close()
