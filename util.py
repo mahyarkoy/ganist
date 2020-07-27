@@ -591,13 +591,14 @@ def fft_eval(im_data, dname, freq_centers, freq_str, log_dir):
 	return im_fft, im_fft_hann, im_hist
 	
 def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None, true_fft_hann=None):
-	freq_str = sum([f'_fx{int(fx*im_size)}fy{int(fy*im_size)}' for fx, fy in freq_centers])
-	gen_fft, gen_fft_hann, gen_hist = fft_eval(gen_samples, dname, freq_centers, freq_str, log_dir=result_subdir)
+	im_size = gen_samples.shape[2]
+	freq_str = ''.join([f'_fx{int(fx*im_size)}fy{int(fy*im_size)}' for fx, fy in freq_centers])
+	gen_fft, gen_fft_hann, gen_hist = fft_eval(gen_samples, dname, freq_centers, freq_str, log_dir=log_dir)
 	if true_fft is not None:
 		fft_leakage = freq_leakage(true_fft, gen_fft)
 		fft_leakage_hann = freq_leakage(true_fft_hann, gen_fft_hann)
 		freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
-		with open(join(result_subdir, f'wd_mag_phase_{dname}{freq_str}.txt'), 'w+') as fs:
+		with open(join(log_dir, f'wd_mag_phase_{dname}{freq_str}.txt'), 'w+') as fs:
 			for fx, fy in freqs:
 				mag_wd, phase_wd = mag_phase_wass_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
 				mag_tv, phase_tv = mag_phase_total_variation(true_hist[(fx, fy)], gen_hist[(fx, fy)])
