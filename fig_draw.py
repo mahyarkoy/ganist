@@ -3,7 +3,7 @@ import tensorflow as tf
 from run_ganist import block_draw, im_block_draw
 from run_ganist import TFutil, sample_ganist, create_lsun, CUB_Sampler, PG_Sampler
 import matplotlib.pyplot as plt
-from PIL import Image
+from PIL import Image, ImageDraw
 import tf_ganist
 import sys
 from os.path import join
@@ -67,6 +67,36 @@ def leakage_test(log_dir, im_size=128, ksize=128, fc_x=43./128, fc_y=1./128):
 		windowing=False)
 	single_draw(im_data[0], 
 		join(log_dir, 'tanh_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, int(im_size*fc_x), int(im_size*fc_y))))
+
+def fft_power_diff_test(log_dir):
+	paths = glob.glob(os.path.join(log_dir, 'run_*/'))
+	log_power_diff = list()
+	log_power_diff_hann = list()
+	for p in paths:
+		pk_paths = glob.glob(os.path.join(p, '*.pk'))
+		for pkp in pk_paths:
+			if 'fft' in pkp:
+				with open(pkp, 'rb') as fs:
+					if 'mean' in pkp:
+						fft_mean = pk.load(fs)
+					else:
+						fft_mean = np.mean(pk.load(fs), axis=0)
+				if 'true' in pkp:
+					if 'hann' in pkp:
+						true_fft_mean_hann = fft_mean
+					else:
+						true_fft_mean = fft_mean
+				else:
+					if 'hann' in pkp:
+						gen_fft_mean_hann = fft_mean
+					else:
+						gen_fft_mean = fft_mean
+		log_power_diff.append(np.sum(np.abs(np.log(true_fft_mean) - np.log(gen_fft_mean))))
+		log_power_diff_hann.append(np.sum(np.abs(np.log(true_fft_mean_hann) - np.log(gen_fft_mean_hann))))
+	with open(os.path.join(log_dir, 'log_power_diff.txt'), 'w+') as fs:
+		print(f'log_power_diff: {np.mean(log_power_diff)} SD {np.std(log_power_diff)}', file=fs)
+		print(f'log_power_diff: {np.mean(log_power_diff_hann)} SD {np.std(log_power_diff_hann)}', file=fs)
+	return
 
 def fft_test(log_dir, sess=None, run_seed=0):
 	data_size = 10000
@@ -234,6 +264,56 @@ def fft_test(log_dir, sess=None, run_seed=0):
 
 		fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
 
+def rotate(vec, deg):
+		deg = deg * np.pi / 180.
+		return np.matmul(np.array([[np.cos(deg), -np.sin(deg)], [np.sin(deg), np.cos(deg)]]), vec)
+
+def koch(start_point, end_point, level):
+	koch_trail = list()
+	if level > 0:
+		vec = end_point - start_point
+		### 1st segment
+		mid_start = start_point + vec / 3.
+		koch_trail += koch(start_point, mid_start, level-1)
+		koch_trail.append(mid_start)
+		### 2nd segment
+		mid_tip = mid_start + rotate(vec / 3., 60.)
+		koch_trail += koch(mid_start, mid_tip, level-1)
+		koch_trail.append(mid_tip)
+		### 3rd segment
+		mid_end = start_point + 2 * vec / 3.
+		koch_trail += koch(mid_tip, mid_end, level-1)
+		koch_trail.append(mid_end)
+		### 4th segment
+		koch_trail += koch(mid_end, end_point, level-1)
+	return koch_trail
+
+def make_koch_snowflake(level, rot, res, channels, line_width=1):
+	center = np.array([0., 0.])
+	scale = .5
+	vec = rotate(np.array([0., 1.]) * scale, rot)
+	top = center + vec
+	left = center + rotate(vec, 120.)
+	right = center + rotate(vec, -120.)
+	koch_trail = [top]
+	### make koch
+	koch_trail += koch(top, right, level)
+	koch_trail.append(right)
+	koch_trail += koch(right, left, level)
+	koch_trail.append(left)
+	koch_trail += koch(left, top, level)
+	koch_trail.append(top)
+	### make koch image mask
+	def rescale(p):
+		p_re = np.array(p)
+		p_re[1] *= -1
+		return np.rint(res / 2. * p_re + res / 2).tolist()
+	im = Image.new('RGB', (res, res))
+	draw = ImageDraw.Draw(im)
+	for i in range(len(koch_trail) - 1):
+		draw.line(rescale(koch_trail[i])+rescale(koch_trail[i+1]), fill=(255, 255, 255), width=line_width)
+	return np.asarray(im)[:, :, :channels] / 255. * 2. - 1.
+
 #celeba_data = read_celeba(32)
 #apply_fft_win(celeba_data, log_dir+'/fft_celeba32cc_hann.png')
 
@@ -261,6 +341,30 @@ if __name__ == '__main__':
 	tf.set_random_seed(run_seed)
 	
 	Logger(log_dir, fname='log_file')
+	
+	'''
+	Power Diff Eval
+	'''
+	eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/17_logs_wgan_cos128_fx0y0_mnorm01p0pi'
+	#eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/36_logs_wgan_cos128_fx3y3_mnorm01p0pi'
+	#eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/38_logs_wgan_cos128_fx61y61_mnorm01p0pi'
+	#eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/19_logs_wgan_cos128_fx64y64_mnorm01p0pi'
+	fft_power_diff_test(eval_dir)
+
+	'''
+	Koch Snowflakes
+	'''
+	#data_size = 1000
+	#im_size = 256
+	#koch_level = 3
+	#channels = 1
+	#im = make_koch_snowflake(koch_level, 0., im_size, channels)
+	#single_draw(im, os.path.join(log_dir, f'koch_snowflake_{koch_level}_{im_size}.png'))
+	#im_data = np.zeros((data_size, im_size, im_size, channels))
+	#for i in range(data_size):
+	#	rot = np.random.uniform(-30, 30)
+	#	im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
+	#apply_fft_win(im_data, os.path.join(log_dir, f'fft_koch_snowflake_{koch_level}_{im_size}.png'))
 	
 	'''
 	Eval toy experiments.
@@ -382,21 +486,21 @@ if __name__ == '__main__':
 	'''
 	Cosine sampler
 	'''
-	data_size = 10000
-	freq_centers = [(0/128., 0/128.)]
-	im_size = 128
-	im_data = np.zeros((data_size, im_size, im_size, 1))
-	freq_str = ''
-	for fc in freq_centers:
-		sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=1)
-		im_data += sampler.sample_data(data_size)
-		freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
-	im_data /= len(freq_centers)
-	im_data = 255. * (im_data + 1.) / 2.
-	im_data = im_data.astype(np.float32)
-	im_data = np.rint(im_data).clip(0, 255).astype(np.uint8)
-	im_data = im_data / 255. * 2. - 1.
-	true_fft, true_fft_hann, true_hist = cosine_eval(im_data, 'true', freq_centers, log_dir=log_dir)
+	#data_size = 10000
+	#freq_centers = [(0/128., 0/128.)]
+	#im_size = 128
+	#im_data = np.zeros((data_size, im_size, im_size, 1))
+	#freq_str = ''
+	#for fc in freq_centers:
+	#	sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=1)
+	#	im_data += sampler.sample_data(data_size)
+	#	freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+	#im_data /= len(freq_centers)
+	#im_data = 255. * (im_data + 1.) / 2.
+	#im_data = im_data.astype(np.float32)
+	#im_data = np.rint(im_data).clip(0, 255).astype(np.uint8)
+	#im_data = im_data / 255. * 2. - 1.
+	#true_fft, true_fft_hann, true_hist = cosine_eval(im_data, 'true', freq_centers, log_dir=log_dir)
 	#true_fft = apply_fft_win(im_data[:1000], 
 	#		join(log_dir, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
 	#true_fft_hann = apply_fft_win(im_data[:1000], 

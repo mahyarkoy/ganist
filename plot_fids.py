@@ -25,24 +25,26 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/fid_levels/logs_fidlevels_celeba128cc_gauss41/run_%d/fid_levels.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/4_logs_wganbn_lap3_celeba128cc_fid50_gwrong_realonly/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/logs_wganbn_cub128bb/run_%d/fid_levels_r.cpk'
-	#evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
+	evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'ganist_lap_logs/47_logs_wganbn_gshift_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
-	#evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
+	evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/results_gdsmall_sbedroom_0/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
-	evl_path+'ganist_lap_logs/44_logs_wganbn_bedroom128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
-	evl_path+'ganist_lap_logs/44_logs_wganbn_bedroom128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
+	#evl_path+'ganist_lap_logs/44_logs_wganbn_bedroom128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
+	#evl_path+'ganist_lap_logs/44_logs_wganbn_bedroom128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/46_logs_wgan_sbedroom128cc_hpfid/run_%d/fid_levels.cpk',
 	#evl_path+'ganist_lap_logs/49_logs_wgan_gshift_sbedroom128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/43_logs_wganbn_cub128bb_hpfid_constrad8/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/43_logs_wganbn_cub128bb_hpfid_constrad8/run_%d/fid_levels.cpk'
+	evl_path+'ganist_lap_logs/48_logs_wganbn_fsg16_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	#evl_path+'pggan_logs/logs_bedroom128cc/logs_pggan_bedroom128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'pggan_logs/logs_bedroom128cc_sh/logs_pggan_sbedroom128cc_hpfid/run_%d/fid_levels.cpk',
 	#evl_path+'pggan_logs/logs_bedroom128cc_sh/logs_pggan_outsh_sbedroom128cc_hpfid/run_%d/fid_levels.cpk'
-	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
+	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_outsh_sceleba128cc_hpfid/run_%d/fid_levels.cpk'
+	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_fsg16_celeba128cc_hpfid/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/logs_wganbn_bedroom128cc/run_%d/fid_levels_r.cpk',
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/logs_wganbn_bedroom128cc/run_%d/fid_levels.cpk'
 	#'/media/evl/Public/Mahyar/ganist_lsun_logs/layer_stats/35_logs_lap3_reconst_celeba128cc/run_%d/fid_levels.cpk',
@@ -129,17 +131,17 @@ if __name__ == '__main__':
 	ax.set_xlabel(r'High-pass Cut-off Frequency')
 	ax.set_ylabel('FID')
 	#ax.set_yscale('log')
-	ax.set_title('FID HP Levels: Bedroom 128')
+	ax.set_title('FID HP Levels: CelebA 128')
 
 	### plot
-	pnames = ['True', 'WGAN']
-	pcolors = [0, 1] ## add 0 for real, pggan 6 and 4, wgan 1 and 5
+	pnames = ['True', 'WGAN', 'FSG']
+	pcolors = [0, 1, 2] ## add 0 for real, pggan 6 and 4, wgan 1 and 5
 	for i, _ in enumerate(pcolors):
 		p = fid_paths[i]
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	log_path = os.path.join(log_dir, 'fids_hp_wgan_bedroom128cc.pdf')
+	log_path = os.path.join(log_dir, 'fids_hp_wgan_vs_fsg16_celeba128cc.pdf')
 	#fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_celeba128cc.pdf')
 	#fig.savefig('/home/mahyar/miss_details_images/temp/fids50_true_cub128bb.pdf')
 	fig.savefig(log_path)
