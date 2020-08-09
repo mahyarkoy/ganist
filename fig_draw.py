@@ -9,7 +9,7 @@ import sys
 from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
 from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
-from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval
+from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval, create_cosine
 import glob
 import os
 import pickle as pk
@@ -69,6 +69,7 @@ def leakage_test(log_dir, im_size=128, ksize=128, fc_x=43./128, fc_y=1./128):
 		join(log_dir, 'tanh_im{}_cos{}_fx{}_fy{}.png'.format(im_size, ksize, int(im_size*fc_x), int(im_size*fc_y))))
 
 def fft_power_diff_test(log_dir):
+	eps = 1e-10
 	paths = glob.glob(os.path.join(log_dir, 'run_*/'))
 	log_power_diff = list()
 	log_power_diff_hann = list()
@@ -91,11 +92,11 @@ def fft_power_diff_test(log_dir):
 						gen_fft_mean_hann = fft_mean
 					else:
 						gen_fft_mean = fft_mean
-		log_power_diff.append(np.sum(np.abs(np.log(true_fft_mean) - np.log(gen_fft_mean))))
-		log_power_diff_hann.append(np.sum(np.abs(np.log(true_fft_mean_hann) - np.log(gen_fft_mean_hann))))
+		log_power_diff.append(np.sum(np.abs(np.log(true_fft_mean+eps) - np.log(gen_fft_mean+eps))))
+		log_power_diff_hann.append(np.sum(np.abs(np.log(true_fft_mean_hann+eps) - np.log(gen_fft_mean_hann+eps))))
 	with open(os.path.join(log_dir, 'log_power_diff.txt'), 'w+') as fs:
 		print(f'log_power_diff: {np.mean(log_power_diff)} SD {np.std(log_power_diff)}', file=fs)
-		print(f'log_power_diff: {np.mean(log_power_diff_hann)} SD {np.std(log_power_diff_hann)}', file=fs)
+		print(f'log_power_diff_hann: {np.mean(log_power_diff_hann)} SD {np.std(log_power_diff_hann)}', file=fs)
 	return
 
 def fft_test(log_dir, sess=None, run_seed=0):
@@ -314,6 +315,31 @@ def make_koch_snowflake(level, rot, res, channels, line_width=1):
 		draw.line(rescale(koch_trail[i])+rescale(koch_trail[i+1]), fill=(255, 255, 255), width=line_width)
 	return np.asarray(im)[:, :, :channels] / 255. * 2. - 1.
 
+def run_cos_eval(log_dir, sess=None, run_seed=0):
+	data_size = 10000
+	im_size = 128
+
+	### craete cosine dataset
+	freq_centers = [(0/128., 0/128.)]
+	r_samples, freq_str = create_cosine(data_size, freq_centers, resolution=im_size, channels=1)
+
+	### pggan load g_samples
+	sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
+	g_name = f'gdsmall_results_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#g_name = f'results_gdsmall_outsh_nomirror_sceleba_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#g_name = f'results_gdsmall_sbedroom_{run_seed}'
+	#g_name = f'results_gdsmall_outsh_nomirror_sbedroom_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	g_samples = pg_sampler.sample_data(data_size)
+
+	true_fft, true_fft_hann, true_hist = cosine_eval(r_samples, 'true', freq_centers, log_dir=log_dir)
+	cosine_eval(g_samples, 'gen', freq_centers, log_dir=log_dir, true_fft=true_fft, true_fft_hann=true_fft_hann)
+
+
 #celeba_data = read_celeba(32)
 #apply_fft_win(celeba_data, log_dir+'/fft_celeba32cc_hann.png')
 
@@ -339,17 +365,17 @@ if __name__ == '__main__':
 	run_seed = int(args.seed)
 	np.random.seed(run_seed)
 	tf.set_random_seed(run_seed)
-	
+	os.makedirs(log_dir, exist_ok=True)
 	Logger(log_dir, fname='log_file')
 	
 	'''
 	Power Diff Eval
 	'''
-	eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/17_logs_wgan_cos128_fx0y0_mnorm01p0pi'
+	#eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/17_logs_wgan_cos128_fx0y0_mnorm01p0pi'
 	#eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/36_logs_wgan_cos128_fx3y3_mnorm01p0pi'
 	#eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/38_logs_wgan_cos128_fx61y61_mnorm01p0pi'
 	#eval_dir = '/dresden/users/mk1391/evl/ganist_toy_logs/19_logs_wgan_cos128_fx64y64_mnorm01p0pi'
-	fft_power_diff_test(eval_dir)
+	#fft_power_diff_test(eval_dir)
 
 	'''
 	Koch Snowflakes
@@ -537,11 +563,11 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	#sess = None
-	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	#config.gpu_options.allow_growth = True
-	#sess = tf.Session(config=config)
+	sess = None
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	config.gpu_options.allow_growth = True
+	sess = tf.Session(config=config)
 	#TFutil(sess)
 
 	'''
@@ -549,8 +575,13 @@ if __name__ == '__main__':
 	'''
 	#fft_test(log_dir, sess=sess, run_seed=run_seed)
 
+	'''
+	Cos Eval
+	'''
+	run_cos_eval(log_dir, sess=sess, run_seed=0)
+
 	### close session
-	#sess.close()
+	sess.close()
 
 
 

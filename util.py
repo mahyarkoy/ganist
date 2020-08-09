@@ -354,7 +354,7 @@ def apply_fft_win(im_data, path, windowing=True, plot_ax=None):
 	im_fft_power = np.abs(im_fft)**2
 	im_fft_mean = np.mean(im_fft_power, axis=0)
 	fft_max_power = np.amax(im_fft_mean)
-	im_fft_mean /= fft_max_power  
+	im_fft_norm = im_fft_mean / fft_max_power  
 	
 	### plot mean fft
 	if plot_ax is None:
@@ -364,12 +364,12 @@ def apply_fft_win(im_data, path, windowing=True, plot_ax=None):
 	else:
 		ax = plot_ax
 
-	np.clip(im_fft_mean, 1e-20, None, out=im_fft_mean)
-	pa = ax.imshow(np.log(im_fft_mean), cmap=plt.get_cmap('inferno'), vmin=-13)
+	np.clip(im_fft_norm, 1e-20, None, out=im_fft_norm)
+	pa = ax.imshow(np.log(im_fft_norm), cmap=plt.get_cmap('inferno'), vmin=-13)
 	ax.set_title('Log Average Frequency Spectrum')
 	dft_size = im_data.shape[1]
 	#print('dft_size: {}'.format(dft_size))
-	#print('fft_shape: {}'.format(im_fft_mean.shape))
+	#print('fft_shape: {}'.format(im_fft_norm.shape))
 	#dft_size = None
 	if dft_size is not None:
 		ticks_loc_x = [0, dft_size//2]
@@ -385,7 +385,7 @@ def apply_fft_win(im_data, path, windowing=True, plot_ax=None):
 		### save (if image prefix is not provided, save both image and pickle data)
 		if path[-4:] != '.png':
 			with open(path+'.pk', 'wb+') as fs:
-				pk.dump(im_fft, fs)
+				pk.dump(im_fft_mean, fs)
 			path += '.png'
 		fig.savefig(path, dpi=300)
 
@@ -474,6 +474,20 @@ class COS_Sampler:
 				(self.fc_x == 0 and np.abs(self.fc_y) == 0.5) or \
 				(np.abs(self.fc_x) == 0.5 and np.abs(self.fc_y) == 0.5) else phase
 		return mag * np.cos(self.kernel_loc + phase)
+
+def create_cosine(data_size, freq_centers, resolution=128, channels=1):
+	print('Creating Cosine from "%s"' % celeba_dir)
+	im_size = resolution
+	im_data = np.zeros((data_size, im_size, im_size, channels))
+	freq_str = ''
+	for fc in freq_centers:
+	   sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=channels)
+	   im_data += sampler.sample_data(data_size)
+	   freq_str += 'fx{}_fy{}_'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+	im_data /= len(freq_centers)
+	freq_str += f'size{im_size}'
+	print(f'Created Cosine: {freq_str}')
+	return im_data, freq_str
 
 '''
 Evaluate the mean and average of stats in toy experiments over several runs.
