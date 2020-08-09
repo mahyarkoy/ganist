@@ -476,14 +476,13 @@ class COS_Sampler:
 		return mag * np.cos(self.kernel_loc + phase)
 
 def create_cosine(data_size, freq_centers, resolution=128, channels=1):
-	print('Creating Cosine from "%s"' % celeba_dir)
 	im_size = resolution
 	im_data = np.zeros((data_size, im_size, im_size, channels))
 	freq_str = ''
 	for fc in freq_centers:
-	   sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=channels)
-	   im_data += sampler.sample_data(data_size)
-	   freq_str += 'fx{}_fy{}_'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+		sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=channels)
+		im_data += sampler.sample_data(data_size)
+		freq_str += 'fx{}_fy{}_'.format(int(fc[0]*im_size), int(fc[1]*im_size))
 	im_data /= len(freq_centers)
 	freq_str += f'size{im_size}'
 	print(f'Created Cosine: {freq_str}')
@@ -604,11 +603,11 @@ def fft_eval(im_data, dname, freq_centers, freq_str, log_dir):
 		os.path.join(log_dir, f'freq_density_{dname}_size{im_size}'))
 	return im_fft, im_fft_hann, im_hist
 	
-def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None, true_fft_hann=None):
+def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None, true_fft_hann=None, true_hist=None):
 	im_size = gen_samples.shape[2]
 	freq_str = ''.join([f'_fx{int(fx*im_size)}fy{int(fy*im_size)}' for fx, fy in freq_centers])
 	gen_fft, gen_fft_hann, gen_hist = fft_eval(gen_samples, dname, freq_centers, freq_str, log_dir=log_dir)
-	if true_fft is not None:
+	if true_fft is not None and true_fft_hann is not None and true_hist is not None:
 		fft_leakage = freq_leakage(true_fft, gen_fft)
 		fft_leakage_hann = freq_leakage(true_fft_hann, gen_fft_hann)
 		freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
@@ -620,12 +619,12 @@ def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None, true_f
 				print(f'phase_wd_fx{fx}_fy{fy}: {phase_wd}', file=fs)
 				print(f'mag_tv_fx{fx}_fy{fy}: {mag_tv}', file=fs)
 				print(f'phase_tv_fx{fx}_fy{fy}: {phase_tv}', file=fs)
-			print(f'>>> true_total_power: {np.sum(np.mean(np.abs(true_fft)**2, axis=0))}')
-			print(f'>>> gen_total_power: {np.sum(np.mean(np.abs(gen_fft)**2, axis=0))}')
-			print(f'>>> leakage ratio: {fft_leakage}')
-			print(f'>>> true_total_power_hann: {np.sum(np.mean(np.abs(true_fft_hann)**2, axis=0))}')
-			print(f'>>> gen_total_power_hann: {np.sum(np.mean(np.abs(gen_fft_hann)**2, axis=0))}')
-			print(f'>>> leakage ratio hann: {fft_leakage_hann}')
+			print(f'>>> true_total_power: {np.sum(np.mean(np.abs(true_fft)**2, axis=0))}', file=fs)
+			print(f'>>> gen_total_power: {np.sum(np.mean(np.abs(gen_fft)**2, axis=0))}', file=fs)
+			print(f'>>> leakage ratio: {fft_leakage}', file=fs)
+			print(f'>>> true_total_power_hann: {np.sum(np.mean(np.abs(true_fft_hann)**2, axis=0))}', file=fs)
+			print(f'>>> gen_total_power_hann: {np.sum(np.mean(np.abs(gen_fft_hann)**2, axis=0))}', file=fs)
+			print(f'>>> leakage ratio hann: {fft_leakage_hann}', file=fs)
 	return gen_fft, gen_fft_hann, gen_hist
 
 

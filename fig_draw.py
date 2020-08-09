@@ -320,7 +320,7 @@ def run_cos_eval(log_dir, sess=None, run_seed=0):
 	im_size = 128
 
 	### craete cosine dataset
-	freq_centers = [(0/128., 0/128.)]
+	freq_centers = [(61/128., 61/128.)]
 	r_samples, freq_str = create_cosine(data_size, freq_centers, resolution=im_size, channels=1)
 
 	### pggan load g_samples
@@ -333,11 +333,12 @@ def run_cos_eval(log_dir, sess=None, run_seed=0):
 	#g_name = f'results_gdsmall_sbedroom_{run_seed}'
 	#g_name = f'results_gdsmall_outsh_nomirror_sbedroom_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cos/results_gdsmall_cos_fx61fy61_size128_mnorm01p0pi_0/000-pgan-cosine-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
 	g_samples = pg_sampler.sample_data(data_size)
 
 	true_fft, true_fft_hann, true_hist = cosine_eval(r_samples, 'true', freq_centers, log_dir=log_dir)
-	cosine_eval(g_samples, 'gen', freq_centers, log_dir=log_dir, true_fft=true_fft, true_fft_hann=true_fft_hann)
+	cosine_eval(g_samples, 'gen', freq_centers, log_dir=log_dir, true_fft=true_fft, true_fft_hann=true_fft_hann, true_hist=true_hist)
 
 
 #celeba_data = read_celeba(32)
