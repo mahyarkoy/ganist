@@ -1531,6 +1531,8 @@ if __name__ == '__main__':
 	run_seed = int(args.seed)
 	np.random.seed(run_seed)
 	tf.set_random_seed(run_seed)
+	sys.stdout = Logger(log_path)
+	sys.stderr = sys.stdout
 	#import mnist_net
 	#import vae_ganist
 

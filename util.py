@@ -6,7 +6,7 @@ Created on Fri Jan 24 20:34:55 2020
 
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
+from PIL import Image, ImageDraw
 import glob
 import sys
 import pickle as pk
@@ -21,7 +21,22 @@ import os
 '''
 Logger
 '''
-class Logger:
+class Logger(object):
+	def __init__(self, log_dir):
+		self.terminal = sys.stdout
+		self.log = open(os.path.join(log_dir, 'terminal.log'), 'a+')
+
+	def write(self, message):
+		self.terminal.write(message)
+		self.log.write(message)  
+
+	def flush(self):
+		#this flush method is needed for python 3 compatibility.
+		#this handles the flush command by doing nothing.
+		#you might want to specify some extra behavior here.
+		pass
+
+class SingleLogger:
 	__instance = None
 	@staticmethod
 	def print(msg):
@@ -353,6 +368,7 @@ def apply_fft_win(im_data, path, windowing=True, plot_ax=None):
 	#im_fft_mean = np.mean(im_fft_norm, axis=0)
 	im_fft_power = np.abs(im_fft)**2
 	im_fft_mean = np.mean(im_fft_power, axis=0)
+	print(f'fft_max_power: {np.amax(im_fft_power)}')
 	fft_max_power = np.amax(im_fft_mean)
 	im_fft_norm = im_fft_mean / fft_max_power  
 	
@@ -627,17 +643,110 @@ def cosine_eval(gen_samples, dname, freq_centers, log_dir, true_fft=None, true_f
 			print(f'>>> leakage ratio hann: {fft_leakage_hann}', file=fs)
 	return gen_fft, gen_fft_hann, gen_hist
 
+def rotate(vec, deg):
+		deg = deg * np.pi / 180.
+		return np.matmul(np.array([[np.cos(deg), -np.sin(deg)], [np.sin(deg), np.cos(deg)]]), vec)
 
+def koch(start_point, end_point, level):
+	koch_trail = list()
+	if level > 0:
+		vec = end_point - start_point
+		### 1st segment
+		mid_start = start_point + vec / 3.
+		koch_trail += koch(start_point, mid_start, level-1)
+		koch_trail.append(mid_start)
+		### 2nd segment
+		mid_tip = mid_start + rotate(vec / 3., 60.)
+		koch_trail += koch(mid_start, mid_tip, level-1)
+		koch_trail.append(mid_tip)
+		### 3rd segment
+		mid_end = start_point + 2 * vec / 3.
+		koch_trail += koch(mid_tip, mid_end, level-1)
+		koch_trail.append(mid_end)
+		### 4th segment
+		koch_trail += koch(mid_end, end_point, level-1)
+	return koch_trail
 
+def make_koch_snowflake(level, rot, res, channels, line_width=1):
+	center = np.array([0., 0.])
+	scale = 1.
+	vec = rotate(np.array([0., 1.]) * scale, rot)
+	top = center + vec
+	left = center + rotate(vec, 120.)
+	right = center + rotate(vec, -120.)
+	koch_trail = [top]
+	### make koch
+	koch_trail += koch(top, right, level)
+	koch_trail.append(right)
+	koch_trail += koch(right, left, level)
+	koch_trail.append(left)
+	koch_trail += koch(left, top, level)
+	koch_trail.append(top)
+	### make koch image mask
+	def rescale(p):
+		p_re = np.array(p)
+		p_re[1] *= -1
+		return np.rint(res / 2. * p_re + res / 2).tolist()
+	im = Image.new('RGB', (res, res))
+	draw = ImageDraw.Draw(im)
+	for i in range(len(koch_trail) - 1):
+		draw.line(rescale(koch_trail[i])+rescale(koch_trail[i+1]), fill=(255, 255, 255), width=line_width)
+	return np.asarray(im)[:, :, :channels] / 255. * 2. - 1.
 
+def rgb2gray(rgb):
+	r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
+	gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+	return gray
 
+def fractal_dimension(Z, threshold=0.9):
+	# Only for 2d image
+	assert(len(Z.shape) == 2)
 
+	# From https://github.com/rougier/numpy-100 (#87)
+	def boxcount(Z, k):
+		S = np.add.reduceat(
+			np.add.reduceat(Z, np.arange(0, Z.shape[0], k), axis=0),
+							   np.arange(0, Z.shape[1], k), axis=1)
 
+		# We count non-empty (0) and non-full boxes (k*k)
+		return len(np.where((S > 0) & (S < k*k))[0])
 
+	# Transform Z into a binary array
+	Z = (Z > threshold)
 
+	# Minimal dimension of image
+	p = min(Z.shape)
 
+	# Greatest power of 2 less than or equal to p
+	n = int(np.floor(np.log(p)/np.log(2))) - 4
 
+	# Build successive box sizes (from 2**n down to 2**1)
+	sizes = 2**np.arange(n, 1, -1)
 
+	# Actual box counting with decreasing size
+	counts = []
+	for size in sizes:
+		counts.append(boxcount(Z, size))
+
+	# Fit the successive log(sizes) with log (counts)
+	coeffs = np.polyfit(np.log(sizes), np.log(counts), 1)
+	return coeffs, sizes, counts
+
+def fractal_eval(im_data, log_name, log_dir):
+	box_dims = list()
+	threshold = 0.
+	for im in im_data:
+		coeffs, _, _ = fractal_dimension(im[:,:,0], threshold=threshold)
+		box_dims.append(-coeffs[0])
+	apply_fft_win(im_data - np.mean(im_data), 
+		os.path.join(log_dir, f'fft_{log_name}'), windowing=False)
+	draw_size = 1 if im_data.shape[0] < 25 else 5
+	block_draw((im_data[:draw_size**2] > threshold).astype(np.float).reshape((draw_size, draw_size)+im_data.shape[1:]), os.path.join(log_dir, f'fractal_eval_samples_{log_name}.png'))
+	path_length = np.sum(im_data > threshold, axis=(1,2,3))
+	eval_str = f'>>> fractal eval {log_name}: box_dim={np.mean(box_dims)} sd {np.std(box_dims)} and path_length={np.mean(path_length)} sd {np.std(path_length)}'
+	print(eval_str)
+	with open(os.path.join(log_dir, f'fractal_eval.txt'), 'a+') as fs:
+		print(eval_str, file=fs)
 
 
 

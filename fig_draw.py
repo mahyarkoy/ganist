@@ -10,6 +10,7 @@ from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
 from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
 from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval, create_cosine
+from util import make_koch_snowflake, fractal_dimension, fractal_eval
 import glob
 import os
 import pickle as pk
@@ -265,56 +266,6 @@ def fft_test(log_dir, sess=None, run_seed=0):
 
 		fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
 
-def rotate(vec, deg):
-		deg = deg * np.pi / 180.
-		return np.matmul(np.array([[np.cos(deg), -np.sin(deg)], [np.sin(deg), np.cos(deg)]]), vec)
-
-def koch(start_point, end_point, level):
-	koch_trail = list()
-	if level > 0:
-		vec = end_point - start_point
-		### 1st segment
-		mid_start = start_point + vec / 3.
-		koch_trail += koch(start_point, mid_start, level-1)
-		koch_trail.append(mid_start)
-		### 2nd segment
-		mid_tip = mid_start + rotate(vec / 3., 60.)
-		koch_trail += koch(mid_start, mid_tip, level-1)
-		koch_trail.append(mid_tip)
-		### 3rd segment
-		mid_end = start_point + 2 * vec / 3.
-		koch_trail += koch(mid_tip, mid_end, level-1)
-		koch_trail.append(mid_end)
-		### 4th segment
-		koch_trail += koch(mid_end, end_point, level-1)
-	return koch_trail
-
-def make_koch_snowflake(level, rot, res, channels, line_width=1):
-	center = np.array([0., 0.])
-	scale = .5
-	vec = rotate(np.array([0., 1.]) * scale, rot)
-	top = center + vec
-	left = center + rotate(vec, 120.)
-	right = center + rotate(vec, -120.)
-	koch_trail = [top]
-	### make koch
-	koch_trail += koch(top, right, level)
-	koch_trail.append(right)
-	koch_trail += koch(right, left, level)
-	koch_trail.append(left)
-	koch_trail += koch(left, top, level)
-	koch_trail.append(top)
-	### make koch image mask
-	def rescale(p):
-		p_re = np.array(p)
-		p_re[1] *= -1
-		return np.rint(res / 2. * p_re + res / 2).tolist()
-	im = Image.new('RGB', (res, res))
-	draw = ImageDraw.Draw(im)
-	for i in range(len(koch_trail) - 1):
-		draw.line(rescale(koch_trail[i])+rescale(koch_trail[i+1]), fill=(255, 255, 255), width=line_width)
-	return np.asarray(im)[:, :, :channels] / 255. * 2. - 1.
-
 def run_cos_eval(log_dir, sess=None, run_seed=0):
 	data_size = 10000
 	im_size = 128
@@ -367,7 +318,8 @@ if __name__ == '__main__':
 	np.random.seed(run_seed)
 	tf.set_random_seed(run_seed)
 	os.makedirs(log_dir, exist_ok=True)
-	Logger(log_dir, fname='log_file')
+	sys.stdout = Logger(log_dir)
+	sys.stderr = sys.stdout
 	
 	'''
 	Power Diff Eval
@@ -381,18 +333,40 @@ if __name__ == '__main__':
 	'''
 	Koch Snowflakes
 	'''
-	#data_size = 1000
-	#im_size = 256
-	#koch_level = 3
-	#channels = 1
-	#im = make_koch_snowflake(koch_level, 0., im_size, channels)
-	#single_draw(im, os.path.join(log_dir, f'koch_snowflake_{koch_level}_{im_size}.png'))
-	#im_data = np.zeros((data_size, im_size, im_size, channels))
-	#for i in range(data_size):
-	#	rot = np.random.uniform(-30, 30)
-	#	im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
-	#apply_fft_win(im_data, os.path.join(log_dir, f'fft_koch_snowflake_{koch_level}_{im_size}.png'))
-	
+	data_size = 100
+	im_size = 1024
+	koch_level = 5
+	channels = 1
+	im = make_koch_snowflake(koch_level, 0., im_size, channels)
+	def make_single_image():
+		im = -np.ones((im_size, im_size, channels))
+		im[0, 0, :] = 1.
+		return im
+	#im = make_single_image()
+	coeffs, sizes, counts = fractal_dimension(im[:,:,0], threshold=0.)
+	box_dim = -coeffs[0]
+	print(coeffs)
+	fig = plt.figure(0, figsize=(8,6))
+	fig.clf()
+	ax = fig.add_subplot(1,1,1)
+	ax.plot(-np.log(np.array(sizes)), np.log(np.array(counts)), 's-b')
+	ax.plot(-np.log(np.array(sizes)), coeffs[0] * np.log(np.array(sizes)) + coeffs[1], '-r')
+	ax.grid(True, which='both', linestyle='dotted')
+	fig.savefig(join(log_dir, f'box_count_dim_{koch_level}_{im_size}.png'), dpi=300)
+	single_draw(im, os.path.join(log_dir, f'koch_snowflake_{koch_level}_{im_size}.png'))
+	apply_fft_win(im[np.newaxis, ...] - np.mean(im), 
+		os.path.join(log_dir, f'fft_koch_snowflake_single_{koch_level}_{im_size}.png'), windowing=False)
+	print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
+
+	### many samples
+	im_data = np.zeros((data_size, im_size, im_size, channels))
+	for i in range(data_size):
+		rot = np.random.uniform(-30, 30)
+		im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
+
+	im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{koch_level}_{im_size}_samples.png'), border=True)
+	fractal_eval(im_data, f'koch_snowflake_{koch_level}_{im_size}', log_dir)
+
 	'''
 	Eval toy experiments.
 	'''
@@ -564,11 +538,11 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	sess = None
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	config.gpu_options.allow_growth = True
-	sess = tf.Session(config=config)
+	#sess = None
+	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	#config.gpu_options.allow_growth = True
+	#sess = tf.Session(config=config)
 	#TFutil(sess)
 
 	'''
@@ -579,10 +553,10 @@ if __name__ == '__main__':
 	'''
 	Cos Eval
 	'''
-	run_cos_eval(log_dir, sess=sess, run_seed=0)
+	#run_cos_eval(log_dir, sess=sess, run_seed=0)
 
 	### close session
-	sess.close()
+	#sess.close()
 
 
 
