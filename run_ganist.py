@@ -37,7 +37,7 @@ from scipy import signal
 import tf_ganist
 from fft_test import apply_fft_images
 from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density, read_image, readim_from_path, readim_path_from_dir
-from util import block_draw, im_color_borders
+from util import Logger, block_draw, im_color_borders
 from util import mag_phase_wass_dist, mag_phase_total_variation
 from collections import defaultdict
 
