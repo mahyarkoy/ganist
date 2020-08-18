@@ -100,6 +100,102 @@ def fft_power_diff_test(log_dir):
 		print(f'log_power_diff_hann: {np.mean(log_power_diff_hann)} SD {np.std(log_power_diff_hann)}', file=fs)
 	return
 
+def fft_layer_test(log_dir, sess=None, run_seed=0):
+	### read ganist network
+	g_name = '5_logs_wganbn_celeba128cc_fid50'
+	#g_name = '14_logs_wganbn_celeba128cc_fssetup_fshift'
+	#g_name = '38_logs_wganbn_bedroom128cc'
+	#g_name = '46_logs_wgan_sbedroom128cc_hpfid'
+	#g_name = '22_logs_wganbn_gshift_celeba128cc_fshift'
+	#g_name = '49_logs_wgan_gshift_sbedroom128cc_hpfid'
+	ganist = tf_ganist.Ganist(sess, log_dir)
+	sess.run(tf.global_variables_initializer())
+	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
+	ganist.load(net_path)
+	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+	d_vars, g_vars = ganist.get_vars_array()
+
+	### pggan load g_samples
+	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
+	#g_name = f'gdsmall_results_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#g_name = f'results_gdsmall_outsh_nomirror_sceleba_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#g_name = f'results_gdsmall_sbedroom_{run_seed}'
+	#g_name = f'results_gdsmall_outsh_nomirror_sbedroom_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	#g_samples = pg_sampler.sample_data(data_size)
+
+	block_draw(g_samples[:25].reshape((5, 5)+g_samples.shape[1:]), os.path.join(log_dir, f'fft_layer_samples.png'))
+
+	def box_upsample(im):
+		h, w = im.shape
+		return np.repeat(np.repeat(im.reshape((h, 1, w, 1)), 2, axis=3), 2, axis=1).reshape(h*2, w*2)
+
+	fig = plt.figure(0, figsize=(8,6))
+	im_size = 128
+	layer_size_dict = {'conv0': 16, 'conv1': 32, 'conv2': 64, 'conv3': 128}
+	for val, name in g_vars:
+		if 'kernel' in name and 'conv' in name:
+			scopes = name.split('/')
+			net_name = next(v for v in scopes if 'net' in  v)
+			conv_name = next(v for v in scopes if 'conv' in  v)
+			full_name = '-'.join(scopes[:-1])
+			#save_path = '{}/{}_{}'.format(save_dir, net_name, conv_name)
+			save_path = '{}/{}'.format(log_dir, full_name)
+			layer_name = '{}_{}_'.format(net_name, conv_name) + '_'.join(val.shape)
+			layer_size = layer_size_dict[conv_name]
+			print(f'>>> name: {name}')
+			print(f'>>> save_path: {save_path}')
+			print(f'>>> layer_name: {layer_name}')
+			print(f'>>> layer_size: {layer_size}')
+			fft_mat = np.zeros((val.shape[2], val.shape[3], im_size, im_size))
+			for i in range(val.shape[2]):
+				for j in range(val.shape[3]):
+					im = np.zeros((layer_size, layer_size))
+					im[:val.shape[0], :val.shape[1]] = val[:, :, i, j]
+					for _ in range(np.log2(im_size / layer_size)): 
+						im = box_upsample(im)
+					fft_mat[i, j, ...], _ = apply_fft_images(imgs, reshape=False)
+			print('>>> FFT MIN: {}'.format(fft_mat.min()))
+			print('>>> FFT MAX: {}'.format(fft_mat.max()))
+			fft_power = np.abs(fft_mat)**2
+			fft_avg = np.mean(fft_power, axis=(0, 1))
+			np.clip(fft_avg, 1e-20, None, out=fft_avg)
+
+			### plot mean fft
+			fig.clf()
+			ax = fig.add_subplot(1,1,1)
+			pa = ax.imshow(np.log(fft_avg / np.amax(fft_avg)), cmap=plt.get_cmap('inferno'), vmin=-13, vmax=0)
+			ax.set_title(layer_name)
+			ticks_loc_x = [0, im_size//2]
+			ticks_loc_y = [0, im_size//2-1, im_size-im_size%2-1]
+			ax.set_xticks(ticks_loc_x)
+			ax.set_xticklabels([-0.5, 0])
+			ax.set_yticks(ticks_loc_y)
+			ax.set_yticklabels(['', 0, -0.5])
+			plt.colorbar(pa)#, ax=ax, fraction=0.046, pad=0.04)
+			fig.savefig(os.path.join(log_dir, f'fft_{layer_name}.png'), dpi=300)
+
+	with open(os.path.join(log_dir, 'layer_g_vars.cpk'), 'wb+') as fs:
+		pk.dump(g_vars, fs)
+
+def windowing(imgs, skip=False):
+	if skip: return imgs
+	win_size = imgs.shape[1]
+	win = np.hanning(imgs.shape[1])
+	win = np.outer(win, win).reshape((win_size, win_size, 1))
+	return win*imgs
+
+def fft_norm(imgs):
+	imgs_fft, _ = apply_fft_images(imgs, reshape=False)
+	fft_power = np.abs(imgs_fft)**2
+	fft_avg = np.mean(fft_power, axis=0)
+	np.clip(fft_avg, 1e-20, None, out=fft_avg)
+	return fft_avg
+
 def fft_test(log_dir, sess=None, run_seed=0):
 	data_size = 10000
 	im_size = 128
@@ -161,20 +257,6 @@ def fft_test(log_dir, sess=None, run_seed=0):
 	im_block_draw(shifter(g_samples), 5, join(log_dir, f'{g_name}_{r_name}_samples_sh.png'), border=True)
 	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
 	#	pk.dump(g_samples, fs)
-
-	def windowing(imgs, skip=False):
-		if skip: return imgs
-		win_size = imgs.shape[1]
-		win = np.hanning(imgs.shape[1])
-		win = np.outer(win, win).reshape((win_size, win_size, 1))
-		return win*imgs
-
-	def fft_norm(imgs):
-		imgs_fft, _ = apply_fft_images(imgs, reshape=False)
-		fft_power = np.abs(imgs_fft)**2
-		fft_avg = np.mean(fft_power, axis=0)
-		np.clip(fft_avg, 1e-20, None, out=fft_avg)
-		return fft_avg
 
 	### calculate fft mean
 	r_fft_mean = fft_norm(windowing(r_samples))
@@ -333,39 +415,39 @@ if __name__ == '__main__':
 	'''
 	Koch Snowflakes
 	'''
-	data_size = 100
-	im_size = 1024
-	koch_level = 5
-	channels = 1
-	im = make_koch_snowflake(koch_level, 0., im_size, channels)
-	def make_single_image():
-		im = -np.ones((im_size, im_size, channels))
-		im[0, 0, :] = 1.
-		return im
-	#im = make_single_image()
-	coeffs, sizes, counts = fractal_dimension(im[:,:,0], threshold=0.)
-	box_dim = -coeffs[0]
-	print(coeffs)
-	fig = plt.figure(0, figsize=(8,6))
-	fig.clf()
-	ax = fig.add_subplot(1,1,1)
-	ax.plot(-np.log(np.array(sizes)), np.log(np.array(counts)), 's-b')
-	ax.plot(-np.log(np.array(sizes)), coeffs[0] * np.log(np.array(sizes)) + coeffs[1], '-r')
-	ax.grid(True, which='both', linestyle='dotted')
-	fig.savefig(join(log_dir, f'box_count_dim_{koch_level}_{im_size}.png'), dpi=300)
-	single_draw(im, os.path.join(log_dir, f'koch_snowflake_{koch_level}_{im_size}.png'))
-	apply_fft_win(im[np.newaxis, ...] - np.mean(im), 
-		os.path.join(log_dir, f'fft_koch_snowflake_single_{koch_level}_{im_size}.png'), windowing=False)
-	print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
-
-	### many samples
-	im_data = np.zeros((data_size, im_size, im_size, channels))
-	for i in range(data_size):
-		rot = np.random.uniform(-30, 30)
-		im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
-
-	im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{koch_level}_{im_size}_samples.png'), border=True)
-	fractal_eval(im_data, f'koch_snowflake_{koch_level}_{im_size}', log_dir)
+	#data_size = 100
+	#im_size = 1024
+	#koch_level = 5
+	#channels = 1
+	#im = make_koch_snowflake(koch_level, 0., im_size, channels)
+	#def make_single_image():
+	#	im = -np.ones((im_size, im_size, channels))
+	#	im[0, 0, :] = 1.
+	#	return im
+	##im = make_single_image()
+	#coeffs, sizes, counts = fractal_dimension(im[:,:,0], threshold=0.)
+	#box_dim = -coeffs[0]
+	#print(coeffs)
+	#fig = plt.figure(0, figsize=(8,6))
+	#fig.clf()
+	#ax = fig.add_subplot(1,1,1)
+	#ax.plot(-np.log(np.array(sizes)), np.log(np.array(counts)), 's-b')
+	#ax.plot(-np.log(np.array(sizes)), coeffs[0] * np.log(np.array(sizes)) + coeffs[1], '-r')
+	#ax.grid(True, which='both', linestyle='dotted')
+	#fig.savefig(join(log_dir, f'box_count_dim_{koch_level}_{im_size}.png'), dpi=300)
+	#single_draw(im, os.path.join(log_dir, f'koch_snowflake_v01_{koch_level}_{im_size}.png'))
+	#apply_fft_win((im[np.newaxis, ...] + 1.) / 2., #- np.mean(im), 
+	#	os.path.join(log_dir, f'fft_koch_snowflake_v01_single_{koch_level}_{im_size}.png'), windowing=False)
+	#print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
+	#
+	#### many samples
+	#im_data = np.zeros((data_size, im_size, im_size, channels))
+	#for i in range(data_size):
+	#	rot = np.random.uniform(-30, 30)
+	#	im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
+	#
+	#im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_v01_{koch_level}_{im_size}_samples.png'), border=True)
+	#fractal_eval(im_data, f'koch_snowflake_v01_{koch_level}_{im_size}', log_dir)
 
 	'''
 	Eval toy experiments.
@@ -538,11 +620,11 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	#sess = None
-	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	#config.gpu_options.allow_growth = True
-	#sess = tf.Session(config=config)
+	sess = None
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	config.gpu_options.allow_growth = True
+	sess = tf.Session(config=config)
 	#TFutil(sess)
 
 	'''
@@ -554,6 +636,11 @@ if __name__ == '__main__':
 	Cos Eval
 	'''
 	#run_cos_eval(log_dir, sess=sess, run_seed=0)
+
+	'''
+	Layer FFT test
+	'''
+	fft_layer_test(sess, log_dir, 0)
 
 	### close session
 	#sess.close()

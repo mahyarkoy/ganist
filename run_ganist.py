@@ -41,9 +41,6 @@ from util import block_draw, im_color_borders
 from util import mag_phase_wass_dist, mag_phase_total_variation
 from collections import defaultdict
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
-
 '''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
 '''
@@ -1525,7 +1522,10 @@ if __name__ == '__main__':
 	arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
 	arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
 	arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
+	arg_parser.add_argument('-g', '--gpus', dest='gpus', default=0, help='visible gpu ids.')
 	args = arg_parser.parse_args()
+	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
+	os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(args.gpus) # "0, 1" for multiple
 	log_path = args.log_path
 	eval_int = int(args.eval_int)
 	run_seed = int(args.seed)
