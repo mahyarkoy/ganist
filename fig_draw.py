@@ -17,7 +17,7 @@ import pickle as pk
 import argparse
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-os.environ["CUDA_VISIBLE_DEVICES"] = "0" # "0, 1" for multiple
+os.environ["CUDA_VISIBLE_DEVICES"] = "7" # "0, 1" for multiple
 
 '''
 Drawing Freq Components
@@ -101,6 +101,7 @@ def fft_power_diff_test(log_dir):
 	return
 
 def fft_layer_test(log_dir, sess=None, run_seed=0):
+	data_size = 25
 	### read ganist network
 	g_name = '5_logs_wganbn_celeba128cc_fid50'
 	#g_name = '14_logs_wganbn_celeba128cc_fssetup_fshift'
@@ -128,7 +129,9 @@ def fft_layer_test(log_dir, sess=None, run_seed=0):
 	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
 	#g_samples = pg_sampler.sample_data(data_size)
 
-	block_draw(g_samples[:25].reshape((5, 5)+g_samples.shape[1:]), os.path.join(log_dir, f'fft_layer_samples.png'))
+	block_draw(g_samples[:data_size].reshape(
+		(int(np.ceil(np.sqrt(data_size))), int(np.ceil(np.sqrt(data_size))))+g_samples.shape[1:]), 
+		os.path.join(log_dir, f'fft_layer_samples.png'))
 
 	def box_upsample(im):
 		h, w = im.shape
@@ -145,30 +148,32 @@ def fft_layer_test(log_dir, sess=None, run_seed=0):
 			full_name = '-'.join(scopes[:-1])
 			#save_path = '{}/{}_{}'.format(save_dir, net_name, conv_name)
 			save_path = '{}/{}'.format(log_dir, full_name)
-			layer_name = '{}_{}_'.format(net_name, conv_name) + '_'.join(val.shape)
+			layer_name = '{}_{}_'.format(net_name, conv_name) + '_'.join(map(str, val.shape))
 			layer_size = layer_size_dict[conv_name]
 			print(f'>>> name: {name}')
 			print(f'>>> save_path: {save_path}')
 			print(f'>>> layer_name: {layer_name}')
 			print(f'>>> layer_size: {layer_size}')
-			fft_mat = np.zeros((val.shape[2], val.shape[3], im_size, im_size))
+			fft_mat = np.zeros((val.shape[2], val.shape[3], layer_size, layer_size), dtype=complex)
+			fft_avg_full = 1e-20 + np.zeros((im_size, im_size))
 			for i in range(val.shape[2]):
 				for j in range(val.shape[3]):
 					im = np.zeros((layer_size, layer_size))
 					im[:val.shape[0], :val.shape[1]] = val[:, :, i, j]
-					for _ in range(np.log2(im_size / layer_size)): 
-						im = box_upsample(im)
-					fft_mat[i, j, ...], _ = apply_fft_images(imgs, reshape=False)
-			print('>>> FFT MIN: {}'.format(fft_mat.min()))
-			print('>>> FFT MAX: {}'.format(fft_mat.max()))
+					#for _ in range(int(np.log2(im_size / layer_size))): 
+					#	im = box_upsample(im)
+					fft_mat[i, j, ...], _ = apply_fft_images(im[np.newaxis, :, :, np.newaxis], reshape=False)
 			fft_power = np.abs(fft_mat)**2
 			fft_avg = np.mean(fft_power, axis=(0, 1))
+			print('>>> FFT MIN: {}'.format(fft_avg.min()))
+			print('>>> FFT MAX: {}'.format(fft_avg.max()))
 			np.clip(fft_avg, 1e-20, None, out=fft_avg)
+			fft_avg_full[:layer_size, :layer_size] = fft_avg
 
 			### plot mean fft
 			fig.clf()
 			ax = fig.add_subplot(1,1,1)
-			pa = ax.imshow(np.log(fft_avg / np.amax(fft_avg)), cmap=plt.get_cmap('inferno'), vmin=-13, vmax=0)
+			pa = ax.imshow(np.log(fft_avg_full / np.amax(fft_avg_full)), cmap=plt.get_cmap('inferno'), vmin=-13, vmax=0)
 			ax.set_title(layer_name)
 			ticks_loc_x = [0, im_size//2]
 			ticks_loc_y = [0, im_size//2-1, im_size-im_size%2-1]
@@ -640,7 +645,7 @@ if __name__ == '__main__':
 	'''
 	Layer FFT test
 	'''
-	fft_layer_test(sess, log_dir, 0)
+	fft_layer_test(log_dir, sess, run_seed)
 
 	### close session
 	#sess.close()
