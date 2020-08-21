@@ -784,7 +784,9 @@ def fft_test_by_samples(log_dir, r_samples, g_samples, r_name='true', g_name='ge
 	g_fft_density = g_fft_mean / np.sum(g_fft_mean)
 	fft_diff = np.abs(np.log(r_fft_mean) - np.log(g_fft_mean))
 	total_var = 100. * np.sum(np.abs(r_fft_density - g_fft_density)) / 2.
-	print(f'>>> fft_test_{g_name}_{r_name}: Leakage percentage (TV): {total_var}')
+	SingleLogger.print(f'>>> fft_test_{g_name}_{r_name}: Leakage percentage (TV): {total_var}')
+	SingleLogger.print(f'>>> true_total_power_hann: {np.sum(r_fft_mean)}')
+	SingleLogger.print(f'>>> gen_total_power_hann: {np.sum(g_fft_mean)}')
 
 	### compute aggregated frequency difference
 	#blur_levels = [1.]

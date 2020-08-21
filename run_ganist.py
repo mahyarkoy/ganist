@@ -1531,8 +1531,9 @@ if __name__ == '__main__':
 	run_seed = int(args.seed)
 	np.random.seed(run_seed)
 	tf.set_random_seed(run_seed)
-	sys.stdout = Logger(log_path)
-	sys.stderr = sys.stdout
+	SingleLogger(log_path, 'eval_log')
+	#sys.stdout = Logger(log_path)
+	#sys.stderr = sys.stdout
 	#import mnist_net
 	#import vae_ganist
 
@@ -1846,7 +1847,7 @@ if __name__ == '__main__':
 		join(log_path,'true_samples_sh.png'), border=True)
 	### draw blurred images ## comment for *TOY
 	blur_draw_size = 10
-	#im_blur = train_imgs[:blur_draw_size]
+	im_blur = train_imgs[:blur_draw_size]
 	#im_blur = TFutil.get().freq_shift(train_imgs[:blur_draw_size], 0.5, 0.5) ## uncomment for freq shift dataset
 	im_blur_list = blur_images_levels(im_blur, blur_levels)
 	im_blur = np.stack(im_blur_list, axis=0)
