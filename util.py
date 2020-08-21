@@ -718,7 +718,7 @@ def fractal_dimension(Z, threshold=0.9):
 	p = min(Z.shape)
 
 	# Greatest power of 2 less than or equal to p
-	n = int(np.floor(np.log(p)/np.log(2))) - 4
+	n = int(np.floor(np.log(p)/np.log(2))) - 3
 
 	# Build successive box sizes (from 2**n down to 2**1)
 	sizes = 2**np.arange(n, 1, -1)
@@ -747,6 +747,117 @@ def fractal_eval(im_data, log_name, log_dir):
 	print(eval_str)
 	with open(os.path.join(log_dir, f'fractal_eval.txt'), 'a+') as fs:
 		print(eval_str, file=fs)
+
+def windowing(imgs, skip=False):
+	if skip: return imgs
+	win_size = imgs.shape[1]
+	win = np.hanning(imgs.shape[1])
+	win = np.outer(win, win).reshape((win_size, win_size, 1))
+	return win*imgs
+
+def fft_norm(imgs):
+	imgs_fft, _ = apply_fft_images(imgs, reshape=False)
+	fft_power = np.abs(imgs_fft)**2
+	fft_avg = np.mean(fft_power, axis=0)
+	np.clip(fft_avg, 1e-20, None, out=fft_avg)
+	return fft_avg
+
+def fft_test_by_samples(log_dir, r_samples, g_samples, r_name='true', g_name='gen'):
+	assert r_samples.shape == g_samples.shape, f'r_samples shape of {r_samples.shape} != g_samples shape of {g_samples.shape}'
+	data_size = r_samples.shape[0]
+	im_size = r_samples.shape[1]
+
+	### calculate fft mean
+	r_fft_mean = fft_norm(windowing(r_samples))
+	g_fft_mean = fft_norm(windowing(g_samples))
+
+	### read fft mean data from file
+	#with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'rb') as fs:
+	#	g_fft_mean, r_fft_mean = pk.load(fs)
+
+	### write fft mean data to file
+	with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'wb+') as fs:
+		pk.dump([g_fft_mean, r_fft_mean], fs)
+
+	### compute fft metrics
+	r_fft_density = r_fft_mean / np.sum(r_fft_mean)
+	g_fft_density = g_fft_mean / np.sum(g_fft_mean)
+	fft_diff = np.abs(np.log(r_fft_mean) - np.log(g_fft_mean))
+	total_var = 100. * np.sum(np.abs(r_fft_density - g_fft_density)) / 2.
+	print(f'>>> fft_test_{g_name}_{r_name}: Leakage percentage (TV): {total_var}')
+
+	### compute aggregated frequency difference
+	#blur_levels = [1.]
+	#blur_num = 7
+	#blur_delta = 1. / 8
+	#blur_init = blur_levels[-1]
+	#for i in range(blur_num):
+	#	blur_levels.append(
+	#		1. / ((1. / blur_levels[-1]) - (blur_delta / blur_init)))
+	#bins_loc = [0.] + [1./(np.pi*2*s) for s in blur_levels[::-1]]
+	##bins_loc = [0.] + list(np.arange(1, 50) / 100.)
+	#bins = np.zeros(len(bins_loc))
+	#bins_count = np.array(bins)
+	#fft_h, fft_w = fft_diff.shape
+	#print('>>> freq bins:')
+	#for v in range(fft_h):
+	#	bin_str = ''
+	#	for u in range(fft_w):
+	#		fft_hc = fft_h//2
+	#		fft_wc = fft_w//2
+	#		freq = np.sqrt(((v - fft_hc + 1 - fft_h%2)/fft_hc)**2. + ((u - fft_wc)/fft_wc)**2)
+	#		for i, bin_freq in enumerate(bins_loc[::-1]):
+	#			if freq >= bin_freq:
+	#				bin_id = len(bins_loc) - i - 1
+	#				bins[bin_id] += fft_diff[v, u]
+	#				bins_count[bin_id] += 1
+	#				break
+	#		bin_str += f'{bin_id}'
+	#	print(bin_str)
+	#print(f'>>> freq bins:\t{bins_loc}')
+	#print(f'>>> freq diff density:\t{bins / bins_count}')
+
+	### prepare figure data
+	fig_data = list()
+	fig_data.append(np.abs(np.log(r_fft_mean) - np.log(g_fft_mean)))
+	fig_data.append(np.log(r_fft_mean / np.amax(r_fft_mean)))
+	fig_data.append(np.log(g_fft_mean / np.amax(g_fft_mean)))
+	
+	### draw figure
+	fig_names = ['diff', 'true', 'gan', 'agg']
+	fig_opts = [{'cmap': plt.get_cmap('inferno'), 'vmin': 0}, 
+				{'cmap': plt.get_cmap('inferno'), 'vmin': -13, 'vmax': 0}, 
+				{'cmap': plt.get_cmap('inferno'), 'vmin': -13, 'vmax': 0}]
+	#fig, axes = plt.subplots(1, 4, figsize=(24, 6), num=0, gridspec_kw={'width_ratios': [1, 1, 1, 2]})
+	fig = plt.figure(0, figsize=(8,6))
+	for i in range(len(fig_names)):
+		fig.clf()
+		ax = fig.add_subplot(1,1,1)
+		if fig_names[i] == 'agg':
+			continue
+			#ax.grid(True, which='both', linestyle='dotted')
+			#ax.set_xlabel(r'Frequency bins')
+			#ax.set_ylabel('Power diff density')
+			#ax.set_title('Power diff density')
+			#ax.plot(bins / bins_count)
+			#ax.set_xticks(range(len(bins_loc)))
+			#xticklabels = [np.format_float_positional(v, 2) for v in bins_loc]
+			#ax.set_xticklabels(xticklabels)
+			#fig.savefig(join(log_dir, f'fft_test_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
+			#break
+
+		im = ax.imshow(fig_data[i], **fig_opts[i])
+		ax.set_title(fig_names[i])
+		dft_size = im_size
+		ticks_loc_x = [0, dft_size//2]
+		ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
+		ax.set_xticks(ticks_loc_x)
+		ax.set_xticklabels([-0.5, 0])
+		ax.set_yticks(ticks_loc_y)
+		ax.set_yticklabels(['', 0, -0.5])
+		plt.colorbar(im)#, ax=ax, fraction=0.046, pad=0.04)
+
+		fig.savefig(join(log_dir, f'fft_test_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
 
 
 

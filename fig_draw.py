@@ -11,6 +11,7 @@ from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_ff
 from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
 from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval, create_cosine
 from util import make_koch_snowflake, fractal_dimension, fractal_eval
+from util import windowing, fft_norm, fft_test_by_samples
 import glob
 import os
 import pickle as pk
@@ -187,20 +188,6 @@ def fft_layer_test(log_dir, sess=None, run_seed=0):
 	with open(os.path.join(log_dir, 'layer_g_vars.cpk'), 'wb+') as fs:
 		pk.dump(g_vars, fs)
 
-def windowing(imgs, skip=False):
-	if skip: return imgs
-	win_size = imgs.shape[1]
-	win = np.hanning(imgs.shape[1])
-	win = np.outer(win, win).reshape((win_size, win_size, 1))
-	return win*imgs
-
-def fft_norm(imgs):
-	imgs_fft, _ = apply_fft_images(imgs, reshape=False)
-	fft_power = np.abs(imgs_fft)**2
-	fft_avg = np.mean(fft_power, axis=0)
-	np.clip(fft_avg, 1e-20, None, out=fft_avg)
-	return fft_avg
-
 def fft_test(log_dir, sess=None, run_seed=0):
 	data_size = 10000
 	im_size = 128
@@ -253,105 +240,15 @@ def fft_test(log_dir, sess=None, run_seed=0):
 	#r_samples, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=data_size)
 
 	r_samples = shifter(r_samples)
-	
-	assert r_samples.shape[0] == data_size, f'r_samples count of {r_samples.shape[0]} != data_size count of {data_size}'
-	Logger.add_file_handler(f'log_{g_name}_{r_name}_{data_size}')
-	im_block_draw(r_samples, 5, join(log_dir, f'{r_name}_samples.png'), border=True)
-	im_block_draw(g_samples, 5, join(log_dir, f'{g_name}_{r_name}_samples.png'), border=True)
-	im_block_draw(shifter(r_samples), 5, join(log_dir, f'{r_name}_samples_sh.png'), border=True)
-	im_block_draw(shifter(g_samples), 5, join(log_dir, f'{g_name}_{r_name}_samples_sh.png'), border=True)
+
+	im_block_draw(r_samples, 5, join(log_dir, f'fft_test_{r_name}_samples.png'), border=True)
+	im_block_draw(g_samples, 5, join(log_dir, f'fft_test_{g_name}_{r_name}_samples.png'), border=True)
+	im_block_draw(shifter(r_samples), 5, join(log_dir, f'fft_test_{r_name}_samples_sh.png'), border=True)
+	im_block_draw(shifter(g_samples), 5, join(log_dir, f'fft_test_{g_name}_{r_name}_samples_sh.png'), border=True)
 	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
 	#	pk.dump(g_samples, fs)
 
-	### calculate fft mean
-	r_fft_mean = fft_norm(windowing(r_samples))
-	g_fft_mean = fft_norm(windowing(g_samples))
-
-	### read fft mean data from file
-	#with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'rb') as fs:
-	#	g_fft_mean, r_fft_mean = pk.load(fs)
-
-	### write fft mean data to file
-	with open(join(log_dir, f'{g_name}_{r_name}_{data_size}_fft_mean.pk'), 'wb+') as fs:
-		pk.dump([g_fft_mean, r_fft_mean], fs)
-
-	### compute aggregated frequency difference
-	blur_levels = [1.]
-	blur_num = 7
-	blur_delta = 1. / 8
-	blur_init = blur_levels[-1]
-	for i in range(blur_num):
-		blur_levels.append(
-			1. / ((1. / blur_levels[-1]) - (blur_delta / blur_init)))
-	r_fft_density = r_fft_mean / np.sum(r_fft_mean)
-	g_fft_density = g_fft_mean / np.sum(g_fft_mean)
-	fft_diff = np.abs(np.log(r_fft_mean) - np.log(g_fft_mean))
-	total_var = 100. * np.sum(np.abs(r_fft_density - g_fft_density)) / 2.
-	Logger.print(f'>>> fft_test_{g_name}_{r_name}: Leakage percentage (TV): {total_var}')
-	bins_loc = [0.] + [1./(np.pi*2*s) for s in blur_levels[::-1]]
-	#bins_loc = [0.] + list(np.arange(1, 50) / 100.)
-	bins = np.zeros(len(bins_loc))
-	bins_count = np.array(bins)
-	fft_h, fft_w = fft_diff.shape
-	Logger.print('>>> freq bins:')
-	for v in range(fft_h):
-		bin_str = ''
-		for u in range(fft_w):
-			fft_hc = fft_h//2
-			fft_wc = fft_w//2
-			freq = np.sqrt(((v - fft_hc + 1 - fft_h%2)/fft_hc)**2. + ((u - fft_wc)/fft_wc)**2)
-			for i, bin_freq in enumerate(bins_loc[::-1]):
-				if freq >= bin_freq:
-					bin_id = len(bins_loc) - i - 1
-					bins[bin_id] += fft_diff[v, u]
-					bins_count[bin_id] += 1
-					break
-			bin_str += f'{bin_id}'
-		Logger.print(bin_str)
-
-	Logger.print(f'>>> freq bins:\t{bins_loc}')
-	Logger.print(f'>>> freq diff density:\t{bins / bins_count}')
-
-	### prepare figure data
-	fig_data = list()
-	fig_data.append(np.abs(np.log(r_fft_mean) - np.log(g_fft_mean)))
-	fig_data.append(np.log(r_fft_mean / np.amax(r_fft_mean)))
-	fig_data.append(np.log(g_fft_mean / np.amax(g_fft_mean)))
-	
-	### draw figure
-	fig_names = ['diff', 'true', 'gan', 'agg']
-	fig_opts = [{'cmap': plt.get_cmap('inferno'), 'vmin': 0}, 
-				{'cmap': plt.get_cmap('inferno'), 'vmin': -13, 'vmax': 0}, 
-				{'cmap': plt.get_cmap('inferno'), 'vmin': -13, 'vmax': 0}]
-	#fig, axes = plt.subplots(1, 4, figsize=(24, 6), num=0, gridspec_kw={'width_ratios': [1, 1, 1, 2]})
-	fig = plt.figure(0, figsize=(8,6))
-	for i in range(len(fig_names)):
-		fig.clf()
-		ax = fig.add_subplot(1,1,1)
-		if fig_names[i] == 'agg':
-			ax.grid(True, which='both', linestyle='dotted')
-			ax.set_xlabel(r'Frequency bins')
-			ax.set_ylabel('Power diff density')
-			ax.set_title('Power diff density')
-			ax.plot(bins / bins_count)
-			ax.set_xticks(range(len(bins_loc)))
-			xticklabels = [np.format_float_positional(v, 2) for v in bins_loc]
-			ax.set_xticklabels(xticklabels)
-			fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
-			break
-
-		im = ax.imshow(fig_data[i], **fig_opts[i])
-		ax.set_title(fig_names[i])
-		dft_size = im_size
-		ticks_loc_x = [0, dft_size//2]
-		ticks_loc_y = [0, dft_size//2-1, dft_size-dft_size%2-1]
-		ax.set_xticks(ticks_loc_x)
-		ax.set_xticklabels([-0.5, 0])
-		ax.set_yticks(ticks_loc_y)
-		ax.set_yticklabels(['', 0, -0.5])
-		plt.colorbar(im)#, ax=ax, fraction=0.046, pad=0.04)
-
-		fig.savefig(join(log_dir, f'fft_diff_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
+	fft_test_by_samples(log_dir, r_samples, g_samples, r_name, g_name)
 
 def run_cos_eval(log_dir, sess=None, run_seed=0):
 	data_size = 10000
@@ -420,39 +317,39 @@ if __name__ == '__main__':
 	'''
 	Koch Snowflakes
 	'''
-	#data_size = 100
-	#im_size = 1024
-	#koch_level = 5
-	#channels = 1
-	#im = make_koch_snowflake(koch_level, 0., im_size, channels)
-	#def make_single_image():
-	#	im = -np.ones((im_size, im_size, channels))
-	#	im[0, 0, :] = 1.
-	#	return im
-	##im = make_single_image()
-	#coeffs, sizes, counts = fractal_dimension(im[:,:,0], threshold=0.)
-	#box_dim = -coeffs[0]
-	#print(coeffs)
-	#fig = plt.figure(0, figsize=(8,6))
-	#fig.clf()
-	#ax = fig.add_subplot(1,1,1)
-	#ax.plot(-np.log(np.array(sizes)), np.log(np.array(counts)), 's-b')
-	#ax.plot(-np.log(np.array(sizes)), coeffs[0] * np.log(np.array(sizes)) + coeffs[1], '-r')
-	#ax.grid(True, which='both', linestyle='dotted')
-	#fig.savefig(join(log_dir, f'box_count_dim_{koch_level}_{im_size}.png'), dpi=300)
-	#single_draw(im, os.path.join(log_dir, f'koch_snowflake_v01_{koch_level}_{im_size}.png'))
-	#apply_fft_win((im[np.newaxis, ...] + 1.) / 2., #- np.mean(im), 
-	#	os.path.join(log_dir, f'fft_koch_snowflake_v01_single_{koch_level}_{im_size}.png'), windowing=False)
-	#print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
-	#
-	#### many samples
-	#im_data = np.zeros((data_size, im_size, im_size, channels))
-	#for i in range(data_size):
-	#	rot = np.random.uniform(-30, 30)
-	#	im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
-	#
-	#im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_v01_{koch_level}_{im_size}_samples.png'), border=True)
-	#fractal_eval(im_data, f'koch_snowflake_v01_{koch_level}_{im_size}', log_dir)
+	data_size = 100
+	im_size = 1024
+	koch_level = 5
+	channels = 1
+	im = make_koch_snowflake(koch_level, 0., im_size, channels)
+	def make_single_image():
+		im = -np.ones((im_size, im_size, channels))
+		im[0, 0, :] = 1.
+		return im
+	#im = make_single_image()
+	coeffs, sizes, counts = fractal_dimension(im[:,:,0], threshold=0.)
+	box_dim = -coeffs[0]
+	print(coeffs)
+	fig = plt.figure(0, figsize=(8,6))
+	fig.clf()
+	ax = fig.add_subplot(1,1,1)
+	ax.plot(-np.log(np.array(sizes)), np.log(np.array(counts)), 's-b')
+	ax.plot(-np.log(np.array(sizes)), coeffs[0] * np.log(np.array(sizes)) + coeffs[1], '-r')
+	ax.grid(True, which='both', linestyle='dotted')
+	fig.savefig(join(log_dir, f'box_count_dim_{koch_level}_{im_size}.png'), dpi=300)
+	single_draw(im, os.path.join(log_dir, f'koch_snowflake_{koch_level}_{im_size}.png'))
+	apply_fft_win((im[np.newaxis, ...] + 1.) / 2., #- np.mean(im), 
+		os.path.join(log_dir, f'fft_koch_snowflake_single_{koch_level}_{im_size}.png'), windowing=False)
+	print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
+	
+	### many samples
+	im_data = np.zeros((data_size, im_size, im_size, channels))
+	for i in range(data_size):
+		rot = np.random.uniform(-30, 30)
+		im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
+	
+	im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{koch_level}_{im_size}_samples.png'), border=True)
+	fractal_eval(im_data, f'koch_snowflake_{koch_level}_{im_size}', log_dir)
 
 	'''
 	Eval toy experiments.
@@ -625,11 +522,11 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	sess = None
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	config.gpu_options.allow_growth = True
-	sess = tf.Session(config=config)
+	#sess = None
+	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	#config.gpu_options.allow_growth = True
+	#sess = tf.Session(config=config)
 	#TFutil(sess)
 
 	'''
@@ -645,7 +542,7 @@ if __name__ == '__main__':
 	'''
 	Layer FFT test
 	'''
-	fft_layer_test(log_dir, sess, run_seed)
+	#fft_layer_test(sess, log_dir, 0)
 
 	### close session
 	#sess.close()
