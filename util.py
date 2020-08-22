@@ -40,26 +40,26 @@ class SingleLogger:
 	__instance = None
 	@staticmethod
 	def print(msg):
-		if Logger.__instance == None:
-			raise Exception('Logger class is not initialized!')
+		if SingleLogger.__instance == None:
+			raise Exception('SingleLogger class is not initialized!')
 		else:
-			Logger.__instance.logger.debug(msg)
+			SingleLogger.__instance.logger.debug(msg)
 
 	@staticmethod
 	def add_file_handler(fname):
-		if Logger.__instance == None:
-			raise Exception('Logger class is not initialized!')
+		if SingleLogger.__instance == None:
+			raise Exception('SingleLogger class is not initialized!')
 		else:
-			inst = Logger.__instance
+			inst = SingleLogger.__instance
 			log_path = inst.get_unique_path(join(inst.log_dir, fname))
 			output_file_handler = logging.FileHandler(log_path)
 			inst.logger.addHandler(output_file_handler)
 
 	def __init__(self, log_dir, fname='log'):
-		if Logger.__instance != None:
-			raise Exception('Logger is a singleton class and is already initialized!')
+		if SingleLogger.__instance != None:
+			raise Exception('SingleLogger is a singleton class and is already initialized!')
 		else:
-			Logger.__instance = self
+			SingleLogger.__instance = self
 			self.logger = logging.getLogger(__name__)
 			self.logger.setLevel(logging.DEBUG)
 			self.log_dir = log_dir

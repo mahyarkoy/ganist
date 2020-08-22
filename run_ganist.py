@@ -37,7 +37,7 @@ from scipy import signal
 import tf_ganist
 from fft_test import apply_fft_images
 from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density, read_image, readim_from_path, readim_path_from_dir
-from util import Logger, block_draw, im_color_borders
+from util import SingleLogger, Logger, block_draw, im_color_borders
 from util import mag_phase_wass_dist, mag_phase_total_variation, fft_test_by_samples
 from collections import defaultdict
 
@@ -1568,7 +1568,7 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_sum_vae)
 
 	### read and process data
-	sample_size = 50000
+	sample_size = 10000
 	draw_size = 1000
 	fft_data_size = 10000
 	#blur_levels = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]
@@ -1771,34 +1771,34 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	r_name = 'celeba128cc'
-	im_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
-	im_size = 128
-	train_size = 50000
-	im_paths = readim_path_from_dir(im_dir)
-	np.random.shuffle(im_paths)
+	#r_name = 'celeba128cc'
+	#im_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
+	#im_size = 128
+	#train_size = 50000
+	#im_paths = readim_path_from_dir(im_dir)
+	#np.random.shuffle(im_paths)
 	#### prepare test features
-	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
-		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
+	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
+	#	im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
 	#### prepare train images and features
-	im_data = readim_from_path(im_paths[:train_size], 
-		im_size, center_crop=(121, 89), verbose=True)
+	#im_data = readim_from_path(im_paths[:train_size], 
+	#	im_size, center_crop=(121, 89), verbose=True)
 	### freq shift the celeba
 	#im_data = TFutil.get().freq_shift(im_data, 0.5, 0.5, make_copy=False)
 	#train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
-	#r_name = 'bedroom128cc'
-	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
-	#im_size = 128
-	#train_size = 40000
-	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=sample_size+train_size)
-	#np.random.shuffle(lsun_data)
-	##### prepare test features
-	#test_data = lsun_data[train_size:train_size+sample_size]
-	#test_feats = TFutil.get().extract_feats(test_data, sample_size, blur_levels=blur_levels)
-	##### prepare train images and features
-	#im_data = lsun_data[:train_size]
+	r_name = 'bedroom128cc'
+	lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
+	im_size = 128
+	train_size = 40000
+	lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=sample_size+train_size)
+	np.random.shuffle(lsun_data)
+	#### prepare test features
+	test_data = lsun_data[train_size:train_size+sample_size]
+	test_feats = TFutil.get().extract_feats(test_data, sample_size, blur_levels=blur_levels)
+	#### prepare train images and features
+	im_data = lsun_data[:train_size]
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### read cub 128
@@ -1931,8 +1931,10 @@ if __name__ == '__main__':
 	Read from StyleGAN2 and construct features
 	'''
 	sys.path.insert(1, '/dresden/users/mk1391/evl/Data/stylegan2_model')
-	g_name = f'results_sg_small_celeba128cc_{run_seed}'
-	net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
+	#g_name = f'results_sg_small_celeba128cc_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
+	g_name = f'results_sg_small_bedroom128cc_{run_seed}'
+	net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_bedroom128cc/{g_name}/00000-stylegan2-lsun-bedroom-100k-4gpu-config-e/network-final.pkl'
 	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
 	g_samples = pg_sampler.sample_data(fft_data_size)
 	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
