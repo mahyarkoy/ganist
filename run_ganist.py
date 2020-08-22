@@ -893,6 +893,37 @@ class PG_Sampler:
 
 		return np.concatenate(data_list, axis=0)[:data_size]
 
+'''
+Sampler for StyleGAN2.
+sample_data: return images with shape (data_size, h, w, 3) in (-1,1)
+'''
+class StyleGAN2_Sampler:
+	def __init__(self, net_path, sess, seed=0, batch_size=32, truncation_psi=None):
+		self.sess = sess
+		self.batch_size = batch_size
+		with self.sess.as_default():
+			print('Loading networks from "%s"...' % net_path)
+			_, _, self.Gs = pretrained_networks.load_networks(net_path)
+			self.noise_vars = [var for name, var in Gs.components.synthesis.vars.items() if name.startswith('noise')]
+			self.Gs_kwargs = dnnlib.EasyDict()
+			self.Gs_kwargs.randomize_noise = False
+			if truncation_psi is not None:
+				self.Gs_kwargs.truncation_psi = truncation_psi
+			self.seed = 1000 + seed
+
+	def sample_data(self, data_size):
+		data_list = list()
+		batch_size = self.batch_size
+		with self.sess.as_default():
+			for batch_start in range(0, data_size, batch_size):
+				rnd = np.random.RandomState(self.seed)
+				self.seed += batch_size
+				z = rnd.randn(batch_size, *self.Gs.input_shape[1:]) # [minibatch, component]
+				tflib.set_vars({var: rnd.randn(*var.shape.as_list()) for var in self.noise_vars}) # [height, width]
+				images = self.Gs.run(z, None, **self.Gs_kwargs) # [minibatch, height, width, channel]
+				data_list.append(images.transpose(0, 2, 3, 1))
+		return np.concatenate(data_list, axis=0)[:data_size]
+
 class TFutil:
 	__instance = None
 	@staticmethod
@@ -1771,34 +1802,34 @@ if __name__ == '__main__':
 	#im_block_draw(all_imgs_stack, 10, log_path_draw+'/true_samples.png', border=True)
 	
 	### read celeba 128
-	#r_name = 'celeba128cc'
-	#im_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
-	#im_size = 128
-	#train_size = 50000
-	#im_paths = readim_path_from_dir(im_dir)
-	#np.random.shuffle(im_paths)
-	#### prepare test features
-	#test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
-	#	im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
-	#### prepare train images and features
-	#im_data = readim_from_path(im_paths[:train_size], 
-	#	im_size, center_crop=(121, 89), verbose=True)
+	r_name = 'celeba128cc'
+	im_dir = '/dresden/users/mk1391/evl/Data/celeba/img_align_celeba/'
+	im_size = 128
+	train_size = 50000
+	im_paths = readim_path_from_dir(im_dir)
+	np.random.shuffle(im_paths)
+	### prepare test features
+	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
+		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
+	### prepare train images and features
+	im_data = readim_from_path(im_paths[:train_size], 
+		im_size, center_crop=(121, 89), verbose=True)
 	### freq shift the celeba
 	#im_data = TFutil.get().freq_shift(im_data, 0.5, 0.5, make_copy=False)
 	#train_feats = TFutil.get().extract_feats(im_data, sample_size, blur_levels=blur_levels)
 
 	### read lsun 128
-	r_name = 'bedroom128cc'
-	lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
-	im_size = 128
-	train_size = 40000
-	lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=sample_size+train_size)
-	np.random.shuffle(lsun_data)
-	#### prepare test features
-	test_data = lsun_data[train_size:train_size+sample_size]
-	test_feats = TFutil.get().extract_feats(test_data, sample_size, blur_levels=blur_levels)
-	#### prepare train images and features
-	im_data = lsun_data[:train_size]
+	#r_name = 'bedroom128cc'
+	#lsun_lmdb_dir = '/dresden/users/mk1391/evl/data_backup/lsun/bedroom_train_lmdb/'
+	#im_size = 128
+	#train_size = 40000
+	#lsun_data, idx_list = create_lsun(lsun_lmdb_dir, resolution=im_size, max_images=sample_size+train_size)
+	#np.random.shuffle(lsun_data)
+	##### prepare test features
+	#test_data = lsun_data[train_size:train_size+sample_size]
+	#test_feats = TFutil.get().extract_feats(test_data, sample_size, blur_levels=blur_levels)
+	##### prepare train images and features
+	#im_data = lsun_data[:train_size]
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### read cub 128
@@ -1931,13 +1962,20 @@ if __name__ == '__main__':
 	Read from StyleGAN2 and construct features
 	'''
 	sys.path.insert(1, '/dresden/users/mk1391/evl/Data/stylegan2_model')
-	#g_name = f'results_sg_small_celeba128cc_{run_seed}'
-	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
-	g_name = f'results_sg_small_bedroom128cc_{run_seed}'
-	net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_bedroom128cc/{g_name}/00000-stylegan2-lsun-bedroom-100k-4gpu-config-e/network-final.pkl'
-	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
-	g_samples = pg_sampler.sample_data(fft_data_size)
-	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
+	g_name = f'results_sg_small_celeba128cc_{run_seed}'
+	net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
+	#g_name = f'results_sg_small_bedroom128cc_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_bedroom128cc/{g_name}/00000-stylegan2-lsun-bedroom-100k-4gpu-config-e/network-final.pkl'
+	import dnnlib
+	import dnnlib.tflib as tflib
+	import pretrained_networks
+	sty_sampler = StyleGAN2_Sampler(net_path, sess, seed=run_seed)
+	g_samples = sty_sampler.sample_data(fft_data_size)
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=sty_sampler)
+	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	#g_samples = pg_sampler.sample_data(fft_data_size)
+	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
+	print(f'>>> g_samples dynamic range: ({np.amin(g_samples)}, {np.amax(g_samples)}) and shape: {g_samples.shape}')
 
 	'''
 	Read data from ImageNet and BigGan
@@ -2033,6 +2071,7 @@ if __name__ == '__main__':
 	### save fids
 	with open(log_path+'/fid_levels.cpk', 'wb+') as fs:
 		pk.dump([blur_levels, fid_list], fs)
+	print(f'>>> FID: {fid_list[0]**2}')
 
 	### plot fid_levels_r
 	#fig, ax = plt.subplots(figsize=(8, 6))
