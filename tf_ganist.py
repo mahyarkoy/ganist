@@ -504,6 +504,19 @@ def fs_layer(layer, fc_x, fc_y, out_size):
 	#print('>>> FS_Layer shape: {}'.format(out.get_shape().as_list()))
 	return out
 
+def build_gen_v1_branch(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
+	train_phase = True
+	ol = list()
+	with tf.variable_scope('g_net'):
+		with tf.variable_scope(sub_scope):
+			bn = tf.contrib.layers.batch_norm
+			h2_us = tf.image.resize_nearest_neighbor(zi, [im_size//2, im_size//2], name='us2')
+			h3 = act(bn(conv2d(h2_us, 64, scope='conv2'), is_training=train_phase))
+			h4 = conv2d(h3, 2*data_dim[-1], k_h=1, k_w=1, scope='conv3')
+			o = tf.tanh(h4)
+			o_us = tf.image.resize_nearest_neighbor(o, [im_size, im_size], name='us3')
+	return o_us
+
 def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 	train_phase = True
 	ol = list()
@@ -558,7 +571,7 @@ def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 			h5 = conv2d(h4, data_dim[-1], scope='convo')
 			'''
 			o = tf.tanh(h4)
-		return o
+		return h0, h1, h2, h3, o
 
 def build_dis_v1(data_layer, train_phase, im_size, sub_scope='or', reuse=False):
 	act = lrelu
@@ -632,7 +645,7 @@ def build_gen_v2(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 			h3 = pn(act(apply_bias(upscale2d_conv2d(h2, 64, use_wscale=use_wscale, scope='conv2'), scope='conv2')))
 			h4 = apply_bias(upscale2d_conv2d(h3, data_dim[-1], use_wscale=use_wscale, scope='conv3'), scope='conv3')
 			o = tf.tanh(h4)
-		return o
+		return h0, h1, h2, h3, o
 
 def build_dis_v2(data_layer, train_phase, im_size, sub_scope='or', reuse=False):
 	act = lrelu
@@ -775,7 +788,7 @@ class Ganist:
 		#else:
 		for i in range(2*len(freq_list)):
 			g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-				im_size=gen_size, sub_scope='level_{}_{}'.format(scope, i))
+				im_size=gen_size, sub_scope='level_{}_{}'.format(scope, i))[-1]
 			g_layer_list.append(g_layer)
 			gen_collect.append(g_layer)
 			#gen_collect.append(g_layer[:, :, :, 0:3])
@@ -791,14 +804,14 @@ class Ganist:
 
 		### build delta generator (must use im_size in recursive case)
 		g_delta = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-			im_size=im_size, sub_scope='level_{}_delta'.format(scope))#[:, :, :, 0:3]
+			im_size=im_size, sub_scope='level_{}_delta'.format(scope))[-1]#[:, :, :, 0:3]
 		gen_collect.append(g_delta)
 		g_delta_lp = g_delta #tf_binomial_blur(tf_upsample(g_delta), 2.*blur_kernel)
 		g_delta_ds = tf_downsample(tf_binomial_blur(
 			tf_downsample(tf_binomial_blur(g_delta, blur_kernel)), blur_kernel))
 		
 		#g_delta_fill = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-		#	im_size=im_size, sub_scope='level_{}_delta_fill'.format(scope))#[:, :, :, 0:3]
+		#	im_size=im_size, sub_scope='level_{}_delta_fill'.format(scope))[-1]#[:, :, :, 0:3]
 		#gen_collect.append(g_delta_fill)
 		#g_delta_hp, _ = tf_freq_shift(g_delta_fill, 0.5, 0.5)
 
@@ -853,6 +866,45 @@ class Ganist:
 		gen_collect += g_layer_fs_list# + [g_delta_ds]
 		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
 
+	def build_fsg_gan(self, im_input, zi_input, im_size, gen_size, 
+			scope='0', gen_collect=list(), im_collect=list(), comb_list=list(), 
+			d_loss_list=list(), g_loss_list=list(), rg_grad_norm_list=list()):
+		
+		freq_list = [(1/16., 0.), (0., 1/16.), (1/16., 1/16.), (-1/16., 1/16.)]
+
+		### build delta generator (must use im_size in recursive case)
+		g_feats = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
+			im_size=im_size, sub_scope='level_{}_delta'.format(scope))
+		g_delta = g_feats[-1][:, :, :, 0:3]
+
+		### build generators recursively
+		g_layer_list = list()
+		for i in range(len(freq_list)):
+			g_layer = self.build_gen_v1_branch(self.data_dim, g_feats[2], self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='level_{}_{}'.format(scope, i))[-1]
+			g_layer_list.append(g_layer)
+
+		### build output combination by shifting
+		g_layer_fs_list = list()
+		for i, fc in enumerate(freq_list):
+			g_fs_r, _ = tf_freq_shift_complex(g_layer_list[i][:, :, :, 0:3], g_layer_list[i][:, :, :, 3:6], fc[0], fc[1])
+			g_layer_fs_list.append(g_fs_r)
+
+		g_layer_fs_list.append(g_delta)
+		g_comb = sum(g_layer_fs_list)
+		comb_list.append(g_comb)
+
+		### build aligning discriminator
+		d_loss, g_loss, rg_grad_norm_output = \
+			self.build_gan_loss(im_input, g_comb, im_size, scope='level_{}_comb'.format(scope))
+		d_loss_list.append(d_loss)
+		g_loss_list.append(g_loss)
+		rg_grad_norm_list.append(rg_grad_norm_output)
+		
+		### return collected operators lists
+		gen_collect = g_layer_fs_list
+		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
+
 	def build_gan_loss(self, im_layer, g_layer, im_size, scope):
 		### build logits (discriminator)
 		r_logits, g_logits, rg_logits, rg_layer = \
@@ -870,9 +922,9 @@ class Ganist:
 	def build_wgan_fs(self, im_input, zi_input, im_size):
 		### generators
 		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-				im_size=im_size, sub_scope='main')
+				im_size=im_size, sub_scope='main')[-1]
 		g_layer2 = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-				im_size=im_size, sub_scope='comp')
+				im_size=im_size, sub_scope='comp')[-1]
 		g_layer2, _ = tf_freq_shift(g_layer2, 0.5, 0.5)
 
 		gen_collect = [g_layer, g_layer2]
@@ -899,7 +951,7 @@ class Ganist:
 	def build_wgan(self, im_input, zi_input, im_size):
 		### generators
 		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-				im_size=im_size, sub_scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
+				im_size=im_size, sub_scope='l2')[-1] ### subscope 'l2' for older wganbn, 'main' for more recent
 		gen_collect = [g_layer]
 		im_collect = [im_input]
 		comb_list = [g_layer]
@@ -916,7 +968,7 @@ class Ganist:
 	def build_wgan_gshift(self, im_input, zi_input, im_size):
 		### generators
 		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
-				im_size=im_size, sub_scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
+				im_size=im_size, sub_scope='l2')[-1] ### subscope 'l2' for older wganbn, 'main' for more recent
 		g_layer, _ = tf_freq_shift(g_layer, 0.5, 0.5)
 		gen_collect = [g_layer]
 		im_collect = [im_input]
@@ -941,7 +993,7 @@ class Ganist:
 			### apply regular wgan
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
-				self.build_wgan(self.im_input, self.zi_input, 
+				self.build_fsg_gan(self.im_input, self.zi_input, 
 					im_size=self.data_dim[0])
 			self.im_input_rec = self.im_collect[-1]
 
@@ -972,13 +1024,13 @@ class Ganist:
 
 			### build generators at each pyramid level
 			#self.g_layer_l0 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
-			#	im_size=32, sub_scope='l0')
+			#	im_size=32, sub_scope='l0')[-1]
 			#self.g_layer_l1 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
-			#	im_size=64, sub_scope='l1')
+			#	im_size=64, sub_scope='l1')[-1]
 			#self.g_layer_l2 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
-			#	im_size=128, sub_scope='l2')
+			#	im_size=128, sub_scope='l2')[-1]
 			##self.g_layer_l3 = self.build_gen(self.zi_input, self.g_act, self.train_phase, 
-			##	im_size=64, sub_scope='l3')
+			##	im_size=64, sub_scope='l3')[-1]
 			#self.g_vars_l0 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l0')
 			#self.g_vars_l1 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l1')
 			#self.g_vars_l2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net/l2')
