@@ -904,7 +904,7 @@ class StyleGAN2_Sampler:
 		with self.sess.as_default():
 			print('Loading networks from "%s"...' % net_path)
 			_, _, self.Gs = pretrained_networks.load_networks(net_path)
-			self.noise_vars = [var for name, var in Gs.components.synthesis.vars.items() if name.startswith('noise')]
+			self.noise_vars = [var for name, var in self.Gs.components.synthesis.vars.items() if name.startswith('noise')]
 			self.Gs_kwargs = dnnlib.EasyDict()
 			self.Gs_kwargs.randomize_noise = False
 			if truncation_psi is not None:
