@@ -13,4 +13,4 @@ done
 cp -r $fname $target
 cp run_ganist.py $target/$fname
 cp util.py $target/$fname
-#cp tf_ganist.py $target/$fname
+cp tf_ganist.py $target/$fname

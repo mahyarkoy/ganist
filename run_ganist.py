@@ -1553,7 +1553,7 @@ if __name__ == '__main__':
 	arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
 	arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
 	arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
-	arg_parser.add_argument('-g', '--gpus', dest='gpus', default=0, help='visible gpu ids.')
+	arg_parser.add_argument('-g', '--gpus', dest='gpus', default='0', help='visible gpu ids.')
 	args = arg_parser.parse_args()
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 	os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(args.gpus) # "0, 1" for multiple
@@ -1562,7 +1562,6 @@ if __name__ == '__main__':
 	run_seed = int(args.seed)
 	np.random.seed(run_seed)
 	tf.set_random_seed(run_seed)
-	SingleLogger(log_path, 'eval_log')
 	#sys.stdout = Logger(log_path)
 	#sys.stderr = sys.stdout
 	#import mnist_net
@@ -1598,6 +1597,7 @@ if __name__ == '__main__':
 	os.system('mkdir -p '+log_path_snap_vae)
 	os.system('mkdir -p '+log_path_sum_vae)
 
+	SingleLogger(log_path, 'eval_log')
 	### read and process data
 	sample_size = 50000
 	draw_size = 1000
@@ -1886,6 +1886,7 @@ if __name__ == '__main__':
 	'''
 	GAN SETUP SECTION
 	'''
+	g_name = 'wgan_fsg'
 	### train ganist
 	train_ganist(ganist, train_imgs, test_feats, train_labs)
 

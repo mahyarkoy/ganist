@@ -515,7 +515,7 @@ def build_gen_v1_branch(data_dim, zi, act, train_phase, im_size, sub_scope='or')
 			h4 = conv2d(h3, 2*data_dim[-1], k_h=1, k_w=1, scope='conv3')
 			o = tf.tanh(h4)
 			o_us = tf.image.resize_nearest_neighbor(o, [im_size, im_size], name='us3')
-	return o_us
+	return h3, h4, o_us
 
 def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 	train_phase = True
@@ -740,8 +740,14 @@ class Ganist:
 		return tf.nn.depthwise_conv2d(im, kernel, [1, 1, 1, 1], padding='SAME')
 
 	def build_shift_gan(self, im_input, zi_input, im_size, gen_size, 
-			scope='0', gen_collect=list(), im_collect=list(), comb_list=list(), 
-			d_loss_list=list(), g_loss_list=list(), rg_grad_norm_list=list()):
+			scope='0', gen_collect=None, im_collect=None, comb_list=None, 
+			d_loss_list=None, g_loss_list=None, rg_grad_norm_list=None):
+		gen_collect = list() if gen_collect is None else gen_collect
+		im_collect = list() if im_collect is None else im_collect
+		comb_list = list() if comb_list is None else comb_list
+		d_loss_list = list() if d_loss_list is None else d_loss_list
+		g_loss_list = list() if g_loss_list is None else g_loss_list
+		rg_grad_norm_list = list() if rg_grad_norm_list is None else rg_grad_norm_list
 		#freq_list = [(0.25, 0.), (0., 0.25), (0.25, 0.25), (-0.25, 0.25)]
 		freq_list = [(1/16., 0.), (0., 1/16.), (1/16., 1/16.), (-1/16., 1/16.)]
 		#freq_list = [(1./8, 0.), (0., 1./8), (1./8, 1./8), (-1./8, 1./8),
@@ -866,11 +872,18 @@ class Ganist:
 		gen_collect += g_layer_fs_list# + [g_delta_ds]
 		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
 
-	def build_fsg_gan(self, im_input, zi_input, im_size, gen_size, 
-			scope='0', gen_collect=list(), im_collect=list(), comb_list=list(), 
-			d_loss_list=list(), g_loss_list=list(), rg_grad_norm_list=list()):
+	def build_fsg_gan(self, im_input, zi_input, im_size, 
+			scope='0', gen_collect=None, im_collect=None, comb_list=None, 
+			d_loss_list=None, g_loss_list=None, rg_grad_norm_list=None):
 		
+		gen_collect = list() if gen_collect is None else gen_collect
+		im_collect = list() if im_collect is None else im_collect
+		comb_list = list() if comb_list is None else comb_list
+		d_loss_list = list() if d_loss_list is None else d_loss_list
+		g_loss_list = list() if g_loss_list is None else g_loss_list
+		rg_grad_norm_list = list() if rg_grad_norm_list is None else rg_grad_norm_list
 		freq_list = [(1/16., 0.), (0., 1/16.), (1/16., 1/16.), (-1/16., 1/16.)]
+		im_collect = [im_input]
 
 		### build delta generator (must use im_size in recursive case)
 		g_feats = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
@@ -880,7 +893,7 @@ class Ganist:
 		### build generators recursively
 		g_layer_list = list()
 		for i in range(len(freq_list)):
-			g_layer = self.build_gen_v1_branch(self.data_dim, g_feats[2], self.g_act, self.train_phase, 
+			g_layer = build_gen_v1_branch(self.data_dim, g_feats[2], self.g_act, self.train_phase, 
 				im_size=im_size, sub_scope='level_{}_{}'.format(scope, i))[-1]
 			g_layer_list.append(g_layer)
 
