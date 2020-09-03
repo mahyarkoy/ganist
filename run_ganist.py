@@ -898,31 +898,23 @@ Sampler for StyleGAN2.
 sample_data: return images with shape (data_size, h, w, 3) in (-1,1)
 '''
 class StyleGAN2_Sampler:
-	def __init__(self, net_path, sess, seed=0, batch_size=32, truncation_psi=None):
+	def __init__(self, net_path, sess, batch_size=4, truncation_psi=None):
 		self.sess = sess
-		self.batch_size = batch_size
 		with self.sess.as_default():
 			print('Loading networks from "%s"...' % net_path)
 			_, _, self.Gs = pretrained_networks.load_networks(net_path)
-			self.noise_vars = [var for name, var in self.Gs.components.synthesis.vars.items() if name.startswith('noise')]
 			self.Gs_kwargs = dnnlib.EasyDict()
-			self.Gs_kwargs.randomize_noise = False
+			self.Gs_kwargs.randomize_noise = True
+			self.Gs_kwargs.is_validation = True
+			self.Gs_kwargs.minibatch_size = batch_size
 			if truncation_psi is not None:
 				self.Gs_kwargs.truncation_psi = truncation_psi
-			self.seed = 1000 + seed
 
-	def sample_data(self, data_size):
-		data_list = list()
-		batch_size = self.batch_size
+	def sample_data(self, data_size):	
 		with self.sess.as_default():
-			for batch_start in range(0, data_size, batch_size):
-				rnd = np.random.RandomState(self.seed)
-				self.seed += batch_size
-				z = rnd.randn(batch_size, *self.Gs.input_shape[1:]) # [minibatch, component]
-				tflib.set_vars({var: rnd.randn(*var.shape.as_list()) for var in self.noise_vars}) # [height, width]
-				images = self.Gs.run(z, None, **self.Gs_kwargs) # [minibatch, height, width, channel]
-				data_list.append(images.transpose(0, 2, 3, 1))
-		return np.concatenate(data_list, axis=0)[:data_size]
+			z = np.random.randn(data_size, *self.Gs.input_shape[1:]) # [data_size, component]
+			images = self.Gs.run(z, None, **self.Gs_kwargs).transpose(0, 2, 3, 1)  # [data_size, channel, height, width]
+		return images[:data_size]
 
 class TFutil:
 	__instance = None
@@ -1624,14 +1616,14 @@ if __name__ == '__main__':
 	config.gpu_options.allow_growth = True
 	sess = tf.Session(config=config)
 	### create a ganist instance
-	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	#ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
 	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### init variables
-	sess.run(tf.global_variables_initializer())
+	#sess.run(tf.global_variables_initializer())
 	### save network initially
-	with open(join(log_path,'vars_count_log.txt'), 'w+') as fs:
-		print('>>> g_vars: {} --- d_vars: {}'.format(ganist.g_vars_count, ganist.d_vars_count), file=fs)
+	#with open(join(log_path,'vars_count_log.txt'), 'w+') as fs:
+	#	print('>>> g_vars: {} --- d_vars: {}'.format(ganist.g_vars_count, ganist.d_vars_count), file=fs)
 
 	'''
 	INCEPTION SETUP
@@ -1808,7 +1800,7 @@ if __name__ == '__main__':
 	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
 		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
 	### prepare train images and features
-	im_data = readim_from_path(im_paths[:train_size], 
+	im_data = readim_from_path(im_paths[:fft_data_size], 
 		im_size, center_crop=(121, 89), verbose=True)
 	### freq shift the celeba
 	#im_data = TFutil.get().freq_shift(im_data, 0.5, 0.5, make_copy=False)
@@ -1886,29 +1878,29 @@ if __name__ == '__main__':
 	'''
 	GAN SETUP SECTION
 	'''
-	g_name = 'wgan_fsg'
+	#g_name = 'wgan_fsg'
 	### train ganist
-	train_ganist(ganist, train_imgs, test_feats, train_labs)
+	#train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
-	load_path = join(log_path_snap, 'model_best.h5') ## comment for *TOY
+	#load_path = join(log_path_snap, 'model_best.h5') ## comment for *TOY
 	#load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
-	ganist.load(load_path.format(run_seed)) ##comment for *TOY
+	#ganist.load(load_path.format(run_seed)) ##comment for *TOY
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_sample_size = fft_data_size # 10000 ## *TOY
-	g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
-	g_feats = TFutil.get().extract_feats(None, sample_size, 
-		blur_levels=blur_levels, ganist=ganist) ## comment for *TOY
-	print('>>> g_samples shape: {}'.format(g_samples.shape))
+	#g_sample_size = fft_data_size # 10000 ## *TOY
+	#g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
+	#g_feats = TFutil.get().extract_feats(None, sample_size, 
+	#	blur_levels=blur_levels, ganist=ganist) ## comment for *TOY
+	#print('>>> g_samples shape: {}'.format(g_samples.shape))
 	#im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
-	sample_pyramid(ganist, log_path+'/gen_samples_pyramid_0.png', sample_size=10)
-	sample_pyramid(ganist, log_path+'/gen_samples_pyramid_1.png', sample_size=10)
-	sample_pyramid(ganist, log_path+'/gen_samples_pyramid_2.png', sample_size=10) ## comment for *TOY
+	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_0.png', sample_size=10)
+	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_1.png', sample_size=10)
+	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_2.png', sample_size=10) ## comment for *TOY
 	#sys.exit(0)
 
 	### *TOY
@@ -1958,21 +1950,24 @@ if __name__ == '__main__':
 	'''
 	Read from StyleGAN2 and construct features
 	'''
-	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/stylegan2_model')
-	#g_name = f'results_sg_small_celeba128cc_{run_seed}'
+	sys.path.insert(1, '/dresden/users/mk1391/evl/Data/stylegan2_model')
+	#sys.path.insert(1, '/dresden/users/mk1391/CV_Res/sg3')
+	#g_name = f'results_sg_small_fsg_finalstylemix_celeba128cc_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
+	g_name = f'results_sg_small_celeba128cc_{run_seed}'
+	net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
 	#g_name = f'results_sg_small_bedroom128cc_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_bedroom128cc/{g_name}/00000-stylegan2-lsun-bedroom-100k-4gpu-config-e/network-final.pkl'
-	#import dnnlib
-	#import dnnlib.tflib as tflib
-	#import pretrained_networks
-	#sty_sampler = StyleGAN2_Sampler(net_path, sess, seed=run_seed)
-	#g_samples = sty_sampler.sample_data(fft_data_size)
-	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=sty_sampler)
-	##pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
-	##g_samples = pg_sampler.sample_data(fft_data_size)
-	##g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
-	#print(f'>>> g_samples dynamic range: ({np.amin(g_samples)}, {np.amax(g_samples)}) and shape: {g_samples.shape}')
+	import dnnlib
+	import dnnlib.tflib as tflib
+	import pretrained_networks
+	sty_sampler = StyleGAN2_Sampler(net_path, sess)
+	g_samples = sty_sampler.sample_data(fft_data_size)
+	g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=sty_sampler)
+	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	#g_samples = pg_sampler.sample_data(fft_data_size)
+	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
+	print(f'>>> g_samples dynamic range: ({np.amin(g_samples)}, {np.amax(g_samples)}) and shape: {g_samples.shape}')
 
 	'''
 	Read data from ImageNet and BigGan
