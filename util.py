@@ -765,13 +765,13 @@ def fft_norm(imgs):
 '''
 Computes the correlation between adjacent spatial frequency components in different frequency bands.
 samples: [N, H, W, C] images
-freq_bands: e.g. np.array([16, 32, 64, 128]) // 2, must have increasing order
+freq_bands: e.g. np.array([16, 32, 64, 128]) // 2, must have increasing order, if none: full spectrum
 returns: a list of the magnitude of the complex correlation coefficients corresponding to frequency bands
 '''
-def fft_corr_eff(samples, freq_bands):
+def fft_corr_eff(samples, freq_bands=None):
 	num_samples, hs, ws, cs = samples.shape
 	freq_mask = np.zeros((freq_bands.size, hs, ws, 4), dtype=np.int)
-	freq_bands = freq_bands.astype(np.int)
+	freq_bands = freq_bands.astype(np.int) if freq_bands is not None else np.array([hs//2], dtype=np.int)
 	f_pre = 0
 	for fi, f in enumerate(freq_bands):
 		print(f'>>> freq_masking at freq {f}')

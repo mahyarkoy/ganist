@@ -102,8 +102,7 @@ def fft_power_diff_test(log_dir):
 		print(f'log_power_diff_hann: {np.mean(log_power_diff_hann)} SD {np.std(log_power_diff_hann)}', file=fs)
 	return
 
-def fft_layer_test(log_dir, sess=None, run_seed=0):
-	data_size = 25
+def read_model_layers(log_dir, sess=None, run_seed=0, data_size=25):
 	### read ganist network
 	g_name = '5_logs_wganbn_celeba128cc_fid50'
 	#g_name = '14_logs_wganbn_celeba128cc_fssetup_fshift'
@@ -130,6 +129,59 @@ def fft_layer_test(log_dir, sess=None, run_seed=0):
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
 	#g_samples = pg_sampler.sample_data(data_size)
+	im_block_draw(g_samples, 5, join(log_dir, f'layer_reader_samples_{g_name}.png'), border=True)
+
+	def box_upsample(im):
+		h, w = im.shape
+		return np.repeat(np.repeat(im.reshape((h, 1, w, 1)), 2, axis=3), 2, axis=1).reshape(h*2, w*2)
+
+	fig = plt.figure(0, figsize=(8,6))
+	im_size = 128
+	layer_size_dict = {'conv0': 16, 'conv1': 32, 'conv2': 64, 'conv3': 128}
+	model_layers = list()
+	model_layers_name = list()
+	for val, name in g_vars:
+		if 'kernel' in name and 'conv' in name:
+			scopes = name.split('/')
+			net_name = next(v for v in scopes if 'net' in  v)
+			conv_name = next(v for v in scopes if 'conv' in  v)
+			full_name = '-'.join(scopes[:-1])
+			#save_path = '{}/{}_{}'.format(save_dir, net_name, conv_name)
+			save_path = '{}/{}'.format(log_dir, full_name)
+			layer_name = '{}_{}_'.format(net_name, conv_name) + '_'.join(map(str, val.shape))
+			layer_size = layer_size_dict[conv_name]
+			print(f'>>> name: {name}')
+			print(f'>>> save_path: {save_path}')
+			print(f'>>> layer_name: {layer_name}')
+			print(f'>>> layer_size: {layer_size}')
+			layer_filter = np.zeros((val.shape[2], val.shape[3], layer_size, layer_size), dtype=complex)
+			fft_avg_full = 1e-20 + np.zeros((im_size, im_size))
+			for i in range(val.shape[2]):
+				for j in range(val.shape[3]):
+					im = np.zeros((layer_size, layer_size))
+					im[:val.shape[0], :val.shape[1]] = val[:, :, i, j]
+					#for _ in range(int(np.log2(im_size / layer_size))): 
+					#	im = box_upsample(im)
+					layer_filter[i, j, ...] = im
+
+			model_layers.append(layer_filter)
+			model_layers_name.append(layer_name)
+	return model_layers, model_layers_name
+
+def fft_layer_test(log_dir, sess=None, run_seed=0, data_size=25):
+	### read ganist network
+	g_name = '5_logs_wganbn_celeba128cc_fid50'
+	#g_name = '14_logs_wganbn_celeba128cc_fssetup_fshift'
+	#g_name = '38_logs_wganbn_bedroom128cc'
+	#g_name = '46_logs_wgan_sbedroom128cc_hpfid'
+	#g_name = '22_logs_wganbn_gshift_celeba128cc_fshift'
+	#g_name = '49_logs_wgan_gshift_sbedroom128cc_hpfid'
+	ganist = tf_ganist.Ganist(sess, log_dir)
+	sess.run(tf.global_variables_initializer())
+	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
+	ganist.load(net_path)
+	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+	d_vars, g_vars = ganist.get_vars_array()
 
 	block_draw(g_samples[:data_size].reshape(
 		(int(np.ceil(np.sqrt(data_size))), int(np.ceil(np.sqrt(data_size))))+g_samples.shape[1:]), 
@@ -381,14 +433,26 @@ if __name__ == '__main__':
 	'''
 	Model effective correlation
 	'''
-	im_size = 128
-	data_size = 100
-	freq_bands = np.array([16, 32, 64, 128]) // 2
-	g_samples = read_model_samples(log_dir, sess=sess, run_seed=0, data_size=data_size)
-	r_samples = read_celeba(im_size, data_size)
-	corr_eff_g = fft_corr_eff(g_samples, freq_bands)
-	corr_eff_r = fft_corr_eff(r_samples, freq_bands)
+	#im_size = 128
+	#data_size = 100
+	#freq_bands = np.array([16, 32, 64, 128]) // 2
+	#g_samples = read_model_samples(log_dir, sess, run_seed, data_size)
+	#r_samples = read_celeba(im_size, data_size)
+	#corr_eff_g = fft_corr_eff(g_samples, freq_bands)
+	#corr_eff_r = fft_corr_eff(r_samples, freq_bands)
 	
+	'''
+	Model layer correlation
+	'''
+	im_size = 128
+	layers, layer_names = read_model_layers(log_dir, sess, run_seed, data_size)
+	print(f'>>> layer names: {layer_names}')
+	corr_layers = list()
+	for l, n in zip(layers, layer_names):
+		l = l.reshape((np.prod(l.shape[:2]), l.shape[2], l.shape[3], 1))
+		corr_layers.append(fft_corr_eff(l, freq_bands=None)[0])
+		print(f'>>> corr_layers at layer {n} is equal to {corr_layers[-1]}')
+
 	'''
 	Theorem
 	'''
@@ -407,7 +471,8 @@ if __name__ == '__main__':
 	ax = fig.add_subplot(1,1,1)
 	ax.plot(dl, corr_true, '--')
 	dl_specific = np.array([16, 32, 64, 128])
-	ax.plot(dl_specific, corr_true[dl_specific - dk_val], 's')
+	#ax.plot(dl_specific, corr_true[dl_specific - dk_val], 's')
+	ax.plot(dl_specific, corr_layers, 's')
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_ylabel('corr')
 	ax.set_xlabel(r'Layer Spatial Size ($d_l$)')
@@ -415,6 +480,7 @@ if __name__ == '__main__':
 	ax.set_xticklabels(map(str, [dk_val,] + list(dl_specific)))
 	fig.savefig(join(log_dir, f'theorem_true_d{delta}_k{dk_val}_s{im_size}.png'), dpi=300)
 
+	freq_bands = np.array([16, 32, 64, 128]) // 2
 	num_layers = freq_bands.size
 	corr_eff = np.zeros(num_layers)
 	k_eff = dk_val
@@ -425,8 +491,8 @@ if __name__ == '__main__':
 	fig.clf()
 	ax = fig.add_subplot(1,1,1)
 	ax.plot(np.arange(num_layers), corr_eff, 'g--')
-	ax.plot(np.arange(num_layers), corr_eff_g, 'rs')
-	ax.plot(np.arange(num_layers), corr_eff_r, 'bs')
+	#ax.plot(np.arange(num_layers), corr_eff_g, 'rs')
+	#ax.plot(np.arange(num_layers), corr_eff_r, 'bs')
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_ylabel('corr')
 	ax.set_xlabel('Frequency Band')
