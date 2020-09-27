@@ -770,17 +770,29 @@ returns: a list of the magnitude of the complex correlation coefficients corresp
 '''
 def fft_corr_eff(samples, freq_bands):
 	num_samples, hs, ws, cs = samples.shape
-	freq_mask = np.zeros((freq_bands.size, hs, ws, 4), dtype=np.bool)
+	freq_mask = np.zeros((freq_bands.size, hs, ws, 4), dtype=np.int)
 	freq_bands = freq_bands.astype(np.int)
 	f_pre = 0
 	for fi, f in enumerate(freq_bands):
-		freq_mask[fi, f_pre:f-1, f_pre:f, 0] = 1
-		freq_mask[fi, f_pre+1:f, f_pre:f, 1] = 1
-		freq_mask[fi, f_pre:f, f_pre:f-1, 2] = 1
-		freq_mask[fi, f_pre:f, f_pre+1:f, 3] = 1
+		print(f'>>> freq_masking at freq {f}')
+		freq_mask[fi, 0:f-1, 0:f, 0] = 1
+		freq_mask[fi, 0:f_pre, 0:f_pre, 0] = 0
+		freq_mask[fi, 1:f, 0:f, 1] = 1
+		freq_mask[fi, 0:f_pre+1, 0:f_pre, 1] = 0
+		assert np.all(np.nonzero(freq_mask[fi,:,:,0])[0]+1 == np.nonzero(freq_mask[fi,:,:,1])[0])
+		assert np.all(np.nonzero(freq_mask[fi,:,:,0])[1] == np.nonzero(freq_mask[fi,:,:,1])[1])
+		print(f'mask_size_y={np.sum(freq_mask[fi,:,:,0])}')
+		freq_mask[fi, 0:f, 0:f-1, 2] = 1
+		freq_mask[fi, 0:f_pre, 0:f_pre, 2] = 0
+		freq_mask[fi, 0:f, 1:f, 3] = 1
+		freq_mask[fi, 0:f_pre, 0:f_pre+1, 3] = 0
+		assert np.all(np.nonzero(freq_mask[fi,:,:,2])[0] == np.nonzero(freq_mask[fi,:,:,3])[0])
+		assert np.all(np.nonzero(freq_mask[fi,:,:,2])[1]+1 == np.nonzero(freq_mask[fi,:,:,3])[1])
+		print(f'mask_size_x={np.sum(freq_mask[fi,:,:,2])}')
 		f_pre = f
 
-	comp_list = [(np.empty(0), np.empty(0)) for _ in range(freq_bands.size)]
+	freq_mask = freq_mask.astype(np.bool)
+	comp_list = [[np.empty(0), np.empty(0)] for _ in range(freq_bands.size)]
 	for im in samples:
 		for c in range(cs):
 			imf = np.fft.fftn(im[:,:,c])
@@ -795,7 +807,7 @@ def fft_corr_eff(samples, freq_bands):
 		sd_adj = complex_var(vec_adj)
 		corr = np.abs(cov) / np.sqrt(sd * sd_adj)
 		corr_list.append(corr)
-		print(f'>>> at freq {ci}: cov={cov} and sd1={sd} and sd2={sd_adj} and corr={corr}')
+		print(f'>>> at freq {freq_bands[ci]}: cov={cov} and sd1={sd} and sd2={sd_adj} and corr={corr}')
 
 	return corr_list
 

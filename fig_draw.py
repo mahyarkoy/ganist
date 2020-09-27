@@ -19,7 +19,7 @@ import pickle as pk
 import argparse
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-os.environ["CUDA_VISIBLE_DEVICES"] = "7" # "0, 1" for multiple
+os.environ["CUDA_VISIBLE_DEVICES"] = "3" # "0, 1" for multiple
 
 '''
 Drawing Freq Components
@@ -382,8 +382,8 @@ if __name__ == '__main__':
 	Model effective correlation
 	'''
 	im_size = 128
-	data_size = 1000
-	freq_bins = np.array([16, 32, 64, 128]) // 2
+	data_size = 100
+	freq_bands = np.array([16, 32, 64, 128]) // 2
 	g_samples = read_model_samples(log_dir, sess=sess, run_seed=0, data_size=data_size)
 	r_samples = read_celeba(im_size, data_size)
 	corr_eff_g = fft_corr_eff(g_samples, freq_bands)
@@ -415,7 +415,7 @@ if __name__ == '__main__':
 	ax.set_xticklabels(map(str, [dk_val,] + list(dl_specific)))
 	fig.savefig(join(log_dir, f'theorem_true_d{delta}_k{dk_val}_s{im_size}.png'), dpi=300)
 
-	num_layers = freq_bins.size
+	num_layers = freq_bands.size
 	corr_eff = np.zeros(num_layers)
 	k_eff = dk_val
 	for i in range(corr_eff.size, 0, -1):

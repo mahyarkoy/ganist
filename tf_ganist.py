@@ -1006,7 +1006,7 @@ class Ganist:
 			### apply regular wgan
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
-				self.build_fsg_gan(self.im_input, self.zi_input, 
+				self.build_wgan(self.im_input, self.zi_input, 
 					im_size=self.data_dim[0])
 			self.im_input_rec = self.im_collect[-1]
 
