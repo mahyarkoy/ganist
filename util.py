@@ -762,6 +762,49 @@ def fft_norm(imgs):
 	np.clip(fft_avg, 1e-20, None, out=fft_avg)
 	return fft_avg
 
+'''
+Computes the correlation between adjacent spatial frequency components in different frequency bands.
+samples: [N, H, W, C] images
+freq_bands: e.g. np.array([16, 32, 64, 128]) // 2, must have increasing order
+returns: a list of the magnitude of the complex correlation coefficients corresponding to frequency bands
+'''
+def fft_corr_eff(samples, freq_bands):
+	num_samples, hs, ws, cs = samples.shape
+	freq_mask = np.zeros((freq_bands.size, hs, ws, 4), dtype=np.bool)
+	freq_bands = freq_bands.astype(np.int)
+	f_pre = 0
+	for fi, f in enumerate(freq_bands):
+		freq_mask[fi, f_pre:f-1, f_pre:f, 0] = 1
+		freq_mask[fi, f_pre+1:f, f_pre:f, 1] = 1
+		freq_mask[fi, f_pre:f, f_pre:f-1, 2] = 1
+		freq_mask[fi, f_pre:f, f_pre+1:f, 3] = 1
+		f_pre = f
+
+	comp_list = [(np.empty(0), np.empty(0)) for _ in range(freq_bands.size)]
+	for im in samples:
+		for c in range(cs):
+			imf = np.fft.fftn(im[:,:,c])
+			for fi, f in enumerate(freq_bands):
+				comp_list[fi][0] = np.concatenate((comp_list[fi][0], imf[freq_mask[fi, :, :, 0]], imf[freq_mask[fi, :, :, 2]]))
+				comp_list[fi][1] = np.concatenate((comp_list[fi][1], imf[freq_mask[fi, :, :, 1]], imf[freq_mask[fi, :, :, 3]]))
+
+	corr_list = list()
+	for ci, (vec, vec_adj) in enumerate(comp_list):
+		cov = complex_cov(vec, vec_adj)
+		sd = complex_var(vec)
+		sd_adj = complex_var(vec_adj)
+		corr = np.abs(cov) / np.sqrt(sd * sd_adj)
+		corr_list.append(corr)
+		print(f'>>> at freq {ci}: cov={cov} and sd1={sd} and sd2={sd_adj} and corr={corr}')
+
+	return corr_list
+
+def complex_cov(x, y):
+	return np.mean(x*np.conj(y)) - np.mean(x)*np.conj(np.mean(y))
+
+def complex_var(x):
+	return np.abs(complex_cov(x, x))
+
 def fft_test_by_samples(log_dir, r_samples, g_samples, r_name='true', g_name='gen'):
 	assert r_samples.shape == g_samples.shape, f'r_samples shape of {r_samples.shape} != g_samples shape of {g_samples.shape}'
 	data_size = r_samples.shape[0]

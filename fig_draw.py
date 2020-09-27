@@ -12,6 +12,7 @@ from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
 from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval, create_cosine
 from util import make_koch_snowflake, fractal_dimension, fractal_eval
 from util import windowing, fft_norm, fft_test_by_samples
+from util import fft_corr_eff
 import glob
 import os
 import pickle as pk
@@ -275,6 +276,68 @@ def run_cos_eval(log_dir, sess=None, run_seed=0):
 	true_fft, true_fft_hann, true_hist = cosine_eval(r_samples, 'true', freq_centers, log_dir=log_dir)
 	cosine_eval(g_samples, 'gen', freq_centers, log_dir=log_dir, true_fft=true_fft, true_fft_hann=true_fft_hann, true_hist=true_hist)
 
+def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
+	im_size = 128
+
+	use_shifter = True ## set to True for freq shift dataset
+	def shifter(x): return TFutil.get().freq_shift(x, 0.5, 0.5) if use_shifter else x	
+
+	### GANIST load g_samples
+	g_name = '5_logs_wganbn_celeba128cc_fid50'
+	#g_name = '14_logs_wganbn_celeba128cc_fssetup_fshift'
+	#g_name = '38_logs_wganbn_bedroom128cc'
+	#g_name = '46_logs_wgan_sbedroom128cc_hpfid'
+	#g_name = '22_logs_wganbn_gshift_celeba128cc_fshift'
+	#g_name = '49_logs_wgan_gshift_sbedroom128cc_hpfid'
+	ganist = tf_ganist.Ganist(sess, log_dir)
+	sess.run(tf.global_variables_initializer())
+	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
+	ganist.load(net_path)
+	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+
+	### PGGAN load g_samples
+	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
+	#g_name = f'gdsmall_results_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#g_name = f'results_gdsmall_outsh_nomirror_sceleba_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#g_name = f'results_gdsmall_sbedroom_{run_seed}'
+	#g_name = f'results_gdsmall_outsh_nomirror_sbedroom_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
+	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	#g_samples = pg_sampler.sample_data(data_size)
+
+	### StyleGAN2 load g_samples
+	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/stylegan2_model')
+	#g_name = f'results_sg_small_fsg_finalstylemix_celeba128cc_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
+	#g_name = f'results_sg_small_celeba128cc_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
+	#g_name = f'results_sg_small_bedroom128cc_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_bedroom128cc/{g_name}/00000-stylegan2-lsun-bedroom-100k-4gpu-config-e/network-final.pkl'
+	#import dnnlib
+	#import dnnlib.tflib as tflib
+	#import pretrained_networks
+	#sty_sampler = StyleGAN2_Sampler(net_path, sess)
+	#g_samples = sty_sampler.sample_data(fft_data_size)
+
+	### load g_samples from pickle file
+	#with open(join(log_dir, f'{g_name}_samples_{data_size}.pk'), 'rb') as fs:
+	#	g_samples = pk.load(fs)
+
+	### load g_samples from image file
+	#g_name = 'logs_ganms_or_celeba128cc'
+	#g_sample_dir = f'/dresden/users/mk1391/evl/ganist_lsun_logs/layer_stats/temp/{g_name}/run_0/samples/'
+	#g_samples = readim_from_path(
+	#	readim_path_from_dir(g_sample_dir, im_type='*.jpg')[:data_size], im_size, center_crop=(64,64), verbose=True)
+
+	im_block_draw(g_samples, 5, join(log_dir, f'sample_reader_{g_name}.png'), border=True)
+	im_block_draw(shifter(g_samples), 5, join(log_dir, f'sample_reader_{g_name}_sh.png'), border=True)
+	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
+	#	pk.dump(g_samples, fs)
+
+	return g_samples
 
 #celeba_data = read_celeba(32)
 #apply_fft_win(celeba_data, log_dir+'/fft_celeba32cc_hann.png')
@@ -304,7 +367,76 @@ if __name__ == '__main__':
 	os.makedirs(log_dir, exist_ok=True)
 	sys.stdout = Logger(log_dir)
 	sys.stderr = sys.stdout
+	sess = None
+
+	'''
+	TENSORFLOW SETUP
+	'''
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	config.gpu_options.allow_growth = True
+	sess = tf.Session(config=config)
+	TFutil(sess)
+
+	'''
+	Model effective correlation
+	'''
+	im_size = 128
+	data_size = 1000
+	freq_bins = np.array([16, 32, 64, 128]) // 2
+	g_samples = read_model_samples(log_dir, sess=sess, run_seed=0, data_size=data_size)
+	r_samples = read_celeba(im_size, data_size)
+	corr_eff_g = fft_corr_eff(g_samples, freq_bands)
+	corr_eff_r = fft_corr_eff(r_samples, freq_bands)
 	
+	'''
+	Theorem
+	'''
+	dk_val = 5
+	im_size = 128
+	delta = 1
+	assert delta != 0
+	dl = np.arange(dk_val, im_size+1)
+	#dl = np.array([16, 32, 64, 128])
+	corr_true = np.zeros(dl.size)
+	def sinc_conv(sinc, d): return np.array([sinc[d-i] if d-i >= 0 else sinc[-(d-i)] for i in range(sinc.size)])
+	for i, dl_val in enumerate(dl):
+		corr_true[i] = np.sin(np.pi*delta*dk_val/dl_val) / (dk_val *np.sin(np.pi*delta/dl_val))
+	fig = plt.figure(0, figsize=(8,6))
+	fig.clf()
+	ax = fig.add_subplot(1,1,1)
+	ax.plot(dl, corr_true, '--')
+	dl_specific = np.array([16, 32, 64, 128])
+	ax.plot(dl_specific, corr_true[dl_specific - dk_val], 's')
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_ylabel('corr')
+	ax.set_xlabel(r'Layer Spatial Size ($d_l$)')
+	ax.set_xticks([dk_val,] + list(dl_specific))
+	ax.set_xticklabels(map(str, [dk_val,] + list(dl_specific)))
+	fig.savefig(join(log_dir, f'theorem_true_d{delta}_k{dk_val}_s{im_size}.png'), dpi=300)
+
+	num_layers = freq_bins.size
+	corr_eff = np.zeros(num_layers)
+	k_eff = dk_val
+	for i in range(corr_eff.size, 0, -1):
+		corr_eff[i-1] = np.sin(np.pi*delta*k_eff/im_size) / (k_eff * np.sin(np.pi*delta/im_size))
+		print(f'k_eff={k_eff}, corr_eff={corr_eff[i-1]}')
+		k_eff += 2 * (dk_val - 1)
+	fig.clf()
+	ax = fig.add_subplot(1,1,1)
+	ax.plot(np.arange(num_layers), corr_eff, 'g--')
+	ax.plot(np.arange(num_layers), corr_eff_g, 'rs')
+	ax.plot(np.arange(num_layers), corr_eff_r, 'bs')
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_ylabel('corr')
+	ax.set_xlabel('Frequency Band')
+	ax.set_xticks(range(num_layers))
+	freq_bands = [0, ] + list(dl_specific//2)
+	ax.set_xticklabels(map(lambda x: r'[$\frac{{{}}}{{128}}$, $\frac{{{}}}{{128}}$)'.format(*x), zip(freq_bands[:-1], freq_bands[1:])))
+	#ax.set_xticklabels(map(lambda x: r'[{}, {}) / 128'.format(*x), zip(freq_bands[:-1], freq_bands[1:])))
+	fig.savefig(join(log_dir, f'theorem_eff_d{delta}_k{dk_val}_s{im_size}.png'), dpi=300)
+
+
 	'''
 	Power Diff Eval
 	'''
@@ -317,39 +449,39 @@ if __name__ == '__main__':
 	'''
 	Koch Snowflakes
 	'''
-	data_size = 100
-	im_size = 1024
-	koch_level = 5
-	channels = 1
-	im = make_koch_snowflake(koch_level, 0., im_size, channels)
-	def make_single_image():
-		im = -np.ones((im_size, im_size, channels))
-		im[0, 0, :] = 1.
-		return im
-	#im = make_single_image()
-	coeffs, sizes, counts = fractal_dimension(im[:,:,0], threshold=0.)
-	box_dim = -coeffs[0]
-	print(coeffs)
-	fig = plt.figure(0, figsize=(8,6))
-	fig.clf()
-	ax = fig.add_subplot(1,1,1)
-	ax.plot(-np.log(np.array(sizes)), np.log(np.array(counts)), 's-b')
-	ax.plot(-np.log(np.array(sizes)), coeffs[0] * np.log(np.array(sizes)) + coeffs[1], '-r')
-	ax.grid(True, which='both', linestyle='dotted')
-	fig.savefig(join(log_dir, f'box_count_dim_{koch_level}_{im_size}.png'), dpi=300)
-	single_draw(im, os.path.join(log_dir, f'koch_snowflake_{koch_level}_{im_size}.png'))
-	apply_fft_win((im[np.newaxis, ...] + 1.) / 2., #- np.mean(im), 
-		os.path.join(log_dir, f'fft_koch_snowflake_single_{koch_level}_{im_size}.png'), windowing=False)
-	print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
-	
-	### many samples
-	im_data = np.zeros((data_size, im_size, im_size, channels))
-	for i in range(data_size):
-		rot = np.random.uniform(-30, 30)
-		im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
-	
-	im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{koch_level}_{im_size}_samples.png'), border=True)
-	fractal_eval(im_data, f'koch_snowflake_{koch_level}_{im_size}', log_dir)
+	#data_size = 100
+	#im_size = 1024
+	#koch_level = 5
+	#channels = 1
+	#im = make_koch_snowflake(koch_level, 0., im_size, channels)
+	#def make_single_image():
+	#	im = -np.ones((im_size, im_size, channels))
+	#	im[0, 0, :] = 1.
+	#	return im
+	##im = make_single_image()
+	#coeffs, sizes, counts = fractal_dimension(im[:,:,0], threshold=0.)
+	#box_dim = -coeffs[0]
+	#print(coeffs)
+	#fig = plt.figure(0, figsize=(8,6))
+	#fig.clf()
+	#ax = fig.add_subplot(1,1,1)
+	#ax.plot(-np.log(np.array(sizes)), np.log(np.array(counts)), 's-b')
+	#ax.plot(-np.log(np.array(sizes)), coeffs[0] * np.log(np.array(sizes)) + coeffs[1], '-r')
+	#ax.grid(True, which='both', linestyle='dotted')
+	#fig.savefig(join(log_dir, f'box_count_dim_{koch_level}_{im_size}.png'), dpi=300)
+	#single_draw(im, os.path.join(log_dir, f'koch_snowflake_{koch_level}_{im_size}.png'))
+	#apply_fft_win((im[np.newaxis, ...] + 1.) / 2., #- np.mean(im), 
+	#	os.path.join(log_dir, f'fft_koch_snowflake_single_{koch_level}_{im_size}.png'), windowing=False)
+	#print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
+	#
+	#### many samples
+	#im_data = np.zeros((data_size, im_size, im_size, channels))
+	#for i in range(data_size):
+	#	rot = np.random.uniform(-30, 30)
+	#	im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
+	#
+	#im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{koch_level}_{im_size}_samples.png'), border=True)
+	#fractal_eval(im_data, f'koch_snowflake_{koch_level}_{im_size}', log_dir)
 
 	'''
 	Eval toy experiments.
@@ -520,16 +652,6 @@ if __name__ == '__main__':
 	#apply_fft_win(lsun_data, log_dir+'/fft_bedroom64_hann.png')
 
 	'''
-	TENSORFLOW SETUP
-	'''
-	#sess = None
-	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	#config.gpu_options.allow_growth = True
-	#sess = tf.Session(config=config)
-	#TFutil(sess)
-
-	'''
 	FFT Test
 	'''
 	#fft_test(log_dir, sess=sess, run_seed=run_seed)
@@ -545,7 +667,8 @@ if __name__ == '__main__':
 	#fft_layer_test(sess, log_dir, 0)
 
 	### close session
-	#sess.close()
+	if sess is not None:
+		sess.close()
 
 
 
