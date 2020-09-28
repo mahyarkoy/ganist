@@ -140,6 +140,7 @@ def read_model_layers(log_dir, sess=None, run_seed=0, data_size=25):
 	layer_size_dict = {'conv0': 16, 'conv1': 32, 'conv2': 64, 'conv3': 128}
 	model_layers = list()
 	model_layers_name = list()
+	model_layers_size = list()
 	for val, name in g_vars:
 		if 'kernel' in name and 'conv' in name:
 			scopes = name.split('/')
@@ -166,7 +167,8 @@ def read_model_layers(log_dir, sess=None, run_seed=0, data_size=25):
 
 			model_layers.append(layer_filter)
 			model_layers_name.append(layer_name)
-	return model_layers, model_layers_name
+			model_layers_size.append(layer_size)
+	return model_layers, model_layers_name, model_layers_size
 
 def fft_layer_test(log_dir, sess=None, run_seed=0, data_size=25):
 	### read ganist network
@@ -445,13 +447,14 @@ if __name__ == '__main__':
 	Model layer correlation
 	'''
 	im_size = 128
-	layers, layer_names = read_model_layers(log_dir, sess, run_seed, data_size)
+	data_size = 100
+	layers, layer_names, layer_sizes = read_model_layers(log_dir, sess, run_seed, data_size)
 	print(f'>>> layer names: {layer_names}')
 	corr_layers = list()
-	for l, n in zip(layers, layer_names):
+	for l, n, s in zip(layers, layer_names, layer_sizes):
 		l = l.reshape((np.prod(l.shape[:2]), l.shape[2], l.shape[3], 1))
 		corr_layers.append(fft_corr_eff(l, freq_bands=None)[0])
-		print(f'>>> corr_layers at layer {n} is equal to {corr_layers[-1]}')
+		print(f'>>> corr_layers at layer {n} with size {s} is equal to {corr_layers[-1]}')
 
 	'''
 	Theorem
@@ -470,7 +473,8 @@ if __name__ == '__main__':
 	fig.clf()
 	ax = fig.add_subplot(1,1,1)
 	ax.plot(dl, corr_true, '--')
-	dl_specific = np.array([16, 32, 64, 128])
+	dl_specific = np.array(layer_sizes)
+	#dl_specific = np.array([16, 32, 64, 128])
 	#ax.plot(dl_specific, corr_true[dl_specific - dk_val], 's')
 	ax.plot(dl_specific, corr_layers, 's')
 	ax.grid(True, which='both', linestyle='dotted')
