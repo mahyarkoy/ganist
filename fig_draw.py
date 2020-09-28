@@ -347,7 +347,7 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
 	sess.run(tf.global_variables_initializer())
 	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
 	ganist.load(net_path)
-	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+	g_samples = sample_ganist(ganist, data_size, output_type='collect')
 
 	### PGGAN load g_samples
 	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
@@ -386,8 +386,8 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
 	#g_samples = readim_from_path(
 	#	readim_path_from_dir(g_sample_dir, im_type='*.jpg')[:data_size], im_size, center_crop=(64,64), verbose=True)
 
-	im_block_draw(g_samples, 5, join(log_dir, f'sample_reader_{g_name}.png'), border=True)
-	im_block_draw(shifter(g_samples), 5, join(log_dir, f'sample_reader_{g_name}_sh.png'), border=True)
+	im_block_draw(g_samples[0], 5, join(log_dir, f'sample_reader_{g_name}.png'), border=True)
+	im_block_draw(shifter(g_samples[0]), 5, join(log_dir, f'sample_reader_{g_name}_sh.png'), border=True)
 	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
 	#	pk.dump(g_samples, fs)
 
@@ -435,10 +435,14 @@ if __name__ == '__main__':
 	'''
 	Model effective correlation
 	'''
-	#im_size = 128
-	#data_size = 100
-	#freq_bands = np.array([16, 32, 64, 128]) // 2
-	#g_samples = read_model_samples(log_dir, sess, run_seed, data_size)
+	im_size = 128
+	data_size = 32
+	corr_eff_per_layer = list()
+	freq_bands = np.array([16, 32, 64, 128]) // 2
+	g_samples = read_model_samples(log_dir, sess, run_seed, data_size)
+	for gi, g in enumerate(g_samples[1:]):
+		corr_eff_per_layer.append(fft_corr_eff(g, freq_bands[gi:gi+1])[0])
+		print(f'>>> layer eff corr at freq {freq_bands[gi]}: {corr_eff_per_layer[-1]}')
 	#r_samples = read_celeba(im_size, data_size)
 	#corr_eff_g = fft_corr_eff(g_samples, freq_bands)
 	#corr_eff_r = fft_corr_eff(r_samples, freq_bands)
@@ -446,15 +450,15 @@ if __name__ == '__main__':
 	'''
 	Model layer correlation
 	'''
-	im_size = 128
-	data_size = 100
-	layers, layer_names, layer_sizes = read_model_layers(log_dir, sess, run_seed, data_size)
-	print(f'>>> layer names: {layer_names}')
-	corr_layers = list()
-	for l, n, s in zip(layers, layer_names, layer_sizes):
-		l = l.reshape((np.prod(l.shape[:2]), l.shape[2], l.shape[3], 1))
-		corr_layers.append(fft_corr_eff(l, freq_bands=None)[0])
-		print(f'>>> corr_layers at layer {n} with size {s} is equal to {corr_layers[-1]}')
+	#im_size = 128
+	#data_size = 100
+	#layers, layer_names, layer_sizes = read_model_layers(log_dir, sess, run_seed, data_size)
+	#print(f'>>> layer names: {layer_names}')
+	#corr_layers = list()
+	#for l, n, s in zip(layers, layer_names, layer_sizes):
+	#	l = l.reshape((np.prod(l.shape[:2]), l.shape[2], l.shape[3], 1))
+	#	corr_layers.append(fft_corr_eff(l, freq_bands=None)[0])
+	#	print(f'>>> corr_layers at layer {n} with size {s} is equal to {corr_layers[-1]}')
 
 	'''
 	Theorem
@@ -473,10 +477,10 @@ if __name__ == '__main__':
 	fig.clf()
 	ax = fig.add_subplot(1,1,1)
 	ax.plot(dl, corr_true, '--')
-	dl_specific = np.array(layer_sizes)
-	#dl_specific = np.array([16, 32, 64, 128])
-	#ax.plot(dl_specific, corr_true[dl_specific - dk_val], 's')
-	ax.plot(dl_specific, corr_layers, 's')
+	#dl_specific = np.array(layer_sizes)
+	dl_specific = np.array([16, 32, 64, 128])
+	ax.plot(dl_specific, corr_true[dl_specific - dk_val], 's')
+	#ax.plot(dl_specific, corr_layers, 's')
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_ylabel('corr')
 	ax.set_xlabel(r'Layer Spatial Size ($d_l$)')
@@ -491,11 +495,11 @@ if __name__ == '__main__':
 	for i in range(corr_eff.size, 0, -1):
 		corr_eff[i-1] = np.sin(np.pi*delta*k_eff/im_size) / (k_eff * np.sin(np.pi*delta/im_size))
 		print(f'k_eff={k_eff}, corr_eff={corr_eff[i-1]}')
-		k_eff += 2 * (dk_val - 1)
+		k_eff += 2**(corr_eff.size - i + 1) * (dk_val - 1)
 	fig.clf()
 	ax = fig.add_subplot(1,1,1)
 	ax.plot(np.arange(num_layers), corr_eff, 'g--')
-	#ax.plot(np.arange(num_layers), corr_eff_g, 'rs')
+	ax.plot(np.arange(num_layers), corr_eff_per_layer, 'rs')
 	#ax.plot(np.arange(num_layers), corr_eff_r, 'bs')
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_ylabel('corr')

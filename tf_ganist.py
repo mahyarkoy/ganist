@@ -517,10 +517,11 @@ def build_gen_v1_branch(data_dim, zi, act, train_phase, im_size, sub_scope='or')
 			o_us = tf.image.resize_nearest_neighbor(o, [im_size, im_size], name='us3')
 	return h3, h4, o_us
 
-def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
-	train_phase = True
+def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or', reuse=None, layer_ins=None):
+	#train_phase = True
+	layer_ins = [None, None, None, None] if layers_ins is None else layer_ins
 	ol = list()
-	with tf.variable_scope('g_net'):
+	with tf.variable_scope('g_net', reuse=reuse):
 		with tf.variable_scope(sub_scope):
 			bn = tf.contrib.layers.batch_norm
 			### setup based on size
@@ -542,6 +543,7 @@ def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 					is_training=train_phase))
 				h0 = tf.reshape(z_fc, [-1, 8, 8, 512])
 				h0_us = tf.image.resize_nearest_neighbor(h0, [16, 16], name='us0')
+				h0_us = h0_us if layer_ins[0] is None else layer_ins[0]
 				h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
 					is_training=train_phase))
 			else:
@@ -549,14 +551,17 @@ def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 
 			### us version: decoding fc code with upsampling and conv hidden layers
 			h1_us = tf.image.resize_nearest_neighbor(h1, [im_size//4, im_size//4], name='us1')
+			h1_us = h1_us if layer_ins[1] is None else layer_ins[1]
 			h2 = act(bn(conv2d(h1_us, 128, scope='conv1'),
 				is_training=train_phase))
 
 			h2_us = tf.image.resize_nearest_neighbor(h2, [im_size//2, im_size//2], name='us2')
+			h2_us = h2_us if layer_ins[2] is None else layer_ins[2]
 			h3 = act(bn(conv2d(h2_us, 64, scope='conv2'),
 				is_training=train_phase))
 		
 			h3_us = tf.image.resize_nearest_neighbor(h3, [im_size, im_size], name='us3')
+			h3_us = h3_us if layer_ins[3] is None else layer_ins[3]
 			h4 = conv2d(h3_us, data_dim[-1], scope='conv3')
 
 			### resnext version
@@ -571,7 +576,7 @@ def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or'):
 			h5 = conv2d(h4, data_dim[-1], scope='convo')
 			'''
 			o = tf.tanh(h4)
-		return h0, h1, h2, h3, o
+		return h0, h1, h2, h3, h4, o
 
 def build_dis_v1(data_layer, train_phase, im_size, sub_scope='or', reuse=False):
 	act = lrelu
@@ -978,6 +983,49 @@ class Ganist:
 
 		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
 
+	def build_wgan_with_separate_layer_inputs(self, im_input, zi_input, im_size):
+		### generators
+		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='l2')[-1] ### subscope 'l2' for older wganbn, 'main' for more recent
+		gen_collect = [g_layer]
+		im_collect = [im_input]
+		comb_list = [g_layer]
+		
+		temp_in = np.zeros((1, 16, 16, 512))
+		temp_in[1, 8, 8, :] = 1
+		temp_in = tf.convert_to_tensor(temp_in, dtype=tf_dtype)
+		gen_collect.append(self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='l2', reuse=True, layer_ins=[temp_in, None, None, None])[-2])
+
+		temp_in = np.zeros((1, 32, 32, 256))
+		temp_in[1, 16, 16, :] = 1
+		temp_in = tf.convert_to_tensor(temp_in, dtype=tf_dtype)
+		gen_collect.append(self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='l2', reuse=True, layer_ins=[None, temp_in, None, None])[-2])
+
+		temp_in = np.zeros((1, 64, 64, 128))
+		temp_in[1, 32, 32, :] = 1
+		temp_in = tf.convert_to_tensor(temp_in, dtype=tf_dtype)
+		gen_collect.append(self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='l2', reuse=True, layer_ins=[None, None, temp_in, None])[-2])
+
+		temp_in = np.zeros((1, 128, 128, 64))
+		temp_in[1, 64, 64, :] = 1
+		temp_in = tf.convert_to_tensor(temp_in, dtype=tf_dtype)
+		gen_collect.append(self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
+				im_size=im_size, sub_scope='l2', reuse=True, layer_ins=[None, None, None, temp_in])[-2])
+
+
+		### discriminators
+		d_loss, g_loss, rg_grad_norm_output = \
+				self.build_gan_loss(im_input, g_layer, im_size=im_size, scope='l2') ### subscope 'l2' for older wganbn, 'main' for more recent
+		d_loss_list = [d_loss]
+		g_loss_list = [g_loss]
+		rg_grad_norm_list = [rg_grad_norm_output]
+
+		return gen_collect, im_collect, comb_list, d_loss_list, g_loss_list, rg_grad_norm_list
+
+
 	def build_wgan_gshift(self, im_input, zi_input, im_size):
 		### generators
 		g_layer = self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
@@ -1006,7 +1054,7 @@ class Ganist:
 			### apply regular wgan
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
-				self.build_wgan(self.im_input, self.zi_input, 
+				self.build_wgan_with_separate_layer_inputs(self.im_input, self.zi_input, 
 					im_size=self.data_dim[0])
 			self.im_input_rec = self.im_collect[-1]
 
@@ -1146,7 +1194,7 @@ class Ganist:
 			self.bn_moving_vars = [v for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES) \
 				if 'BatchNorm' in v.name and \
 				('moving_mean' in v.name or 'moving_variance' in  v.name)]
-			#print '>>> bn vars:', self.bn_moving_vars
+			print '>>> bn vars:', self.bn_moving_vars
 
 			### collect opt
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -1269,7 +1317,7 @@ class Ganist:
 
 	def start_session(self):
 		self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=100)
-		self.saver_var_only = tf.train.Saver(self.g_vars)#+self.bn_moving_vars)#+self.d_vars+self.bn_moving_vars)#+self.e_vars+[self.pg_var, self.pg_q])
+		self.saver_var_only = tf.train.Saver(self.g_vars+self.bn_moving_vars)#+self.d_vars+self.bn_moving_vars)#+self.e_vars+[self.pg_var, self.pg_q])
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def save(self, fname):
