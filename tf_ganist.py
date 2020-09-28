@@ -519,7 +519,7 @@ def build_gen_v1_branch(data_dim, zi, act, train_phase, im_size, sub_scope='or')
 
 def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or', reuse=None, layer_ins=None):
 	#train_phase = True
-	layer_ins = [None, None, None, None] if layers_ins is None else layer_ins
+	layer_ins = [None, None, None, None] if layer_ins is None else layer_ins
 	ol = list()
 	with tf.variable_scope('g_net', reuse=reuse):
 		with tf.variable_scope(sub_scope):
@@ -992,25 +992,25 @@ class Ganist:
 		comb_list = [g_layer]
 		
 		temp_in = np.zeros((1, 16, 16, 512))
-		temp_in[1, 8, 8, :] = 1
+		temp_in[:, 8, 8, :] = 1
 		temp_in = tf.convert_to_tensor(temp_in, dtype=tf_dtype)
 		gen_collect.append(self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 				im_size=im_size, sub_scope='l2', reuse=True, layer_ins=[temp_in, None, None, None])[-2])
 
 		temp_in = np.zeros((1, 32, 32, 256))
-		temp_in[1, 16, 16, :] = 1
+		temp_in[:, 16, 16, :] = 1
 		temp_in = tf.convert_to_tensor(temp_in, dtype=tf_dtype)
 		gen_collect.append(self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 				im_size=im_size, sub_scope='l2', reuse=True, layer_ins=[None, temp_in, None, None])[-2])
 
 		temp_in = np.zeros((1, 64, 64, 128))
-		temp_in[1, 32, 32, :] = 1
+		temp_in[:, 32, 32, :] = 1
 		temp_in = tf.convert_to_tensor(temp_in, dtype=tf_dtype)
 		gen_collect.append(self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 				im_size=im_size, sub_scope='l2', reuse=True, layer_ins=[None, None, temp_in, None])[-2])
 
 		temp_in = np.zeros((1, 128, 128, 64))
-		temp_in[1, 64, 64, :] = 1
+		temp_in[:, 64, 64, :] = 1
 		temp_in = tf.convert_to_tensor(temp_in, dtype=tf_dtype)
 		gen_collect.append(self.build_gen(self.data_dim, zi_input, self.g_act, self.train_phase, 
 				im_size=im_size, sub_scope='l2', reuse=True, layer_ins=[None, None, None, temp_in])[-2])
@@ -1194,7 +1194,7 @@ class Ganist:
 			self.bn_moving_vars = [v for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES) \
 				if 'BatchNorm' in v.name and \
 				('moving_mean' in v.name or 'moving_variance' in  v.name)]
-			print '>>> bn vars:', self.bn_moving_vars
+			print('>>> bn vars:', self.bn_moving_vars)
 
 			### collect opt
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)

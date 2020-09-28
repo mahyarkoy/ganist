@@ -346,7 +346,8 @@ Apply FFT to greyscaled images, then average power, normalize and plot.
 im_data shape: (b, h, w, c)
 return: shifted and flipped axis 1 fft, shape (b, h, w)
 '''
-def apply_fft_win(im_data, path, windowing=True, plot_ax=None):
+def apply_fft_win(im_data, path, windowing=True, plot_ax=None, drop_dc=False):
+	im_data = im_data - np.mean(im_data, axis=(1,2,3)) if drop_dc else im_data
 	### windowing
 	win_size = im_data.shape[1]
 	win = np.hanning(im_data.shape[1])
@@ -354,7 +355,6 @@ def apply_fft_win(im_data, path, windowing=True, plot_ax=None):
 	#single_draw(win, '/home/mahyar/miss_details_images/temp/hann_win.png')
 	#single_draw(win*im_data[0], '/home/mahyar/miss_details_images/temp/hann_win_im.png')
 	im_data = im_data * win if windowing is True else im_data
-	
 	### apply fft
 	print('>>> fft image shape: {}'.format(im_data.shape))
 	im_fft, _ = apply_fft_images(im_data, reshape=False)

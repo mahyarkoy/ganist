@@ -346,7 +346,7 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
 	ganist = tf_ganist.Ganist(sess, log_dir)
 	sess.run(tf.global_variables_initializer())
 	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
-	ganist.load(net_path)
+	#ganist.load(net_path)
 	g_samples = sample_ganist(ganist, data_size, output_type='collect')
 
 	### PGGAN load g_samples
@@ -388,6 +388,10 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
 
 	im_block_draw(g_samples[0], 5, join(log_dir, f'sample_reader_{g_name}.png'), border=True)
 	im_block_draw(shifter(g_samples[0]), 5, join(log_dir, f'sample_reader_{g_name}_sh.png'), border=True)
+	apply_fft_win(g_samples[1][0:1,:,:,0:1], join(log_dir, f'sample_reader_fft_impulse_1_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	apply_fft_win(g_samples[2][0:1,:,:,0:1], join(log_dir, f'sample_reader_fft_impulse_2_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	apply_fft_win(g_samples[3][0:1,:,:,0:1], join(log_dir, f'sample_reader_fft_impulse_3_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	apply_fft_win(g_samples[4][0:1,:,:,0:1], join(log_dir, f'sample_reader_fft_impulse_4_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
 	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
 	#	pk.dump(g_samples, fs)
 
@@ -441,7 +445,7 @@ if __name__ == '__main__':
 	freq_bands = np.array([16, 32, 64, 128]) // 2
 	g_samples = read_model_samples(log_dir, sess, run_seed, data_size)
 	for gi, g in enumerate(g_samples[1:]):
-		corr_eff_per_layer.append(fft_corr_eff(g, freq_bands[gi:gi+1])[0])
+		corr_eff_per_layer.append(fft_corr_eff(g, freq_bands[-1:])[0])
 		print(f'>>> layer eff corr at freq {freq_bands[gi]}: {corr_eff_per_layer[-1]}')
 	#r_samples = read_celeba(im_size, data_size)
 	#corr_eff_g = fft_corr_eff(g_samples, freq_bands)
