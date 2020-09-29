@@ -762,6 +762,43 @@ def fft_norm(imgs):
 	np.clip(fft_avg, 1e-20, None, out=fft_avg)
 	return fft_avg
 
+def fft_corr_point(samples, freq_bands=None):
+	num_samples, hs, ws = samples.shape
+	freq_bands = freq_bands.astype(np.int) if freq_bands is not None else np.array([hs//2], dtype=np.int)
+	samples = samples.reshape((-1, hs, ws, 1))
+	samples, _ = apply_fft_images(samples)
+	samples = np.flip(samples, 1)
+
+	cov = complex_cov(samples[:, :-1, :-1], samples[:, 1:, 1:], axis=0)
+	cov_rev = complex_cov(samples[:, 1:, :-1], samples[:, :-1, 1:], axis=0)
+	var_all = complex_var(samples, axis=0)
+	corr = np.abs(cov) / np.sqrt(var[:-1, :-1] * var[1:, 1:])
+	corr_rev = np.abs(cov_rev) / np.sqrt(var[1:, :-1] * var[:-1, 1:])
+
+	f_pre = 0
+	cy = hs//2
+	cx = ws//2
+	corr_list = list()
+	for fi, f in enumerate(freq_bands):
+		freq_mask = np.zeros((hs, ws), dtype=np.int)
+		freq_mask[max(cy-f, 0):cy+f, max(cx-f, 0):cx+f] = 1
+		freq_mask[max(cy-f_pre, 0):cy+f_pre, max(cx-f_pre, 0):cx+f_pre] = 0
+		corr_list.append(corr[freq_mask.astype(np.bool)])
+		f_pre = f
+
+	f_pre = 0
+	cy = hs//2-1
+	cx = ws//2
+	corr_rev_list = list()
+	for fi, f in enumerate(freq_bands):
+		freq_mask = np.zeros((hs, ws), dtype=np.int)
+		freq_mask[max(cy-f, 0):cy+f, max(cx-f, 0):cx+f] = 1
+		freq_mask[max(cy-f_pre, 0):cy+f_pre, max(cx-f_pre, 0):cx+f_pre] = 0
+		corr_rev_list.append(corr_rev[freq_mask.astype(np.bool)])
+		f_pre = f
+
+	return corr_list, corr_rev_list
+
 '''
 Computes the correlation between adjacent spatial frequency components in different frequency bands.
 samples: [N, H, W, C] images
@@ -811,11 +848,11 @@ def fft_corr_eff(samples, freq_bands=None):
 
 	return corr_list
 
-def complex_cov(x, y):
-	return np.mean(x*np.conj(y)) - np.mean(x)*np.conj(np.mean(y))
+def complex_cov(x, y, axis=None):
+	return np.mean(x*np.conj(y), axis) - np.mean(x, axis)*np.conj(np.mean(y, axis))
 
-def complex_var(x):
-	return np.abs(complex_cov(x, x))
+def complex_var(x, axis=None):
+	return np.abs(complex_cov(x, x, axis))
 
 def fft_test_by_samples(log_dir, r_samples, g_samples, r_name='true', g_name='gen'):
 	assert r_samples.shape == g_samples.shape, f'r_samples shape of {r_samples.shape} != g_samples shape of {g_samples.shape}'

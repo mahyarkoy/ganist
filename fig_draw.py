@@ -348,7 +348,8 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
 	sess.run(tf.global_variables_initializer())
 	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
 	#ganist.load(net_path)
-	g_samples = sample_ganist(ganist, data_size, output_type='collect')
+	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+	#g_samples = sample_ganist(ganist, data_size, output_type='collect')
 
 	### PGGAN load g_samples
 	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
@@ -387,12 +388,12 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
 	#g_samples = readim_from_path(
 	#	readim_path_from_dir(g_sample_dir, im_type='*.jpg')[:data_size], im_size, center_crop=(64,64), verbose=True)
 
-	im_block_draw(g_samples[0], 5, join(log_dir, f'sample_reader_{g_name}.png'), border=True)
-	im_block_draw(shifter(g_samples[0]), 5, join(log_dir, f'sample_reader_{g_name}_sh.png'), border=True)
-	apply_fft_win(g_samples[1][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_1_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
-	apply_fft_win(g_samples[2][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_2_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
-	apply_fft_win(g_samples[3][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_3_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
-	apply_fft_win(g_samples[4][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_4_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	im_block_draw(g_samples, 5, join(log_dir, f'sample_reader_{g_name}.png'), border=True)
+	im_block_draw(shifter(g_samples), 5, join(log_dir, f'sample_reader_{g_name}_sh.png'), border=True)
+	#apply_fft_win(g_samples[1][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_1_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	#apply_fft_win(g_samples[2][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_2_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	#apply_fft_win(g_samples[3][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_3_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	#apply_fft_win(g_samples[4][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_4_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
 	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
 	#	pk.dump(g_samples, fs)
 
@@ -441,31 +442,56 @@ if __name__ == '__main__':
 	Model effective correlation
 	'''
 	im_size = 128
-	data_size = 32
-	corr_eff_per_layer = list()
+	data_size = 100
+	#corr_eff_per_layer = list()
 	freq_bands = np.array([16, 32, 64, 128]) // 2
 	g_samples = read_model_samples(log_dir, sess, run_seed, data_size)
 	#corr_eff_per_layer = fft_corr_eff(g_samples[1], freq_bands)
 	#print(f'corr eff per layer: {corr_eff_per_layer}')
-	for gi, g in enumerate(g_samples[1:]):
-		fb = freq_bands[:1] if gi == 0 else freq_bands[gi-1:gi+1]
-		corr_eff_per_layer.append(fft_corr_eff(g, fb)[-1])
-		print(f'>>> layer eff corr at freq {freq_bands[gi]}: {corr_eff_per_layer[-1]}')
-		gi_pre = gi
-	#r_samples = read_celeba(im_size, data_size)
-	#corr_eff_g = fft_corr_eff(g_samples, freq_bands)
-	#corr_eff_r = fft_corr_eff(r_samples, freq_bands)
+	#for gi, g in enumerate(g_samples[1:]):
+	#	fb = freq_bands[:1] if gi == 0 else freq_bands[gi-1:gi+1]
+	#	corr_eff_per_layer.append(fft_corr_eff(g, fb)[-1])
+	#	print(f'>>> layer eff corr at freq {freq_bands[gi]}: {corr_eff_per_layer[-1]}')
+	#	gi_pre = gi
+	r_samples = read_celeba(im_size, data_size)
+	np.transpose(samples, (0, 3, 1, 2))
+	fft_corr_g, fft_corr_g_rev = fft_corr_point(np.transpose(g_samples,(0, 3, 1, 2)).reshape(-1, im_size, im_size), freq_bands)
+	fft_corr_r, fft_corr_r_rev = fft_corr_point(np.transpose(r_samples,(0, 3, 1, 2)).reshape(-1, im_size, im_size), freq_bands)
 	
+	def stat_corr(corr, corr_rev):
+		corr_mean = list()
+		corr_sd = list()
+		for c, cr in zip(corr, corr_rev):
+			c_total = np.concatenate([c, cr])
+			corr_mean.append(np.mean(c_total))
+			corr_sd.append(np.std(c_total))
+		return corr_mean, corr_sd
+
+	corr_g_mean, corr_g_sd = stat_corr(fft_corr_g, fft_corr_g_rev)
+	print('>>> gen im corr mean: ', corr_g_mean)
+	print('>>> gen im corr sd: ', corr_g_sd)
+	corr_r_mean, corr_r_sd = stat_corr(fft_corr_r, fft_corr_r_rev)
+	print('>>> true im corr mean: ', corr_r_mean)
+	print('>>> true im corr sd: ', corr_r_sd)
+
 	'''
 	Model layer correlation
 	'''
-	#im_size = 128
-	#data_size = 100
-	#layers, layer_names, layer_sizes = read_model_layers(log_dir, sess, run_seed, data_size)
-	#print(f'>>> layer names: {layer_names}')
-	#corr_layers = list()
-	#for l, n, s in zip(layers, layer_names, layer_sizes):
-	#	l = l.reshape((np.prod(l.shape[:2]), l.shape[2], l.shape[3], 1))
+	im_size = 128
+	data_size = 100
+	layers, layer_names, layer_sizes = read_model_layers(log_dir, sess, run_seed, data_size=25)
+	print(f'>>> layer names: {layer_names}')
+	corr_layers_mean = list()
+	corr_layers_sd = list()
+	for l, n, s in zip(layers, layer_names, layer_sizes):
+		l = l.reshape((np.prod(l.shape[:2]), l.shape[2], l.shape[3], 1))
+		fft_corr_l, fft_corr_l_rev = fft_corr_point(l[:data_size], freq_bands=None)
+		corr_l_mean, corr_l_sd = stat_corr(fft_corr_l, fft_corr_l_rev)
+		print(f'>>> at layer {n} with size {s} corr mean: ', corr_l_mean)
+		print(f'>>> at layer {n} with size {s} corr sd: ', corr_l_sd)
+		corr_layers_mean.append(corr_l_mean)
+		corr_layers_sd.append(corr_l_sd)
+
 	#	corr_layers.append(fft_corr_eff(l, freq_bands=None)[0])
 	#	print(f'>>> corr_layers at layer {n} with size {s} is equal to {corr_layers[-1]}')
 
@@ -481,15 +507,15 @@ if __name__ == '__main__':
 	corr_true = np.zeros(dl.size)
 	def sinc_conv(sinc, d): return np.array([sinc[d-i] if d-i >= 0 else sinc[-(d-i)] for i in range(sinc.size)])
 	for i, dl_val in enumerate(dl):
-		corr_true[i] = np.sin(np.pi*delta*dk_val/dl_val) / (dk_val *np.sin(np.pi*delta/dl_val))
+		corr_true[i] = np.sin(np.pi*delta*dk_val/dl_val)**2 / (dk_val *np.sin(np.pi*delta/dl_val))**2
 	fig = plt.figure(0, figsize=(8,6))
 	fig.clf()
 	ax = fig.add_subplot(1,1,1)
-	ax.plot(dl, corr_true, '--')
+	ax.plot(dl, corr_true, linestyle='--', color='green', label='Theorem')
 	#dl_specific = np.array(layer_sizes)
 	dl_specific = np.array([16, 32, 64, 128])
-	ax.plot(dl_specific, corr_true[dl_specific - dk_val], 's')
-	#ax.plot(dl_specific, corr_layers, 's')
+	#ax.plot(dl_specific, corr_true[dl_specific - dk_val], linestyle='None', marker='s', color='orange', label='WGAN-GP')
+	ax.errorbar(dl_specific, corr_layers_mean, corr_layers_sd, linestyle='None', marker='s', color='orange', label='WGAN-GP')
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_ylabel('corr')
 	ax.set_xlabel(r'Layer Spatial Size ($d_l$)')
@@ -502,14 +528,14 @@ if __name__ == '__main__':
 	corr_eff = np.zeros(num_layers)
 	k_eff = dk_val
 	for i in range(corr_eff.size, 0, -1):
-		corr_eff[i-1] = np.sin(np.pi*delta*k_eff/im_size) / (k_eff * np.sin(np.pi*delta/im_size))
+		corr_eff[i-1] = np.sin(np.pi*delta*k_eff/im_size)**2 / (k_eff * np.sin(np.pi*delta/im_size))**2
 		print(f'k_eff={k_eff}, corr_eff={corr_eff[i-1]}')
 		k_eff += 2**(corr_eff.size - i + 1) * (dk_val - 1)
 	fig.clf()
 	ax = fig.add_subplot(1,1,1)
-	ax.plot(np.arange(num_layers), corr_eff, 'g--')
-	ax.plot(np.arange(num_layers), corr_eff_per_layer, 'rs')
-	#ax.plot(np.arange(num_layers), corr_eff_r, 'bs')
+	ax.plot(np.arange(num_layers), corr_eff, linestyle='--', color='green', label='Theorem')
+	ax.errorbar(np.arange(num_layers), corr_g_mean, corr_g_sd, linestyle='None', marker='s', color='orange', label='WGAN-GP')
+	ax.errorbar(np.arange(num_layers), corr_r_mean, corr_r_sd, linestyle='None', marker='s', color='blue', label='True')
 	ax.grid(True, which='both', linestyle='dotted')
 	ax.set_ylabel('corr')
 	ax.set_xlabel('Frequency Band')
