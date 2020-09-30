@@ -771,7 +771,7 @@ def fft_corr_point(samples, freq_bands=None):
 
 	cov = complex_cov(samples[:, :-1, :-1], samples[:, 1:, 1:], axis=0)
 	cov_rev = complex_cov(samples[:, 1:, :-1], samples[:, :-1, 1:], axis=0)
-	var_all = complex_var(samples, axis=0)
+	var = complex_var(samples, axis=0)
 	corr = np.abs(cov) / np.sqrt(var[:-1, :-1] * var[1:, 1:])
 	corr_rev = np.abs(cov_rev) / np.sqrt(var[1:, :-1] * var[:-1, 1:])
 
@@ -780,7 +780,7 @@ def fft_corr_point(samples, freq_bands=None):
 	cx = ws//2
 	corr_list = list()
 	for fi, f in enumerate(freq_bands):
-		freq_mask = np.zeros((hs, ws), dtype=np.int)
+		freq_mask = np.zeros((hs-1, ws-1), dtype=np.int)
 		freq_mask[max(cy-f, 0):cy+f, max(cx-f, 0):cx+f] = 1
 		freq_mask[max(cy-f_pre, 0):cy+f_pre, max(cx-f_pre, 0):cx+f_pre] = 0
 		corr_list.append(corr[freq_mask.astype(np.bool)])
@@ -791,7 +791,7 @@ def fft_corr_point(samples, freq_bands=None):
 	cx = ws//2
 	corr_rev_list = list()
 	for fi, f in enumerate(freq_bands):
-		freq_mask = np.zeros((hs, ws), dtype=np.int)
+		freq_mask = np.zeros((hs-1, ws-1), dtype=np.int)
 		freq_mask[max(cy-f, 0):cy+f, max(cx-f, 0):cx+f] = 1
 		freq_mask[max(cy-f_pre, 0):cy+f_pre, max(cx-f_pre, 0):cx+f_pre] = 0
 		corr_rev_list.append(corr_rev[freq_mask.astype(np.bool)])
