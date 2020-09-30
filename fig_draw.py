@@ -331,9 +331,7 @@ def run_cos_eval(log_dir, sess=None, run_seed=0):
 	true_fft, true_fft_hann, true_hist = cosine_eval(r_samples, 'true', freq_centers, log_dir=log_dir)
 	cosine_eval(g_samples, 'gen', freq_centers, log_dir=log_dir, true_fft=true_fft, true_fft_hann=true_fft_hann, true_hist=true_hist)
 
-def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
-	im_size = 128
-
+def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000, im_size=128):
 	use_shifter = True ## set to True for freq shift dataset
 	def shifter(x): return TFutil.get().freq_shift(x, 0.5, 0.5) if use_shifter else x	
 
@@ -349,8 +347,8 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
 	sess.run(tf.global_variables_initializer())
 	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
 	ganist.load(net_path)
-	#g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
-	g_samples = sample_ganist(ganist, data_size, output_type='collect')
+	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+	#g_samples = sample_ganist(ganist, data_size, output_type='collect')
 
 	### PGGAN load g_samples
 	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
@@ -389,12 +387,12 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000):
 	#g_samples = readim_from_path(
 	#	readim_path_from_dir(g_sample_dir, im_type='*.jpg')[:data_size], im_size, center_crop=(64,64), verbose=True)
 
-	im_block_draw(g_samples[0], 5, join(log_dir, f'sample_reader_{g_name}.png'), border=True)
-	im_block_draw(shifter(g_samples[0]), 5, join(log_dir, f'sample_reader_{g_name}_sh.png'), border=True)
-	apply_fft_win(g_samples[1][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_1_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
-	apply_fft_win(g_samples[2][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_2_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
-	apply_fft_win(g_samples[3][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_3_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
-	apply_fft_win(g_samples[4][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_4_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	im_block_draw(g_samples, 5, join(log_dir, f'sample_reader_{g_name}.png'), border=True)
+	im_block_draw(shifter(g_samples), 5, join(log_dir, f'sample_reader_{g_name}_sh.png'), border=True)
+	#apply_fft_win(g_samples[1][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_1_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	#apply_fft_win(g_samples[2][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_2_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	#apply_fft_win(g_samples[3][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_3_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
+	#apply_fft_win(g_samples[4][0:1,:,:,0:], join(log_dir, f'sample_reader_fft_impulse_4_avg_{g_name}.png'), windowing=True, plot_ax=None, drop_dc=True)
 	#with open(join(log_dir, f'{g_name}_samples.pk'), 'wb+') as fs:
 	#	pk.dump(g_samples, fs)
 
@@ -433,11 +431,11 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	config.gpu_options.allow_growth = True
-	sess = tf.Session(config=config)
-	TFutil(sess)
+	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	#config.gpu_options.allow_growth = True
+	#sess = tf.Session(config=config)
+	#TFutil(sess)
 
 	def stat_corr(corr, corr_rev):
 		corr_mean = list()
@@ -451,26 +449,26 @@ if __name__ == '__main__':
 	'''
 	Model effective correlation
 	'''
-	im_size = 128
-	data_size = 100
-	#corr_eff_per_layer = list()
-	freq_bands = np.array([16, 32, 64, 128]) // 2
-	g_samples = read_model_samples(log_dir, sess, run_seed, data_size)
+	#im_size = 128
+	#data_size = 100
+	##corr_eff_per_layer = list()
+	#freq_bands = np.array([16, 32, 64, 128]) // 2
+	#g_samples = read_model_samples(log_dir, sess, run_seed, data_size)
 	
 	#corr_eff_per_layer = fft_corr_eff(g_samples[1], freq_bands)
 	#print(f'corr eff per layer: {corr_eff_per_layer}')
-	corr_g_mean = list()
-	corr_g_sd = list()
-	for gi, g in enumerate(g_samples[1:]):
-		fb = freq_bands[:1] if gi == 0 else freq_bands[gi-1:gi+1]
-		corr, corr_rev = fft_corr_point(np.transpose(g,(0, 3, 1, 2)).reshape(-1, im_size, im_size), freq_bands=fb)
-		corr_mean, corr_sd = stat_corr(corr, corr_rev)
-		print(f'>>> layer eff corr at freq {freq_bands[gi]}: min={np.amin(corr[-1])} min_rev={np.amin(corr_rev[-1])} max={np.amax(corr[-1])} max_rev={np.amax(corr_rev[-1])}')
-		#corr_eff_per_layer.append(fft_corr_eff(g, fb)[-1])
-		corr_g_mean.append(corr_mean[-1])
-		corr_g_sd.append(corr_sd[-1])
-		print(f'>>> layer eff corr at freq {freq_bands[gi]}: {corr_mean} sd {corr_sd}')
-		gi_pre = gi
+	#corr_g_mean = list()
+	#corr_g_sd = list()
+	#for gi, g in enumerate(g_samples[1:]):
+	#	fb = freq_bands[:1] if gi == 0 else freq_bands[gi-1:gi+1]
+	#	corr, corr_rev = fft_corr_point(np.transpose(g,(0, 3, 1, 2)).reshape(-1, im_size, im_size), freq_bands=fb)
+	#	corr_mean, corr_sd = stat_corr(corr, corr_rev)
+	#	print(f'>>> layer eff corr at freq {freq_bands[gi]}: min={np.amin(corr[-1])} min_rev={np.amin(corr_rev[-1])} max={np.amax(corr[-1])} max_rev={np.amax(corr_rev[-1])}')
+	#	#corr_eff_per_layer.append(fft_corr_eff(g, fb)[-1])
+	#	corr_g_mean.append(corr_mean[-1])
+	#	corr_g_sd.append(corr_sd[-1])
+	#	print(f'>>> layer eff corr at freq {freq_bands[gi]}: {corr_mean} sd {corr_sd}')
+	#	gi_pre = gi
 	
 	#r_samples = read_celeba(im_size, data_size)
 	#fft_corr_g, fft_corr_g_rev = fft_corr_point(np.transpose(g_samples,(0, 3, 1, 2)).reshape(-1, im_size, im_size), freq_bands)
@@ -508,53 +506,53 @@ if __name__ == '__main__':
 	'''
 	Theorem
 	'''
-	dk_val = 5
-	im_size = 128
-	delta = 1
-	assert delta != 0
-	dl = np.arange(dk_val, im_size+1)
-	#dl = np.array([16, 32, 64, 128])
-	corr_true = np.zeros(dl.size)
-	def sinc_conv(sinc, d): return np.array([sinc[d-i] if d-i >= 0 else sinc[-(d-i)] for i in range(sinc.size)])
-	for i, dl_val in enumerate(dl):
-		corr_true[i] = np.sin(np.pi*delta*dk_val/dl_val)**2 / (dk_val *np.sin(np.pi*delta/dl_val))**2
-	fig = plt.figure(0, figsize=(8,6))
-	fig.clf()
-	ax = fig.add_subplot(1,1,1)
-	ax.plot(dl, corr_true, linestyle='--', label='Theorem')
-	#dl_specific = np.array(layer_sizes)
-	dl_specific = np.array([16, 32, 64, 128])
-	ax.plot(dl_specific, corr_true[dl_specific - dk_val], linestyle='None', marker='s', color='orange', label='WGAN-GP')
-	#ax.errorbar(dl_specific, corr_layers_mean, corr_layers_sd, linestyle='None', marker='s', label='WGAN-GP', capsize=5)
-	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_ylabel('corr')
-	ax.set_xlabel(r'Layer Spatial Size ($d_l$)')
-	ax.set_xticks([dk_val,] + list(dl_specific))
-	ax.set_xticklabels(map(str, [dk_val,] + list(dl_specific)))
-	ax.legend(loc=4)
-	fig.savefig(join(log_dir, f'theorem_true_d{delta}_k{dk_val}_s{im_size}.png'), dpi=300)
+	#dk_val = 5
+	#im_size = 128
+	#delta = 1
+	#assert delta != 0
+	#dl = np.arange(dk_val, im_size+1)
+	##dl = np.array([16, 32, 64, 128])
+	#corr_true = np.zeros(dl.size)
+	#def sinc_conv(sinc, d): return np.array([sinc[d-i] if d-i >= 0 else sinc[-(d-i)] for i in range(sinc.size)])
+	#for i, dl_val in enumerate(dl):
+	#	corr_true[i] = np.sin(np.pi*delta*dk_val/dl_val)**2 / (dk_val *np.sin(np.pi*delta/dl_val))**2
+	#fig = plt.figure(0, figsize=(8,6))
+	#fig.clf()
+	#ax = fig.add_subplot(1,1,1)
+	#ax.plot(dl, corr_true, linestyle='--', label='Theorem')
+	##dl_specific = np.array(layer_sizes)
+	#dl_specific = np.array([16, 32, 64, 128])
+	#ax.plot(dl_specific, corr_true[dl_specific - dk_val], linestyle='None', marker='s', color='orange', label='WGAN-GP')
+	##ax.errorbar(dl_specific, corr_layers_mean, corr_layers_sd, linestyle='None', marker='s', label='WGAN-GP', capsize=5)
+	#ax.grid(True, which='both', linestyle='dotted')
+	#ax.set_ylabel('corr')
+	#ax.set_xlabel(r'Layer Spatial Size ($d_l$)')
+	#ax.set_xticks([dk_val,] + list(dl_specific))
+	#ax.set_xticklabels(map(str, [dk_val,] + list(dl_specific)))
+	#ax.legend(loc=4)
+	#fig.savefig(join(log_dir, f'theorem_true_d{delta}_k{dk_val}_s{im_size}.png'), dpi=300)
 
-	freq_bands = np.array([16, 32, 64, 128]) // 2
-	num_layers = freq_bands.size
-	corr_eff = np.zeros(num_layers)
-	k_eff = dk_val
-	for i in range(corr_eff.size, 0, -1):
-		corr_eff[i-1] = np.sin(np.pi*delta*k_eff/im_size)**2 / (k_eff * np.sin(np.pi*delta/im_size))**2
-		print(f'k_eff={k_eff}, corr_eff={corr_eff[i-1]}')
-		k_eff += 2**(corr_eff.size - i + 1) * (dk_val - 1)
-	fig.clf()
-	ax = fig.add_subplot(1,1,1)
-	ax.plot(np.arange(num_layers), corr_eff, linestyle='--', label='Theorem')
-	ax.errorbar(np.arange(num_layers), corr_g_mean, corr_g_sd, linestyle='None', marker='s', label='WGAN-GP', capsize=5)
-	#ax.errorbar(np.arange(num_layers), corr_r_mean, corr_r_sd, linestyle='None', marker='s', color='blue', label='True')
-	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_ylabel('corr')
-	ax.set_xlabel('Frequency Band')
-	ax.set_xticks(range(num_layers))
-	freq_bands = [0, ] + list(dl_specific//2)
-	ax.set_xticklabels(map(lambda x: r'[$\frac{{{}}}{{128}}$, $\frac{{{}}}{{128}}$)'.format(*x), zip(freq_bands[:-1], freq_bands[1:])))
-	#ax.set_xticklabels(map(lambda x: r'[{}, {}) / 128'.format(*x), zip(freq_bands[:-1], freq_bands[1:])))
-	fig.savefig(join(log_dir, f'theorem_eff_d{delta}_k{dk_val}_s{im_size}.png'), dpi=300)
+	#freq_bands = np.array([16, 32, 64, 128]) // 2
+	#num_layers = freq_bands.size
+	#corr_eff = np.zeros(num_layers)
+	#k_eff = dk_val
+	#for i in range(corr_eff.size, 0, -1):
+	#	corr_eff[i-1] = np.sin(np.pi*delta*k_eff/im_size)**2 / (k_eff * np.sin(np.pi*delta/im_size))**2
+	#	print(f'k_eff={k_eff}, corr_eff={corr_eff[i-1]}')
+	#	k_eff += 2**(corr_eff.size - i + 1) * (dk_val - 1)
+	#fig.clf()
+	#ax = fig.add_subplot(1,1,1)
+	#ax.plot(np.arange(num_layers), corr_eff, linestyle='--', label='Theorem')
+	#ax.errorbar(np.arange(num_layers), corr_g_mean, corr_g_sd, linestyle='None', marker='s', label='WGAN-GP', capsize=5)
+	##ax.errorbar(np.arange(num_layers), corr_r_mean, corr_r_sd, linestyle='None', marker='s', color='blue', label='True')
+	#ax.grid(True, which='both', linestyle='dotted')
+	#ax.set_ylabel('corr')
+	#ax.set_xlabel('Frequency Band')
+	#ax.set_xticks(range(num_layers))
+	#freq_bands = [0, ] + list(dl_specific//2)
+	#ax.set_xticklabels(map(lambda x: r'[$\frac{{{}}}{{128}}$, $\frac{{{}}}{{128}}$)'.format(*x), zip(freq_bands[:-1], freq_bands[1:])))
+	##ax.set_xticklabels(map(lambda x: r'[{}, {}) / 128'.format(*x), zip(freq_bands[:-1], freq_bands[1:])))
+	#fig.savefig(join(log_dir, f'theorem_eff_d{delta}_k{dk_val}_s{im_size}.png'), dpi=300)
 
 
 	'''
@@ -569,10 +567,10 @@ if __name__ == '__main__':
 	'''
 	Koch Snowflakes
 	'''
-	#data_size = 100
-	#im_size = 1024
-	#koch_level = 5
-	#channels = 1
+	data_size = 1000
+	im_size = 1024
+	koch_level = 5
+	channels = 1
 	#im = make_koch_snowflake(koch_level, 0., im_size, channels)
 	#def make_single_image():
 	#	im = -np.ones((im_size, im_size, channels))
@@ -595,13 +593,21 @@ if __name__ == '__main__':
 	#print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
 	#
 	#### many samples
-	#im_data = np.zeros((data_size, im_size, im_size, channels))
-	#for i in range(data_size):
-	#	rot = np.random.uniform(-30, 30)
-	#	im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
-	#
-	#im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{koch_level}_{im_size}_samples.png'), border=True)
-	#fractal_eval(im_data, f'koch_snowflake_{koch_level}_{im_size}', log_dir)
+	im_data = np.zeros((data_size, im_size, im_size, channels))
+	for i in range(data_size):
+		rot = np.random.uniform(-30, 30)
+		im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
+
+	gname = 'true'
+	#im_data = read_model_samples(log_dir, sess, run_seed, data_size)
+	
+	for i, im in enumerate(im_data[:10]):
+		single_draw(im, os.path.join(log_dir, f'koch_sample_{gname}_{i}.png'))
+		apply_fft_win(im_data[i:i+1,:,:,0:1], join(log_dir, f'koch_fft_{gname}_{i}.png'), windowing=True, drop_dc=True)
+
+
+	im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{gname}_{koch_level}_{im_size}_samples.png'), border=True)
+	fractal_eval(im_data, f'koch_snowflake_{gname}_{koch_level}_{im_size}', log_dir)
 
 	'''
 	Eval toy experiments.
