@@ -1,11 +1,18 @@
 import numpy as np
 import tensorflow as tf
 from run_ganist import block_draw, im_block_draw
-from run_ganist import TFutil, sample_ganist, create_lsun, CUB_Sampler, PG_Sampler
+import sys
+
+#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/stylegan2_model')
+#import dnnlib
+#import dnnlib.tflib as tflib
+#import pretrained_networks
+
+from run_ganist import TFutil, sample_ganist, create_lsun, CUB_Sampler, PG_Sampler, StyleGAN2_Sampler
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
 import tf_ganist
-import sys
+#import sys
 from os.path import join
 from util import apply_fft_win, COS_Sampler, freq_density, read_celeba, apply_fft_images, apply_ifft_images, pyramid_draw
 from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
@@ -343,15 +350,17 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000, im_size=1
 	#g_name = '46_logs_wgan_sbedroom128cc_hpfid'
 	#g_name = '22_logs_wganbn_gshift_celeba128cc_fshift'
 	#g_name = '49_logs_wgan_gshift_sbedroom128cc_hpfid'
-	ganist = tf_ganist.Ganist(sess, log_dir)
-	sess.run(tf.global_variables_initializer())
-	net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
-	ganist.load(net_path)
-	g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
+	#ganist = tf_ganist.Ganist(sess, log_dir)
+	#sess.run(tf.global_variables_initializer())
+	#net_path = f'/dresden/users/mk1391/evl/ganist_lap_logs/{g_name}/run_{run_seed}/snapshots/model_best.h5'
+	#ganist.load(net_path)
+	#g_samples = sample_ganist(ganist, data_size, output_type='rec')[0]
 	#g_samples = sample_ganist(ganist, data_size, output_type='collect')
 
 	### PGGAN load g_samples
 	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
+	g_name = f'results_org_koch_snowflakes_l5_s1024'
+	net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_koch_1024_l5/{g_name}/000-pgan-fractal-preset-v2-4gpus-fp32/network-snapshot-010004.pkl'
 	#g_name = f'gdsmall_results_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
@@ -360,22 +369,20 @@ def read_model_samples(log_dir, sess=None, run_seed=0, data_size=1000, im_size=1
 	#g_name = f'results_gdsmall_sbedroom_{run_seed}'
 	#g_name = f'results_gdsmall_outsh_nomirror_sbedroom_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/{g_name}/000-pgan-lsun-bedroom-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
-	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
-	#g_samples = pg_sampler.sample_data(data_size)
+	pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
+	g_samples = pg_sampler.sample_data(data_size)
 
 	### StyleGAN2 load g_samples
-	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/stylegan2_model')
+	#g_name = f'results_sg_koch_l5_s1024'
+	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_koch_1024_l5/{g_name}/00000-stylegan2-koch-8gpu-config-e/network-snapshot-010000.pkl'
 	#g_name = f'results_sg_small_fsg_finalstylemix_celeba128cc_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
 	#g_name = f'results_sg_small_celeba128cc_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_celeba128cc/{g_name}/00000-stylegan2-celeba-4gpu-config-e/network-final.pkl'
 	#g_name = f'results_sg_small_bedroom128cc_{run_seed}'
 	#net_path = f'/dresden/users/mk1391/evl/stylegan2_logs/logs_bedroom128cc/{g_name}/00000-stylegan2-lsun-bedroom-100k-4gpu-config-e/network-final.pkl'
-	#import dnnlib
-	#import dnnlib.tflib as tflib
-	#import pretrained_networks
 	#sty_sampler = StyleGAN2_Sampler(net_path, sess)
-	#g_samples = sty_sampler.sample_data(fft_data_size)
+	#g_samples = sty_sampler.sample_data(data_size)
 
 	### load g_samples from pickle file
 	#with open(join(log_dir, f'{g_name}_samples_{data_size}.pk'), 'rb') as fs:
@@ -431,11 +438,11 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	#config.gpu_options.allow_growth = True
-	#sess = tf.Session(config=config)
-	#TFutil(sess)
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	config.gpu_options.allow_growth = True
+	sess = tf.Session(config=config)
+	TFutil(sess)
 
 	def stat_corr(corr, corr_rev):
 		corr_mean = list()
@@ -592,14 +599,15 @@ if __name__ == '__main__':
 	#	os.path.join(log_dir, f'fft_koch_snowflake_single_{koch_level}_{im_size}.png'), windowing=False)
 	#print(f'>>> single image: box_dim={box_dim} and path_length={np.sum(im > 0.)}')
 	#
-	#### many samples
-	im_data = np.zeros((data_size, im_size, im_size, channels))
-	for i in range(data_size):
-		rot = np.random.uniform(-30, 30)
-		im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
+	
+	### many samples
+	#im_data = np.zeros((data_size, im_size, im_size, channels))
+	#for i in range(data_size):
+	#	rot = np.random.uniform(-30, 30)
+	#	im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
 
-	gname = 'true'
-	#im_data = read_model_samples(log_dir, sess, run_seed, data_size)
+	gname = 'pggan'
+	im_data = read_model_samples(log_dir, sess, run_seed, data_size)
 	
 	for i, im in enumerate(im_data[:10]):
 		single_draw(im, os.path.join(log_dir, f'koch_sample_{gname}_{i}.png'))

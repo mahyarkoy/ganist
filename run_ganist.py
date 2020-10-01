@@ -41,6 +41,12 @@ from util import SingleLogger, Logger, block_draw, im_color_borders
 from util import mag_phase_wass_dist, mag_phase_total_variation, fft_test_by_samples
 from collections import defaultdict
 
+sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
+#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/stylegan2_model')
+#import dnnlib
+#import dnnlib.tflib as tflib
+#import pretrained_networks
+
 '''
 Reads mnist data from file and return (data, labels) for train, val, test respctively.
 '''
