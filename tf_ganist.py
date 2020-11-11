@@ -827,12 +827,12 @@ class Ganist:
 		#g_delta_hp, _ = tf_freq_shift(g_delta_fill, 0.5, 0.5)
 
 		### build output combination by shifting
-		g_layer_fs_list = list()
-		for i, fc in enumerate(freq_list):
-			g_fs_r, _ = tf_freq_shift_complex(g_lp_list[i*2], g_lp_list[i*2+1], fc[0], fc[1])
-			#g_fs_r, _ = tf_freq_shift_complex(
-			#	g_lp_list[i][:, :, :, 0:3], g_lp_list[i][:, :, :, 3:6], fc[0], fc[1])
-			g_layer_fs_list.append(g_fs_r)
+		g_layer_fs_list = g_lp_list #list()
+		#for i, fc in enumerate(freq_list):
+		#	g_fs_r, _ = tf_freq_shift_complex(g_lp_list[i*2], g_lp_list[i*2+1], fc[0], fc[1])
+		#	#g_fs_r, _ = tf_freq_shift_complex(
+		#	#	g_lp_list[i][:, :, :, 0:3], g_lp_list[i][:, :, :, 3:6], fc[0], fc[1])
+		#	g_layer_fs_list.append(g_fs_r)
 
 		g_layer_fs_list.append(g_delta_lp)
 		#g_layer_fs_list.append(g_delta_hp)
@@ -849,15 +849,15 @@ class Ganist:
 		#	rg_grad_norm_list.append(rg_grad_norm_output)
 
 		### build freq shifted discriminators
-		for i, fc in enumerate(freq_list):
-			disc_size = gen_size
-			im_fs = fs_layer(im_input, -fc[0], -fc[1], disc_size)
-			g_fs = fs_layer(g_comb, -fc[0], -fc[1], disc_size)
-			d_loss, g_loss, rg_grad_norm_output = \
-				self.build_gan_loss(im_fs, g_fs, disc_size, scope='level_{}_{}'.format(scope, i))
-			d_loss_list.append(d_loss)
-			g_loss_list.append(g_loss)
-			rg_grad_norm_list.append(rg_grad_norm_output)
+		#for i, fc in enumerate(freq_list):
+		#	disc_size = gen_size
+		#	im_fs = fs_layer(im_input, -fc[0], -fc[1], disc_size)
+		#	g_fs = fs_layer(g_comb, -fc[0], -fc[1], disc_size)
+		#	d_loss, g_loss, rg_grad_norm_output = \
+		#		self.build_gan_loss(im_fs, g_fs, disc_size, scope='level_{}_{}'.format(scope, i))
+		#	d_loss_list.append(d_loss)
+		#	g_loss_list.append(g_loss)
+		#	rg_grad_norm_list.append(rg_grad_norm_output)
 
 		### build aligning discriminator
 		d_loss, g_loss, rg_grad_norm_output = \
@@ -1054,7 +1054,7 @@ class Ganist:
 			### apply regular wgan
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
-				self.build_wgan_with_separate_layer_inputs(self.im_input, self.zi_input, 
+				self.build_shift_gan(self.im_input, self.zi_input, 
 					im_size=self.data_dim[0])
 			self.im_input_rec = self.im_collect[-1]
 
