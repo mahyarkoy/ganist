@@ -1052,18 +1052,18 @@ class Ganist:
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
 			### apply regular wgan
+			#self.gen_collect, self.im_collect, self.comb_list,\
+			#self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
+			#	self.build_wgan_with_separate_layer_inputs(self.im_input, self.zi_input, 
+			#		im_size=self.data_dim[0])
+			#self.im_input_rec = self.im_collect[-1]
+
+			### apply freq shift gan
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
 				self.build_shift_gan(self.im_input, self.zi_input, 
-					im_size=self.data_dim[0])
+					im_size=self.data_dim[0], gen_size=64)
 			self.im_input_rec = self.im_collect[-1]
-
-			### apply freq shift gan
-			#self.gen_collect, self.im_collect, self.comb_list,\
-			#self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
-			#	self.build_shift_gan(self.im_input, self.zi_input, 
-			#		im_size=self.data_dim[0], gen_size=64)
-			#self.im_input_rec = self.im_collect[-1]
 
 			### apply pyramid for real images
 			#self.im_input_l0, self.im_input_l1, self.im_input_l2 = \
