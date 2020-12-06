@@ -438,24 +438,24 @@ if __name__ == '__main__':
 	'''
 	TENSORFLOW SETUP
 	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	config.gpu_options.allow_growth = True
-	sess = tf.Session(config=config)
-	TFutil(sess)
-
-	def stat_corr(corr, corr_rev):
-		corr_mean = list()
-		corr_sd = list()
-		for c, cr in zip(corr, corr_rev):
-			c_total = np.concatenate([c, cr])
-			corr_mean.append(np.mean(c_total))
-			corr_sd.append(np.std(c_total))
-		return corr_mean, corr_sd
+	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	#config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	#config.gpu_options.allow_growth = True
+	#sess = tf.Session(config=config)
+	#TFutil(sess)
 	
 	'''
 	Model effective correlation
 	'''
+	#def stat_corr(corr, corr_rev):
+	#corr_mean = list()
+	#corr_sd = list()
+	#for c, cr in zip(corr, corr_rev):
+	#	c_total = np.concatenate([c, cr])
+	#	corr_mean.append(np.mean(c_total))
+	#	corr_sd.append(np.std(c_total))
+	#return corr_mean, corr_sd
+
 	#im_size = 128
 	#data_size = 100
 	##corr_eff_per_layer = list()
@@ -574,10 +574,11 @@ if __name__ == '__main__':
 	'''
 	Koch Snowflakes
 	'''
-	data_size = 1000
-	im_size = 1024
-	koch_level = 5
-	channels = 1
+	#data_size = 1000
+	#im_size = 1024
+	#koch_level = 5
+	#channels = 1
+	
 	#im = make_koch_snowflake(koch_level, 0., im_size, channels)
 	#def make_single_image():
 	#	im = -np.ones((im_size, im_size, channels))
@@ -606,16 +607,17 @@ if __name__ == '__main__':
 	#	rot = np.random.uniform(-30, 30)
 	#	im_data[i, ...] = make_koch_snowflake(koch_level, rot, im_size, channels)
 
-	gname = 'pggan'
-	im_data = read_model_samples(log_dir, sess, run_seed, data_size)
+	### read samples from models and eval
+	#gname = 'pggan'
+	#im_data = read_model_samples(log_dir, sess, run_seed, data_size)
 	
-	for i, im in enumerate(im_data[:10]):
-		single_draw(im, os.path.join(log_dir, f'koch_sample_{gname}_{i}.png'))
-		apply_fft_win(im_data[i:i+1,:,:,0:1], join(log_dir, f'koch_fft_{gname}_{i}.png'), windowing=True, drop_dc=True)
+	#for i, im in enumerate(im_data[:10]):
+	#	single_draw(im, os.path.join(log_dir, f'koch_sample_{gname}_{i}.png'))
+	#	apply_fft_win(im_data[i:i+1,:,:,0:1], join(log_dir, f'koch_fft_{gname}_{i}.png'), windowing=True, drop_dc=True)
 
 
-	im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{gname}_{koch_level}_{im_size}_samples.png'), border=True)
-	fractal_eval(im_data, f'koch_snowflake_{gname}_{koch_level}_{im_size}', log_dir)
+	#im_block_draw(im_data, 5, join(log_dir, f'koch_snowflake_{gname}_{koch_level}_{im_size}_samples.png'), border=True)
+	#fractal_eval(im_data, f'koch_snowflake_{gname}_{koch_level}_{im_size}', log_dir)
 
 	'''
 	Eval toy experiments.
@@ -721,13 +723,24 @@ if __name__ == '__main__':
 	'''
 	FFT and IFFT
 	'''
-	#celeba_data = read_celeba(128, data_size=10)
-	#ffts, greys = apply_fft_images(celeba_data, reshape=True)
+	draw_size = 10
+	data_size = 100
+	celeba_data = read_celeba(128, data_size=data_size)
+	ffts, greys = apply_fft_images(celeba_data, reshape=True)
 	#phase = np.angle(ffts)
-	#mag = np.random.uniform(0., 8240., ffts.shape) #np.abs(ffts)
+	#mag = np.abs(ffts) #np.random.uniform(0., 8240., ffts.shape)
 	#ffts = mag * np.exp(phase * 1.j)
-	#revs = apply_ifft_images(ffts[:, :, :, 0])
-	#pyramid_draw([greys, revs, greys-revs], join(log_dir, 'mag_rand_uni_revs.png'))
+	revs = apply_ifft_images(ffts[:, :, :, 0])
+	diffs = greys - revs
+	pyramid_draw([greys[:draw_size], revs[:draw_size], diffs[:draw_size]], join(log_dir, 'mag_rand_uni_revs.png'))
+	print(f'>>> fft_ifft_diff_[-1,1]: {np.mean(np.abs(diffs))} sd {np.std(np.abs(diffs))}')
+
+	def dynamic_range_255(im):
+		im = (im + 1.0) / 2.0 * 255.
+		return np.clip(np.rint(im * 255.0), 0.0, 255.0)
+
+	diffs_int = dynamic_range_255(greys) - dynamic_range_255(revs)
+	print(f'>>> fft_ifft_diff_rint_[0,255]: {np.mean(np.abs(diffs_int))} sd {np.std(np.abs(diffs_int))}')
 
 	'''
 	Leakage test

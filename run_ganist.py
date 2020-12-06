@@ -1945,12 +1945,14 @@ if __name__ == '__main__':
 	### tensorflow (comment when using theano pggan)
 	#sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
 
+	#g_name = f'results_fsg16_noshift_celeba128cc_{run_seed}'
+	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc/{g_name}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = '/dresden/users/mk1391/evl/pggan_logs/logs_cub128bb/results_gdsmall_cub_1/000-pgan-cub-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#net_path = '/media/evl/Public/Mahyar/Data/pggan_nets/network-final_progonly.pkl'
 	#net_path = f'/dresden/users/mk1391/evl/pggan_logs/logs_celeba128cc_sh/results_gdsmall_nomirror_sceleba_{run_seed}/000-pgan-celeba-preset-v2-2gpus-fp32/network-snapshot-010211.pkl'
 	#pg_sampler = PG_Sampler(net_path, sess, net_type='tf')
-	#pg_samples = pg_sampler.sample_data(1024)
-	#print('>>> pg_samples shape: {}'.format(pg_samples.shape))
+	#g_samples = pg_sampler.sample_data(fft_data_size)
+	#print('>>> pg_samples shape: {}'.format(g_samples.shape))
 	#g_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels, sampler=pg_sampler)
 
 	'''

@@ -827,12 +827,12 @@ class Ganist:
 		#g_delta_hp, _ = tf_freq_shift(g_delta_fill, 0.5, 0.5)
 
 		### build output combination by shifting
-		g_layer_fs_list = g_lp_list #list()
-		#for i, fc in enumerate(freq_list):
-		#	g_fs_r, _ = tf_freq_shift_complex(g_lp_list[i*2], g_lp_list[i*2+1], fc[0], fc[1])
-		#	#g_fs_r, _ = tf_freq_shift_complex(
-		#	#	g_lp_list[i][:, :, :, 0:3], g_lp_list[i][:, :, :, 3:6], fc[0], fc[1])
-		#	g_layer_fs_list.append(g_fs_r)
+		g_layer_fs_list = list()
+		for i, fc in enumerate(freq_list):
+			g_fs_r, _ = tf_freq_shift_complex(g_lp_list[i*2], g_lp_list[i*2+1], fc[0], fc[1])
+			#g_fs_r, _ = tf_freq_shift_complex(
+			#	g_lp_list[i][:, :, :, 0:3], g_lp_list[i][:, :, :, 3:6], fc[0], fc[1])
+			g_layer_fs_list.append(g_fs_r)
 
 		g_layer_fs_list.append(g_delta_lp)
 		#g_layer_fs_list.append(g_delta_hp)
