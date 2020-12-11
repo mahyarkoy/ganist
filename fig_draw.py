@@ -28,6 +28,18 @@ import argparse
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
 os.environ["CUDA_VISIBLE_DEVICES"] = "3" # "0, 1" for multiple
 
+SMALL_SIZE = 14
+MEDIUM_SIZE = 14
+BIGGER_SIZE = 14
+
+plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+
 '''
 Drawing Freq Components
 '''
@@ -721,26 +733,93 @@ if __name__ == '__main__':
 	#fig.savefig(join(log_dir, 'gauss_response_blur_levels_delta_krange{}_ir1.png'.format(krange)), dpi=300)
 
 	'''
+	1D Effect of Upsampling and Sigma
+	'''
+	dsize = 128
+	ksize = 4
+	def triangle_1d(center, length):
+		tri = np.arange(1, length+1, dtype=np.float) / length
+		return np.concatenate((tri, tri[::-1][1:]))
+
+	def fft_1d(signal):
+		fft = np.fft.fft(signal)
+		fft = np.fft.fftshift(fft)
+		return fft
+
+	def ifft_1d(signal):
+		signal = np.fft.ifftshift(signal)
+		ifft = np.fft.ifft(signal)
+		return ifft
+
+	triangles = [(dsize//2, ksize, 10), (dsize//2-3*ksize, ksize, 8), (dsize//2+3*ksize, ksize, 8)]
+	#triangles = [(dsize//2, ksize, 10)]
+	signal = np.zeros(dsize, dtype=np.float)
+	#signal[dsize//2-ksize] = 10.
+	#signal[dsize//2+ksize] = 10.
+	for c, l, m in triangles:
+		#signal[c-l+1:c+l] = m * triangle_1d(c, l)
+		signal[c-l+1:c+l] = m
+
+	#signal = np.cos(2*np.pi/16*np.arange(dsize))
+	#signal = 1-signal
+
+	fig = plt.figure(0, (8, 9))
+	ax = fig.add_subplot(3, 1, 1)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_xlabel(r'Frequency')
+	ax.plot(range(-dsize//2, dsize//2), signal)
+	x_ticks_loc = [-dsize//2] + [c-dsize//2 for c, l, m in triangles] + [dsize//2]
+	ax.set_xticks(x_ticks_loc)
+	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+
+	ifft = np.real(ifft_1d(signal))
+	### Relu
+	ifft = np.clip(ifft, 0, None)
+	ifft = np.concatenate([ifft[..., np.newaxis], np.zeros((ifft.shape[0], 1))], axis=1).reshape(dsize*2)
+	dsize *= 2
+	fft = fft_1d(ifft)
+
+	ax = fig.add_subplot(3, 1, 2)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_xlabel(r'Location')
+	ax.plot(ifft)
+	#ax.plot(range(-dsize//2, dsize//2), np.concatenate([ifft[dsize//2:], ifft[:dsize//2]]))
+	x_ticks_loc = range(0, dsize+1, dsize//8)
+	ax.set_xticks(x_ticks_loc)
+	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+
+	ax = fig.add_subplot(3, 1, 3)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_xlabel(r'Frequency')
+	ax.plot(range(-dsize//2, dsize//2), np.real(fft))
+	x_ticks_loc = [-dsize//2] + [c-dsize//4 for c, l, m in triangles] + [dsize//2]
+	ax.set_xticks(x_ticks_loc)
+	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+
+	fig.tight_layout()
+	fig.savefig(join(log_dir, f'rect_1d_relu_up.png'), dpi=300)
+
+	'''
 	FFT and IFFT
 	'''
-	draw_size = 10
-	data_size = 100
-	celeba_data = read_celeba(128, data_size=data_size)
-	ffts, greys = apply_fft_images(celeba_data, reshape=True)
-	#phase = np.angle(ffts)
-	#mag = np.abs(ffts) #np.random.uniform(0., 8240., ffts.shape)
-	#ffts = mag * np.exp(phase * 1.j)
-	revs = apply_ifft_images(ffts[:, :, :, 0])
-	diffs = greys - revs
-	pyramid_draw([greys[:draw_size], revs[:draw_size], diffs[:draw_size]], join(log_dir, 'mag_rand_uni_revs.png'))
-	print(f'>>> fft_ifft_diff_[-1,1]: {np.mean(np.abs(diffs))} sd {np.std(np.abs(diffs))}')
-
-	def dynamic_range_255(im):
-		im = (im + 1.0) / 2.0 * 255.
-		return np.clip(np.rint(im * 255.0), 0.0, 255.0)
-
-	diffs_int = dynamic_range_255(greys) - dynamic_range_255(revs)
-	print(f'>>> fft_ifft_diff_rint_[0,255]: {np.mean(np.abs(diffs_int))} sd {np.std(np.abs(diffs_int))}')
+	#draw_size = 10
+	#data_size = 100
+	#celeba_data = read_celeba(128, data_size=data_size)
+	#ffts, greys = apply_fft_images(celeba_data, reshape=True)
+	##phase = np.angle(ffts)
+	##mag = np.abs(ffts) #np.random.uniform(0., 8240., ffts.shape)
+	##ffts = mag * np.exp(phase * 1.j)
+	#revs = apply_ifft_images(ffts[:, :, :, 0])
+	#diffs = greys - revs
+	#pyramid_draw([greys[:draw_size], revs[:draw_size], diffs[:draw_size]], join(log_dir, 'mag_rand_uni_revs.png'))
+	#print(f'>>> fft_ifft_diff_[-1,1]: {np.mean(np.abs(diffs))} sd {np.std(np.abs(diffs))}')
+	#
+	#def dynamic_range_255(im):
+	#	im = (im + 1.0) / 2.0 * 255.
+	#	return np.clip(np.rint(im * 255.0), 0.0, 255.0)
+	#
+	#diffs_int = dynamic_range_255(greys) - dynamic_range_255(revs)
+	#print(f'>>> fft_ifft_diff_rint_[0,255]: {np.mean(np.abs(diffs_int))} sd {np.std(np.abs(diffs_int))}')
 
 	'''
 	Leakage test

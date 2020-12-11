@@ -40,7 +40,7 @@ fid_paths = [
 	evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'ganist_lap_logs/47_logs_wganbn_gshift_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
-	evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
+	#evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'/dresden/users/mk1391/evl/pggan_logs/logs_bedroom128cc_sh/results_gdsmall_sbedroom_0/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/44_logs_wganbn_bedroom128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
@@ -49,9 +49,9 @@ fid_paths = [
 	#evl_path+'ganist_lap_logs/49_logs_wgan_gshift_sbedroom128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/43_logs_wganbn_cub128bb_hpfid_constrad8/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/43_logs_wganbn_cub128bb_hpfid_constrad8/run_%d/fid_levels.cpk'
-	evl_path+'ganist_lap_logs/48_logs_wganbn_fsg16_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
-	evl_path+'ganist_lap_logs/logs_wganbn_fsg4_celeba128cc_hpfid/run_%d/fid_levels.cpk',
-	evl_path+'ganist_lap_logs/logs_wganbn_fsg16_noshift_celeba128cc_hpfid/run_%d/fid_levels.cpk'
+	#evl_path+'ganist_lap_logs/48_logs_wganbn_fsg16_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
+	#evl_path+'ganist_lap_logs/logs_wganbn_fsg4_celeba128cc_hpfid/run_%d/fid_levels.cpk',
+	#evl_path+'ganist_lap_logs/logs_wganbn_fsg16_noshift_celeba128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/52_logs_wgan_fsg16_branch_celeba128cc/run_%d/fid_levels.cpk'
 	#evl_path+'pggan_logs/logs_bedroom128cc/logs_pggan_bedroom128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'pggan_logs/logs_bedroom128cc_sh/logs_pggan_sbedroom128cc_hpfid/run_%d/fid_levels.cpk',
@@ -59,12 +59,13 @@ fid_paths = [
 	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'pggan_logs/logs_celeba128cc_sh/logs_pggan_outsh_sceleba128cc_hpfid/run_%d/fid_levels.cpk'
-	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_fsg16_celeba128cc_hpfid/run_%d/fid_levels.cpk'
+	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_fsg16_celeba128cc_hpfid/run_%d/fid_levels.cpk',
+	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_fsg16_noshift_celeba128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_fsg_out_share_celeba128cc_hpfid/run_%d/fid_levels.cpk'
-	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_celeba128cc_hpfid_valtrue/run_%d/fid_levels.cpk',
+	evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_celeba128cc_hpfid_valtrue/run_%d/fid_levels.cpk',
 	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg16_celeba128cc_hpfid/run_%d/fid_levels.cpk',
-	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_finalstylemix_celeba128cc_hpfid/run_%d/fid_levels.cpk'
-	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_noshift_celeba128cc_hpfid/run_%d/fid_levels.cpk' 
+	evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_finalstylemix_celeba128cc_hpfid/run_%d/fid_levels.cpk',
+	evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_noshift_celeba128cc_hpfid/run_%d/fid_levels.cpk' 
 	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_nostylemix_celeba128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'stylegan2_logs/logs_sceleba128cc/logs_stylegan2_small_sceleba128cc_hpfid_valtrue/run_%d/fid_levels.cpk'
 	#evl_path+'stylegan2_logs/logs_sceleba128cc/logs_stylegan2_small_outsh_sceleba128cc_hpfid/run_%d/fid_levels.cpk'
@@ -160,14 +161,14 @@ if __name__ == '__main__':
 	ax.set_title('FID HP Levels: CelebA 128')
 
 	### plot
-	pnames = ['True', 'WGAN', 'FSG16', 'FSG4', 'FSG-noshift']
-	pcolors = [0, 1, 2, 9, 7] ## add 0 for real, pggan 6 and 4, wgan 1 and 5, stylegan2 3 and 7
+	pnames = ['True', 'StyleGAN2', 'FSG16', 'FSG-noshift']
+	pcolors = [0, 3, 2, 7] ## add 0 for real, pggan 6 and 4, wgan 1 and 5, stylegan2 3 and 7
 	for i, _ in enumerate(pcolors):
 		p = fid_paths[i]
 		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
 	
 	ax.legend(loc=0)
-	log_path = os.path.join(log_dir, 'fids_font_fix/fids_hp_wgan_vs_fsg16_fsg4_noshift_celeba128cc.pdf')
+	log_path = os.path.join(log_dir, 'fids_font_fix/_fids_hp_stylegan2_vs_fsg16_noshift_celeba128cc.pdf')
 	#fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_celeba128cc.pdf')
 	#fig.savefig('/home/mahyar/miss_details_images/temp/fids50_true_cub128bb.pdf')
 	fig.savefig(log_path)
