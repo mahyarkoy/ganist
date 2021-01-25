@@ -18,6 +18,11 @@ import scipy
 import logging
 import os
 
+### global colormap set
+global_cmap = mat_cm.get_cmap('tab20')
+global_color_locs = np.arange(20) / 20.
+global_color_set = global_cmap(global_color_locs)
+
 '''
 Logger
 '''
@@ -952,6 +957,101 @@ def fft_test_by_samples(log_dir, r_samples, g_samples, r_name='true', g_name='ge
 		plt.colorbar(im)#, ax=ax, fraction=0.046, pad=0.04)
 
 		fig.savefig(join(log_dir, f'fft_test_{g_name}_{r_name}_{fig_names[i]}.png'), dpi=300)
+
+def fft_1d(signal):
+	fft = np.fft.fft(signal)
+	fft = np.fft.fftshift(fft)
+	return fft
+
+def ifft_1d(signal):
+	signal = np.fft.ifftshift(signal)
+	ifft = np.fft.ifft(signal)
+	return ifft
+
+def plot_fft_1d(data, log_path, ylim=True):
+	data = data.reshape([-1])
+	data_fft = fft_1d(data)
+	dsize = data.shape[0]
+
+	fig = plt.figure(0, (8, 9))
+	ax = fig.add_subplot(3, 1, 1)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_xlabel(r'Location')
+	ax.set_ylabel(r'Intensity')
+	if ylim:
+		ax.set_ylim(bottom=-1.1, top=1.1)
+	ax.plot(data)
+	x_ticks_loc = range(0, dsize+1, dsize//8)
+	ax.set_xticks(x_ticks_loc)
+	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+
+	ax = fig.add_subplot(3, 1, 2)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_xlabel(r'Frequency')
+	ax.set_ylabel(r'Magnitude')
+	if ylim:
+		ax.set_ylim(bottom=-0.1, top=len(data)+0.1)
+	ax.plot(range(-dsize//2, dsize//2), np.abs(data_fft))
+	x_ticks_loc = np.arange(0, dsize+1, dsize//8) - dsize//2
+	ax.set_xticks(x_ticks_loc)
+	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+
+	ax = fig.add_subplot(3, 1, 3)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_xlabel(r'Frequency')
+	ax.set_ylabel(r'Phase')
+	if ylim:
+		ax.set_ylim(bottom=-3.15, top=3.15)
+	ax.plot(range(-dsize//2, dsize//2), np.angle(data_fft))
+	x_ticks_loc = np.arange(0, dsize+1, dsize//8) - dsize//2
+	ax.set_xticks(x_ticks_loc)
+	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+
+	fig.tight_layout()
+	fig.savefig(log_path, dpi=300)
+	plt.close(fig)
+
+def plot_simple(key, vals, log_path, steps=None):
+	fig = plt.figure(0, (8, 6))
+	ax = fig.add_subplot(1, 1, 1)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_xlabel(r'Iterations')
+	ax.set_ylabel(key)
+	if steps is None:
+		ax.plot(vals)
+	else:
+		ax.plot(steps, vals)
+	fig.tight_layout()
+	fig.savefig(log_path, dpi=300)
+	plt.close(fig)
+
+'''
+Plot multiple time series.
+dict_: {'name': [(m0, sd0), (m1, sd1), ...]}
+'''
+def plot_multi(dict_, log_path, steps=None):
+	fig = plt.figure(0, (8, 6))
+	ax = fig.add_subplot(1, 1, 1)
+	ax.grid(True, which='both', linestyle='dotted')
+	ax.set_xlabel(r'Iterations')
+	for i, (k, v) in enumerate(dict_.items()):
+		v_mean = np.asarray(v)[:, 0]
+		v_std = np.asarray(v)[:, 1]
+		pcolor = global_color_set[i]
+		if steps is None:
+			ax.plot(v_mean, color=pcolor, label=k)
+			ax.plot(v_mean+v_std, linestyle='--', linewidth=0.5, color=pcolor)
+			ax.plot(v_mean-v_std, linestyle='--', linewidth=0.5, color=pcolor)
+		else:
+			ax.plot(steps, v_mean, color=pcolor, label=k)
+			ax.plot(steps, v_mean+v_std, linestyle='--', linewidth=0.5, color=pcolor)
+			ax.plot(steps, v_mean-v_std, linestyle='--', linewidth=0.5, color=pcolor)
+	ax.legend(loc=0)
+	fig.tight_layout()
+	fig.savefig(log_path, dpi=300)
+	plt.close(fig)
+
+
 
 
 
