@@ -19,7 +19,7 @@ from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
 from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval, create_cosine
 from util import make_koch_snowflake, fractal_dimension, fractal_eval
 from util import windowing, fft_norm, fft_test_by_samples
-from util import fft_corr_eff, fft_corr_point
+from util import fft_corr_eff, fft_corr_point, add_freq_noise
 import glob
 import os
 import pickle as pk
@@ -735,69 +735,69 @@ if __name__ == '__main__':
 	'''
 	1D Effect of Upsampling and Sigma
 	'''
-	dsize = 128
-	ksize = 4
-	def triangle_1d(center, length):
-		tri = np.arange(1, length+1, dtype=np.float) / length
-		return np.concatenate((tri, tri[::-1][1:]))
-
-	def fft_1d(signal):
-		fft = np.fft.fft(signal)
-		fft = np.fft.fftshift(fft)
-		return fft
-
-	def ifft_1d(signal):
-		signal = np.fft.ifftshift(signal)
-		ifft = np.fft.ifft(signal)
-		return ifft
-
-	triangles = [(dsize//2, ksize, 10), (dsize//2-3*ksize, ksize, 8), (dsize//2+3*ksize, ksize, 8)]
-	#triangles = [(dsize//2, ksize, 10)]
-	signal = np.zeros(dsize, dtype=np.float)
-	#signal[dsize//2-ksize] = 10.
-	#signal[dsize//2+ksize] = 10.
-	for c, l, m in triangles:
-		#signal[c-l+1:c+l] = m * triangle_1d(c, l)
-		signal[c-l+1:c+l] = m
-
-	#signal = np.cos(2*np.pi/16*np.arange(dsize))
-	#signal = 1-signal
-
-	fig = plt.figure(0, (8, 9))
-	ax = fig.add_subplot(3, 1, 1)
-	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_xlabel(r'Frequency')
-	ax.plot(range(-dsize//2, dsize//2), signal)
-	x_ticks_loc = [-dsize//2] + [c-dsize//2 for c, l, m in triangles] + [dsize//2]
-	ax.set_xticks(x_ticks_loc)
-	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
-
-	ifft = np.real(ifft_1d(signal))
-	### Relu
-	ifft = np.clip(ifft, 0, None)
-	ifft = np.concatenate([ifft[..., np.newaxis], np.zeros((ifft.shape[0], 1))], axis=1).reshape(dsize*2)
-	dsize *= 2
-	fft = fft_1d(ifft)
-
-	ax = fig.add_subplot(3, 1, 2)
-	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_xlabel(r'Location')
-	ax.plot(ifft)
-	#ax.plot(range(-dsize//2, dsize//2), np.concatenate([ifft[dsize//2:], ifft[:dsize//2]]))
-	x_ticks_loc = range(0, dsize+1, dsize//8)
-	ax.set_xticks(x_ticks_loc)
-	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
-
-	ax = fig.add_subplot(3, 1, 3)
-	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_xlabel(r'Frequency')
-	ax.plot(range(-dsize//2, dsize//2), np.real(fft))
-	x_ticks_loc = [-dsize//2] + [c-dsize//4 for c, l, m in triangles] + [dsize//2]
-	ax.set_xticks(x_ticks_loc)
-	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
-
-	fig.tight_layout()
-	fig.savefig(join(log_dir, f'rect_1d_relu_up.png'), dpi=300)
+	#dsize = 128
+	#ksize = 4
+	#def triangle_1d(center, length):
+	#	tri = np.arange(1, length+1, dtype=np.float) / length
+	#	return np.concatenate((tri, tri[::-1][1:]))
+	#	
+	#def fft_1d(signal):
+	#	fft = np.fft.fft(signal)
+	#	fft = np.fft.fftshift(fft)
+	#	return fft
+	#	
+	#def ifft_1d(signal):
+	#	signal = np.fft.ifftshift(signal)
+	#	ifft = np.fft.ifft(signal)
+	#	return ifft
+	#	
+	#triangles = [(dsize//2, ksize, 10), (dsize//2-3*ksize, ksize, 8), (dsize//2+3*ksize, ksize, 8)]
+	##triangles = [(dsize//2, ksize, 10)]
+	#signal = np.zeros(dsize, dtype=np.float)
+	##signal[dsize//2-ksize] = 10.
+	##signal[dsize//2+ksize] = 10.
+	#for c, l, m in triangles:
+	#	#signal[c-l+1:c+l] = m * triangle_1d(c, l)
+	#	signal[c-l+1:c+l] = m
+	#	
+	##signal = np.cos(2*np.pi/16*np.arange(dsize))
+	##signal = 1-signal
+	#
+	#fig = plt.figure(0, (8, 9))
+	#ax = fig.add_subplot(3, 1, 1)
+	#ax.grid(True, which='both', linestyle='dotted')
+	#ax.set_xlabel(r'Frequency')
+	#ax.plot(range(-dsize//2, dsize//2), signal)
+	#x_ticks_loc = [-dsize//2] + [c-dsize//2 for c, l, m in triangles] + [dsize//2]
+	#ax.set_xticks(x_ticks_loc)
+	#ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+	#
+	#ifft = np.real(ifft_1d(signal))
+	#### Relu
+	#ifft = np.clip(ifft, 0, None)
+	#ifft = np.concatenate([ifft[..., np.newaxis], np.zeros((ifft.shape[0], 1))], axis=1).reshape(dsize*2)
+	#dsize *= 2
+	#fft = fft_1d(ifft)
+	#
+	#ax = fig.add_subplot(3, 1, 2)
+	#ax.grid(True, which='both', linestyle='dotted')
+	#ax.set_xlabel(r'Location')
+	#ax.plot(ifft)
+	##ax.plot(range(-dsize//2, dsize//2), np.concatenate([ifft[dsize//2:], ifft[:dsize//2]]))
+	#x_ticks_loc = range(0, dsize+1, dsize//8)
+	#ax.set_xticks(x_ticks_loc)
+	#ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+	#
+	#ax = fig.add_subplot(3, 1, 3)
+	#ax.grid(True, which='both', linestyle='dotted')
+	#ax.set_xlabel(r'Frequency')
+	#ax.plot(range(-dsize//2, dsize//2), np.real(fft))
+	#x_ticks_loc = [-dsize//2] + [c-dsize//4 for c, l, m in triangles] + [dsize//2]
+	#ax.set_xticks(x_ticks_loc)
+	#ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+	#
+	#fig.tight_layout()
+	#fig.savefig(join(log_dir, f'rect_1d_relu_up.png'), dpi=300)
 
 	'''
 	FFT and IFFT
@@ -820,6 +820,44 @@ if __name__ == '__main__':
 	#
 	#diffs_int = dynamic_range_255(greys) - dynamic_range_255(revs)
 	#print(f'>>> fft_ifft_diff_rint_[0,255]: {np.mean(np.abs(diffs_int))} sd {np.std(np.abs(diffs_int))}')
+
+	'''
+	Add spectral noise test
+	'''
+	draw_size = 10
+	data_size = 10
+	c = 3
+	celeba_data = read_celeba(128, data_size=data_size)
+	noise_low = np.zeros(celeba_data.shape[:-1]+(c,))
+	noise_high = np.zeros(celeba_data.shape[:-1]+(c,))
+	noise_full = np.zeros(celeba_data.shape[:-1]+(c,))
+	noise_scale = 0.2
+	mask_low = None
+	mask_high = None
+	mask_full = None
+	for i, im in enumerate(celeba_data):
+		print(f'>>> processing image {i}')
+		noise_low[i], mask_low = add_freq_noise(im, low=0, high=1/8, scale=noise_scale, mask=mask_low, channels=c)
+		noise_high[i], mask_high = add_freq_noise(im, low=1/8, high=None, scale=noise_scale, mask=mask_high, channels=c)
+		noise_full[i], mask_full = add_freq_noise(im, low=0, high=None, scale=noise_scale, mask=mask_full, channels=c)
+
+	apply_fft_win(celeba_data, os.path.join(log_dir, 'fft_celeba.png'))
+	apply_fft_win(celeba_data+noise_low, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_low.png'))
+	apply_fft_win(celeba_data+noise_high, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_high.png'))
+	apply_fft_win(celeba_data+noise_full, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_full.png'))
+	apply_fft_win(noise_low, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_low.png'))
+	apply_fft_win(noise_high, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_high.png'))
+	apply_fft_win(noise_full, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_full.png'))
+	pyramid_draw([celeba_data,
+		np.broadcast_to(mask_low[..., np.newaxis], celeba_data.shape), 
+		np.repeat(noise_low, celeba_data.shape[-1]//c, axis=3),
+		celeba_data+noise_low,
+		np.broadcast_to(mask_high[..., np.newaxis], celeba_data.shape),
+		np.repeat(noise_high, celeba_data.shape[-1]//c, axis=3),
+		celeba_data+noise_high,
+		np.broadcast_to(mask_full[..., np.newaxis], celeba_data.shape),
+		np.repeat(noise_full, celeba_data.shape[-1]//c, axis=3),
+		celeba_data+noise_full], os.path.join(log_dir, 'noisy_celeba_samples.png'))
 
 	'''
 	Leakage test

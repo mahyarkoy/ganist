@@ -38,7 +38,8 @@ import tf_ganist
 from fft_test import apply_fft_images
 from util import apply_fft_win, freq_leakage, COS_Sampler, freq_density, read_image, readim_from_path, readim_path_from_dir
 from util import SingleLogger, Logger, block_draw, im_color_borders
-from util import mag_phase_wass_dist, mag_phase_total_variation, fft_test_by_samples
+from util import mag_phase_wass_dist, mag_phase_total_variation, fft_test_by_samples, add_freq_noise
+from util import pyramid_draw
 from collections import defaultdict
 
 sys.path.insert(1, '/dresden/users/mk1391/evl/Data/pggan_model')
@@ -354,19 +355,6 @@ def en_block_draw(ganist, im_data, path, max_label=None):
 	im_draw_color = im_color_borders(im_draw_flat, en_labels, max_label=max_label, color_set=global_color_set)
 	_, imh, imw, imc = im_draw_color.shape
 	block_draw(im_draw_color.reshape([cols, rows, imh, imw, imc]), path)
-
-'''
-Draws the given layers of the pyramid.
-if im_shape is provided, it assumes that as the shape of final output, otherwise uses reconst.
-pyramid: [l0, l1, ..., reconst] each shape [b, h, w, c] with values (-1,1)
-'''
-def pyramid_draw(pyramid, path, im_shape=None):
-	n, h, w, c = pyramid[-1].shape if im_shape is None else im_shape
-	im_comb = np.zeros((n, len(pyramid), h, w, c))
-	for i, pi in enumerate(pyramid):
-		im_comb[:, i, ...] = \
-			TFutil.get().upsample(pi, times=int(np.log2(h//pi.shape[1])))
-	block_draw(im_comb, path, border=True)
 
 '''
 Samples from all layers of the generator pyramid and draws them if path is specified.
@@ -1622,14 +1610,14 @@ if __name__ == '__main__':
 	config.gpu_options.allow_growth = True
 	sess = tf.Session(config=config)
 	### create a ganist instance
-	ganist = tf_ganist.Ganist(sess, log_path_sum)
+	#ganist = tf_ganist.Ganist(sess, log_path_sum)
 	### create mnist classifier
 	#mnet = mnist_net.MnistNet(sess, c_log_path_sum)
 	### init variables
-	sess.run(tf.global_variables_initializer())
+	#sess.run(tf.global_variables_initializer())
 	### save network initially
-	with open(join(log_path,'vars_count_log.txt'), 'w+') as fs:
-		print('>>> g_vars: {} --- d_vars: {}'.format(ganist.g_vars_count, ganist.d_vars_count), file=fs)
+	#with open(join(log_path,'vars_count_log.txt'), 'w+') as fs:
+	#	print('>>> g_vars: {} --- d_vars: {}'.format(ganist.g_vars_count, ganist.d_vars_count), file=fs)
 
 	'''
 	INCEPTION SETUP
@@ -1806,7 +1794,7 @@ if __name__ == '__main__':
 	test_feats = TFutil.get().extract_feats(None, sample_size, blur_levels=blur_levels,
 		im_paths=im_paths[train_size:sample_size+train_size], im_size=im_size, center_crop=(121, 89))
 	### prepare train images and features
-	im_data = readim_from_path(im_paths[:fft_data_size], 
+	im_data = readim_from_path(im_paths[:train_size], 
 		im_size, center_crop=(121, 89), verbose=True)
 	### freq shift the celeba
 	#im_data = TFutil.get().freq_shift(im_data, 0.5, 0.5, make_copy=False)
@@ -1886,27 +1874,27 @@ if __name__ == '__main__':
 	'''
 	g_name = 'wgan_fsg'
 	### train ganist
-	train_ganist(ganist, train_imgs, test_feats, train_labs)
+	#train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
-	load_path = join(log_path_snap, 'model_best.h5') ## comment for *TOY
+	#load_path = join(log_path_snap, 'model_best.h5') ## comment for *TOY
 	#load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
-	ganist.load(load_path.format(run_seed)) ##comment for *TOY
+	#ganist.load(load_path.format(run_seed)) ##comment for *TOY
 
 	'''
 	GAN DATA EVAL
 	'''
 	#eval_fft(ganist, log_path_draw)
 	### sample gen data and draw **mt**
-	g_sample_size = fft_data_size # 10000 ## *TOY
-	g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
-	g_feats = TFutil.get().extract_feats(None, sample_size, 
-		blur_levels=blur_levels, ganist=ganist) ## comment for *TOY
+	#g_sample_size = fft_data_size # 10000 ## *TOY
+	#g_samples = sample_ganist(ganist, g_sample_size, output_type='rec', zi_data=train_labs)[0]
+	#g_feats = TFutil.get().extract_feats(None, sample_size, 
+	#	blur_levels=blur_levels, ganist=ganist) ## comment for *TOY
 	#print('>>> g_samples shape: {}'.format(g_samples.shape))
 	#im_separate_draw(g_samples[:1000], log_path_sample) ## *TOY
-	sample_pyramid(ganist, log_path+'/gen_samples_pyramid_0.png', sample_size=10)
-	sample_pyramid(ganist, log_path+'/gen_samples_pyramid_1.png', sample_size=10)
-	sample_pyramid(ganist, log_path+'/gen_samples_pyramid_2.png', sample_size=10) ## comment for *TOY
+	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_0.png', sample_size=10)
+	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_1.png', sample_size=10)
+	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_2.png', sample_size=10) ## comment for *TOY
 	#sys.exit(0)
 
 	### *TOY
@@ -2047,31 +2035,32 @@ if __name__ == '__main__':
 	'''
 	Multi Level FID
 	'''
-	im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
-	im_block_draw(TFutil.get().freq_shift(g_samples, 0.5, 0.5), 5, log_path+'/gen_samples_sh.png', border=True)
-	fft_test_by_samples(log_path, train_imgs[:fft_data_size], g_samples[:fft_data_size], r_name, g_name)
+	#im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
+	#im_block_draw(TFutil.get().freq_shift(g_samples, 0.5, 0.5), 5, log_path+'/gen_samples_sh.png', border=True)
+	#fft_test_by_samples(log_path, train_imgs[:fft_data_size], g_samples[:fft_data_size], r_name, g_name)
 
 	### compute multi level fid (second line for real data fid levels) ## comment for *TOY
-	fid_list = compute_fid_levels(g_feats, test_feats)
+	#fid_list = compute_fid_levels(g_feats, test_feats)
 	#fid_list_r = compute_fid_levels(train_feats, test_feats)
+
 	#### plot fid_levels
-	fig, ax = plt.subplots(figsize=(8, 6))
-	ax.clear()
-	ax.plot(fid_list)
-	ax.grid(True, which='both', linestyle='dotted')
-	ax.set_title('FID levels')
-	ax.set_xlabel('Filter sigma')
-	#ax.set_xlabel('Filter Size')
-	ax.set_ylabel('FID')
-	ax.set_xticks(range(len(blur_levels)))
-	ax.set_xticklabels(map('{:.2f}'.format, blur_levels))
-	#ax.legend(loc=0)
-	fig.savefig(log_path+'/fid_levels.png', dpi=300)
-	plt.close(fig)
-	### save fids
-	with open(log_path+'/fid_levels.cpk', 'wb+') as fs:
-		pk.dump([blur_levels, fid_list], fs)
-	SingleLogger.print(f'>>> FID: {fid_list[0]**2}')
+	#fig, ax = plt.subplots(figsize=(8, 6))
+	#ax.clear()
+	#ax.plot(fid_list)
+	#ax.grid(True, which='both', linestyle='dotted')
+	#ax.set_title('FID levels')
+	#ax.set_xlabel('Filter sigma')
+	##ax.set_xlabel('Filter Size')
+	#ax.set_ylabel('FID')
+	#ax.set_xticks(range(len(blur_levels)))
+	#ax.set_xticklabels(map('{:.2f}'.format, blur_levels))
+	##ax.legend(loc=0)
+	#fig.savefig(log_path+'/fid_levels.png', dpi=300)
+	#plt.close(fig)
+	#### save fids
+	#with open(log_path+'/fid_levels.cpk', 'wb+') as fs:
+	#	pk.dump([blur_levels, fid_list], fs)
+	#SingleLogger.print(f'>>> FID: {fid_list[0]**2}')
 
 	### plot fid_levels_r
 	#fig, ax = plt.subplots(figsize=(8, 6))
@@ -2090,6 +2079,54 @@ if __name__ == '__main__':
 	#### save fids
 	#with open(log_path+'/fid_levels_r.cpk', 'wb+') as fs:
 	#	pk.dump([blur_levels, fid_list_r], fs)
+	#SingleLogger.print(f'>>> FID: {fid_list[0]**2}')
+
+	'''
+	Noisy True FID Levels
+	'''
+	snr_list = [2, 4, 8]
+	freq_ranges = [(0, 1./8), (1./8, 1), (0, 1)]
+	true_ims = train_imgs[:sample_size]
+	noisy_ims = np.zeros(true_ims.shape)
+	for low, high in freq_ranges:
+		## setup plot
+		fig, ax = plt.subplots(figsize=(8, 6))
+		ax.clear()
+		for snr in snr_list:
+			name = f'snr{snr}_low{low:.2f}_high{high:.2f}'
+			print(f'>>> computing True FID Levels at snr={snr} low={low:.2f} high={high:.2f}')
+			
+			### add noise
+			mask = None
+			for i, im in enumerate(true_ims):
+				noise, mask = add_freq_noise(im, low=low, high=high, scale=1./snr, channels=true_ims.shape[-1], mask=mask)
+				noisy_ims[i] = im + noise
+
+			### draw samples
+			pyramid_draw([true_ims[:10], noisy_ims[:10]], os.path.join(log_path, f'{name}_samples.png'))
+			
+			### compute features and fid levels
+			noisy_feats = TFutil.get().extract_feats(noisy_ims, sample_size, blur_levels=blur_levels)
+			fid_list_r = compute_fid_levels(noisy_feats, test_feats)
+
+			### plot fid levels
+			ax.plot(np.array(fid_list_r)**2, label=f'SNR={snr}')
+		
+			### save fids
+			with open(os.path.join(log_path, f'fid_levels_{name}.cpk'), 'wb+') as fs:
+				pk.dump([blur_levels, fid_list_r], fs)
+			SingleLogger.print(f'>>> True FID at {name}: {fid_list_r[0]**2}')
+
+		ax.set_title(f'True FID Levels with Additive Noise at ({low:.2f}, {high:.2f})')
+		ax.grid(True, which='both', linestyle='dotted')
+		ax.set_xlabel('Filter sigma')
+		ax.set_ylabel('FID')
+		ax.set_xticks(range(len(blur_levels)))
+		blur_cutoff = [0.] + [1./(np.pi*2*s) for s in blur_levels if s > 0]
+		ax.set_xticklabels(map('{:.2f}'.format, blur_cutoff))
+		ax.legend(loc=0)
+		fig.savefig(os.path.join(log_path,'fid_levels_noisy_low{low:.2f}_high{high:.2f}.png', dpi=300)
+		plt.close(fig)
 
 	sess.close()
 

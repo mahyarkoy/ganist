@@ -295,6 +295,102 @@ def compute_dft(im, freqs=None):
 	return dft_full, dft
 
 '''
+Adds iid normal additive noise to image spectrum s.t. SNR in each image becomes equal to 1/scale
+im: ndarray (h, w, c)
+low and high: [low, high) is the range of frequencies (mag of frequency) to affect in [0, 1/sqrt(2)]
+'''
+def add_freq_noise(im, low=None, high=None, scale=0.1, channels=3, mask=None):
+	h, w, imc = im.shape
+	c = channels
+	im_fft_power = h * w * np.sum(im**2)
+	low = 0. if low is None else low
+	high = 1. if high is None else high
+
+	### assume odd h and w (drop extra row and column later)
+	hc = h//2
+	wc = w//2
+
+	### construct additive noise (symmetric) with mean 0 and var 1
+	noise = np.zeros((hc*2+1, wc*2+1, c), dtype=complex)
+	noise[:hc+1, :wc+1, :] =  np.random.normal(size=(hc+1, wc+1, c))+1j*np.random.normal(size=(hc+1, wc+1, c)) /np.sqrt(2)
+	noise[hc+1:, :wc, :] = np.random.normal(size=(hc, wc, c))+1j*np.random.normal(size=(hc, wc, c)) /np.sqrt(2)
+	noise[hc:, wc:, :] = np.conj(np.flip(noise[:hc+1, :wc+1, :], axis=(0,1)))
+	noise[:hc, wc+1:, :] = np.conj(np.flip(noise[hc+1:, :wc, :], axis=(0,1)))
+	noise[hc, wc, :] = np.random.normal(size=c)
+
+	### create mask to affect only frequencies between high and low
+	if mask is None:
+		mask = np.zeros(noise.shape[:-1])
+		for hi in range(hc*2+1):
+			for wi in range(wc*2+1):
+				f = np.sqrt(((hi-hc)/h)**2 + ((wi-wc)/w)**2)
+				if f >= low and f < high:
+					mask[hi, wi] = 1.
+		mask = mask[1:, :] if h%2 == 0 else mask
+		mask = mask[:, :-1] if w%2 == 0 else mask
+
+	### drop redundant frequencies if any dimension is even
+	if h%2 == 0:
+		noise[-1, :wc+1, :] = np.conj(np.flip(noise[-1, wc:, :], axis=0))
+		noise[-1, wc, :] = np.random.normal(size=c)
+		noise[-1, 0, :] = np.random.normal(size=c)
+	if w%2 == 0:
+		noise[:hc+1, 0, :] = np.conj(np.flip(noise[hc:, 0, :], axis=0))
+		noise[hc, 0, :] = np.random.normal(size=c)
+		noise[-1, 0, :] = np.random.normal(size=c)
+	noise = noise[1:, :, :] if h%2 == 0 else noise
+	noise = noise[:, :-1, :] if w%2 == 0 else noise
+
+	### mask noise
+	noise = noise * mask[..., np.newaxis]
+
+	### scale to have fixed expected SNR for each freq component, then ifft and add to images
+	assert np.all(noise.shape[:-1] == im.shape[:-1])
+	im_fft = np.zeros(im.shape, dtype=complex)
+	for i in range(imc):
+		im_fft[:,:,i], _ = apply_fft(im[:,:,i:i+1])
+
+	noise = noise * np.abs(im_fft)
+	noise_norm = noise * np.sqrt(scale * im_fft_power * noise.shape[-1] / imc / np.sum(np.abs(noise)**2))
+	
+	noise_im = np.zeros(noise_norm.shape, dtype=complex)
+	for i in range(noise_im.shape[-1]):
+		noise_im[:,:,i] = apply_ifft(noise_norm[:,:,i])
+	assert np.sum(np.abs(np.imag(noise_im))) < 1e-10, f'>>> sum of imaginary part of noise is {np.sum(np.abs(np.imag(noise_im)))}'
+	noise_im = np.real(noise_im)
+	#print(f'>>> SNR = {np.sum(im**2) * noise_im.shape[-1] / imc / np.sum(noise_im**2)}')
+	return noise_im, mask
+
+def add_freq_noise_images(images, low=None, high=None, scale=0.1, channels=3):
+	mask = None
+	im_noisy = np.zeros(images.shape)
+	for i, im in enumerate(images):
+		noise, mask = add_freq_noise(im, low=low, high=high, scale=scale, channels=channels, mask=mask)
+		im_noisy[i] = im + noise
+	return im_noisy
+
+### print input_ on commandline (input_ shape (w,h))
+def print_im(input_):
+	print('\n>>> printing image:\n')
+	for row in input_:
+		print('\t'.join(map('{:.3f}'.format, row)))
+	print('\n>>> end of printing image\n')
+
+### check hermitian (input_ shape (w,h))
+def check_hermitian(input_):
+	noise_ext = input_
+	h, w = input_.shape
+	if h%2 == 0:
+		noise_ext = np.concatenate([noise_ext[-1:, :], noise_ext], axis=0)
+	if w%2 == 0:
+		noise_ext = np.concatenate([noise_ext, noise_ext[:, 0:1]], axis=1)
+	he, we = noise_ext.shape
+	for hi in range(he):
+		for wi in range(we):
+			if noise_ext[hi, wi] != np.conj(noise_ext[he-hi-1, we-wi-1]):
+				print(f'>>> at ({hi}, {wi}) and ({he-hi-1}, {we-wi-1}): {noise_ext[hi, wi]} != {noise_ext[he-hi-1, we-wi-1]}')
+
+'''
 Apply FFT to a single greyscaled image.
 im: (h, w, c)
 return: fft image, greyscaled image
@@ -1011,6 +1107,14 @@ def plot_fft_1d(data, log_path, ylim=True):
 	fig.savefig(log_path, dpi=300)
 	plt.close(fig)
 
+def plot_imshow(im, log_path):
+	fig = plt.figure(0, (8, 6))
+	ax = fig.add_subplot(1, 1, 1)
+	im = ax.imshow(im)
+	plt.colorbar(im)
+	fig.savefig(log_path, dpi=300)
+	plt.close(fig)
+
 def plot_simple(key, vals, log_path, steps=None):
 	fig = plt.figure(0, (8, 6))
 	ax = fig.add_subplot(1, 1, 1)
@@ -1050,6 +1154,20 @@ def plot_multi(dict_, log_path, steps=None):
 	fig.tight_layout()
 	fig.savefig(log_path, dpi=300)
 	plt.close(fig)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
