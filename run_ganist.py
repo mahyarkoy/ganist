@@ -1853,7 +1853,7 @@ if __name__ == '__main__':
 	train_labs = None ### *L2LOSS im_labels
 	print('>>> Shape of training images: {}'.format(train_imgs.shape))
 	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
-	im_draw = TFutil.get().freq_shift(train_imgs[:draw_size], 0.5, 0.5)
+	#im_draw = TFutil.get().freq_shift(train_imgs[:draw_size], 0.5, 0.5)
 	im_block_draw(train_imgs[:25], 5, 
 		join(log_path,'true_samples.png'), border=True)
 	im_block_draw(TFutil.get().freq_shift(train_imgs[:25], 0.5, 0.5), 5, 
@@ -2125,7 +2125,7 @@ if __name__ == '__main__':
 		blur_cutoff = [0.] + [1./(np.pi*2*s) for s in blur_levels if s > 0]
 		ax.set_xticklabels(map('{:.2f}'.format, blur_cutoff))
 		ax.legend(loc=0)
-		fig.savefig(os.path.join(log_path,'fid_levels_noisy_low{low:.2f}_high{high:.2f}.png', dpi=300)
+		fig.savefig(os.path.join(log_path, f'fid_levels_noisy_low{low:.2f}_high{high:.2f}.png'), dpi=300)
 		plt.close(fig)
 
 	sess.close()
