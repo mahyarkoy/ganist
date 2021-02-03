@@ -5,6 +5,7 @@ import glob
 import numpy as np
 import tensorflow as tf
 from collections import defaultdict
+import pickle as pk
 from util import plot_fft_1d, plot_simple, plot_multi, Logger
 
 tf_dtype = tf.float32
@@ -73,16 +74,15 @@ def upscale1d(x, factor=2):
 	return x
 
 class ToyGAN:
-	def __init__(self, sess, log_dir):
-		self.log_dir = log_dir
+	def __init__(self, freqs=None):
 		self.g_lr = 2e-4
 		self.g_beta1 = 0.9
 		self.g_beta2 = 0.999
-		self.data_dim = [128, 1]
-		self.z_dim = 32
-		self.sess = sess
+		self.data_dim = [32, 1]
+		self.z_dim = 128
+		self.freqs = freqs
 		self.build_graph()
-		self.start()
+		self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=100)
 		pass
 
 	def build_graph(self):
@@ -93,28 +93,72 @@ class ToyGAN:
 
 		### model
 		with tf.variable_scope('g_net'):
-			fmap = 32
+			fmap = 1
 			act = tf.nn.relu
 			wscale = True
 
-			self.h1 = act(apply_bias(dense_ws(self.z_in, fmap*32, scope='dense', use_wscale=wscale), scope='bias_dense'))
-			self.h1 = tf.reshape(self.h1, [-1, 32, fmap])
+			self.h1 = act(apply_bias(dense_ws(self.z_in, fmap*self.data_dim[0]//4, scope='dense', use_wscale=wscale), scope='bias_dense'))
+			self.h1 = tf.reshape(self.h1, [-1, self.data_dim[0]//4, fmap])
 			
 			self.h1_us = upscale1d(self.h1)
-			self.h2 = act(apply_bias(conv1d_ws(self.h1_us, fmap, scope='conv1', use_wscale=wscale), scope='bias_conv1'))
+			#self.h1_us = tf.reshape(self.z_in, [-1, self.z_dim, 1])
+
+			self.h2 = act(apply_bias(conv1d_ws(self.h1_us, 1, scope='conv1', use_wscale=wscale), scope='bias_conv1'))
 			
 			self.h2_us  = upscale1d(self.h2)
-			self.h3 = apply_bias(conv1d_ws(self.h2_us, self.data_dim[-1], scope='conv2', use_wscale=wscale), scope='bias_conv2')
-			self.out = self.h3
+
+			self.h3 = act(apply_bias(conv1d_ws(self.h2_us, 1, scope='conv2', use_wscale=wscale), scope='bias_conv2'))
+			self.h4 = apply_bias(conv1d_ws(self.h3, self.data_dim[-1], scope='conv3', use_wscale=wscale), scope='bias_conv3')
+			self.out = self.h4
 
 		### loss
-		self.g_loss = tf.reduce_mean(tf.reduce_sum(tf.square(self.out - self.im_in), axis=[1,2]))
+		def compute_fft_1d(input_):
+			input_ = tf.reshape(input_, [-1, np.prod(input_.get_shape().as_list()[1:])])
+			fft = tf.fft(tf.cast(input_, tf.complex64)) / tf.cast(input_.shape[-1], tf.complex64)
+			return fft
+
+		def freq_mask_1d(input_, freqs=None):
+			if freqs is None:
+				return input_
+			fft = compute_fft_1d(input_)
+			fft_stack = tf.stack([tf.math.real(fft), tf.math.imag(fft)], axis=-1)
+			fft_select = tf.gather(fft_stack, freqs, axis=1)
+			print(f'>>> fft_select shape: {fft_select.get_shape().as_list()}')
+			return fft_select
+
+		def fft_gradient(input_, freq, vars_):
+			fft = compute_fft_1d(self.out)[:, freq]
+			power_grad = tf.gradients(tf.square(tf.math.real(fft))+tf.square(tf.math.imag(fft)), vars_)
+			angle_grad = tf.gradients(tf.math.angle(fft), vars_)
+			return power_grad, angle_grad
+
+		def fft_gradient_cos_sim(input_, freqs, vars_):
+			f1, f2 = freqs
+			p1, a1 = fft_gradient(input_, f1, vars_)
+			p2, a2 = fft_gradient(input_, f2, vars_)
+			p1 = tf.concat([tf.reshape(t, [-1]) for t in p1], axis=-1)
+			a1 = tf.concat([tf.reshape(t, [-1]) for t in a1], axis=-1)
+			p2 = tf.concat([tf.reshape(t, [-1]) for t in p2], axis=-1)
+			a2 = tf.concat([tf.reshape(t, [-1]) for t in a2], axis=-1)
+			
+			power_sim = tf.abs(tf.reduce_sum(p1 * p2) / tf.sqrt(tf.reduce_sum(p1**2)*tf.reduce_sum(p2**2)+1e-10))
+			angle_sim = tf.abs(tf.reduce_sum(a1 * a2) / tf.sqrt(tf.reduce_sum(a1**2)*tf.reduce_sum(a2**2)+1e-10))
+			return power_sim, angle_sim
+
+		self.out_freq = freq_mask_1d(self.out, self.freqs)
+		self.im_in_freq = freq_mask_1d(self.im_in, self.freqs)
+		self.g_loss = tf.reduce_sum(tf.reduce_mean(tf.square(self.out_freq - self.im_in_freq), axis=0))
 
 		### optimize
 		self.g_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'g_net')
 		self.g_opt_handle = tf.train.AdamOptimizer(self.g_lr, beta1=self.g_beta1, beta2=self.g_beta2)
 		self.g_grads_vars = self.g_opt_handle.compute_gradients(self.g_loss, self.g_vars)
 		self.g_opt = self.g_opt_handle.apply_gradients(self.g_grads_vars)
+
+		### compute gradient of power and phase cos similarity
+		self.fft_cos_sim = list()
+		self.fft_cos_sim.append(fft_gradient_cos_sim(self.out, [1, 2], self.g_vars))
+		self.fft_cos_sim.append(fft_gradient_cos_sim(self.out, [self.data_dim[0]//2-2, self.data_dim[0]//2-1], self.g_vars))
 
 		### compute stat of weights
 		self.nan_vars = 0.
@@ -146,8 +190,9 @@ class ToyGAN:
 		tf.summary.scalar('count_vars', self.count_vars)
 		self.summary = tf.summary.merge_all()
 
-	def start(self):
-		self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=100)
+	def add_session(self, sess, log_dir):
+		self.sess = sess
+		self.log_dir = log_dir
 		self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
 
 	def flush(self):
@@ -174,24 +219,8 @@ def print_grads_vars_stats(vars_, grads_, vals_):
 	for v, g, val in zip(vars_, grads_, vals_):
 		print(f'>>> variable {v.name} gradient={np.mean(g)}_sd_{np.std(g)} value={np.mean(val)}_sd_{np.std(val)}')
 
-if __name__ == '__main__':
-	'''
-	Script Setup
-	'''
-	arg_parser = argparse.ArgumentParser()
-	arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
-	arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
-	arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
-	arg_parser.add_argument('-g', '--gpus', dest='gpus', default='0', help='visible gpu ids.')
-	arg_parser.add_argument('-f', '--freq', dest='freq', default='0', help='frequency to use.')
-	args = arg_parser.parse_args()
-	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
-	os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(args.gpus) # "0, 1" for multiple
-	log_dir = args.log_path
-	eval_int = int(args.eval_int)
-	run_seed = int(args.seed)
-	np.random.seed(run_seed)
-	tf.set_random_seed(run_seed)
+def run_toy(toygan, sess, log_dir, eval_int, freq, g_itrs=int(5e4), verbose=True):
+	print(f'>>> Run settings: freq={freq} eval_int={eval_int} g_itrs={g_itrs}')
 	os.mkdir(log_dir)
 	log_dir_snaps = os.path.join(log_dir, 'snapshots')
 	os.mkdir(log_dir_snaps)
@@ -200,41 +229,52 @@ if __name__ == '__main__':
 	sys.stdout = Logger(log_dir)
 	sys.stderr = sys.stdout
 
-	'''
-	TENSORFLOW SETUP
-	'''
-	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
-	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
-	config.gpu_options.allow_growth = True
-	sess = tf.Session(config=config)
-	### create a ganist instance
-	toygan = ToyGAN(sess, log_dir_sums)
-	toygan.print()
+	### add a session to toygan for summary writing
+	toygan.add_session(sess, log_dir_sums)
+	if verbose:
+		toygan.print()
 	### init variables
 	sess.run(tf.global_variables_initializer())
 
 	'''
 	Train
 	'''
-	g_itrs = int(1e4)
-	freq = int(args.freq)
+	fft_guides = [-freq, freq]
 	z_in = np.random.uniform(-1, 1, toygan.z_dim).reshape([-1, toygan.z_dim])
+	plot_fft_1d(z_in, os.path.join(log_dir, f'z_in_size{toygan.z_dim}.png'), fft_guides=fft_guides)
+	#im_in = np.random.uniform(-1, 1, toygan.data_dim).reshape([1, toygan.data_dim[0], 1])
 	im_in = np.cos(2*np.pi*freq / toygan.data_dim[0] * np.arange(toygan.data_dim[0])).reshape([1, toygan.data_dim[0], 1])
-	plot_fft_1d(im_in, os.path.join(log_dir, f'true_cos{freq}_size{toygan.data_dim[0]}.png'))
+	plot_fft_1d(im_in, os.path.join(log_dir, f'true_cos{freq}_size{toygan.data_dim[0]}.png'), fft_guides=fft_guides)
+	#im_fft = sess.run(tf.fft(tf.convert_to_tensor(im_in.reshape([-1]).astype(complex), dtype=tf.complex64)))
+	#plot_fft_1d(im_in, os.path.join(log_dir, f'true_cos{freq}_size{toygan.data_dim[0]}_tf.png'), fft=im_fft)
+	fft_cos_sims = list()
+	loss_test_pre = 1e10
 	for i in range(g_itrs+1):
 		if i % eval_int == 0 or i == g_itrs:
+			if verbose:
+				print(f'\n>>> At iteration {i:06d}:')
+
 			toygan.save(os.path.join(log_dir_snaps, f'model_{i:06d}.h5'))
-			im_test, loss_test, grads_vars, sums = sess.run([toygan.out, toygan.g_loss, toygan.g_grads_vars, toygan.summary],
+			im_test, loss_test, grads_vars, sums, fft_cos_sim = sess.run(
+				[toygan.out, toygan.g_loss, toygan.g_grads_vars, toygan.summary, toygan.fft_cos_sim],
 				feed_dict={toygan.z_in: z_in, toygan.im_in: im_in, toygan.train_phase: False})
+			loss_test_delta = loss_test_pre - loss_test
+			loss_test_pre = loss_test
+			fft_cos_sims.append(fft_cos_sim)
+			#out_freq, im_in_freq = sess.run([toygan.out_freq, toygan.im_in_freq],
+			#	feed_dict={toygan.z_in: z_in, toygan.im_in: im_in, toygan.train_phase: False})
 			
 			toygan.write_sum(sums, i)
-			print_grads_vars_stats(toygan.g_vars, [gv[0] for gv in grads_vars], [gv[1] for gv in grads_vars])
 			
 			plot_fft_1d(im_test, 
-				os.path.join(log_dir, f'gen_cos{freq}_size{toygan.data_dim[0]}_{i:06d}.png'))
+				os.path.join(log_dir, f'gen_cos{freq}_size{toygan.data_dim[0]}_{i:06d}.png'), fft_guides=fft_guides)
 			plot_fft_1d(im_test-im_in, 
-				os.path.join(log_dir, f'gen_cos{freq}_size{toygan.data_dim[0]}_{i:06d}_diff.png'), ylim=False)
-			print(f'>>> At iteration {i:06d}: loss = {loss_test}')
+				os.path.join(log_dir, f'gen_cos{freq}_size{toygan.data_dim[0]}_{i:06d}_diff.png'), ylim=False, fft_guides=fft_guides)
+
+			if verbose:
+				print(f'>>> loss = {loss_test}') # im_in_freq={im_in_freq} out_freq={out_freq}
+				#print_grads_vars_stats(toygan.g_vars, [gv[0] for gv in grads_vars], [gv[1] for gv in grads_vars])
+			#print(f'>>> pow_sim_low={fft_cos_sim[0][0]:.3f} pow_sim_high={fft_cos_sim[1][0]:.3f} angle_sim_low={fft_cos_sim[0][1]:.3f} angle_sim_high={fft_cos_sim[1][1]:.3f}\n')
 			if i == g_itrs:
 				break
 
@@ -243,7 +283,6 @@ if __name__ == '__main__':
 		res = sess.run(res_ops, feed_dict=feed_dict)
 
 	toygan.flush()
-	sess.close()
 
 	'''
 	Plot summaries
@@ -264,11 +303,78 @@ if __name__ == '__main__':
 	for k, v in metrics.items():
 		if len(v) > 1:
 			plot_simple(k, v, os.path.join(log_dir, f'sums_{k}.png'))
-		else:
+		elif verbose:
 			print(f'>>> summary of {k}: {v}')
 
 	if len(histo_mean_std) > 0:
 		plot_multi(histo_mean_std, os.path.join(log_dir, f'histograms.png'))
+
+	'''
+	PLot fft cosine similarities
+	'''
+	fft_cos_sim_mean_std = defaultdict(list)
+	for vl, vh in fft_cos_sims:
+		fft_cos_sim_mean_std['power_low'].append((vl[0], 0))
+		fft_cos_sim_mean_std['power_high'].append((vh[0], 0))
+		fft_cos_sim_mean_std['phase_low'].append((vl[1], 0))
+		fft_cos_sim_mean_std['phase_high'].append((vh[1], 0))
+	plot_multi(fft_cos_sim_mean_std, os.path.join(log_dir, f'fft_cos_sims.png'))
+
+	return loss_test, loss_test_delta
+
+
+if __name__ == '__main__':
+	'''
+	Script Setup
+	'''
+	arg_parser = argparse.ArgumentParser()
+	arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
+	arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
+	arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
+	arg_parser.add_argument('-g', '--gpus', dest='gpus', default='0', help='visible gpu ids.')
+	arg_parser.add_argument('-f', '--freq', dest='freq', default='0', help='frequency to use.')
+	args = arg_parser.parse_args()
+	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
+	os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(args.gpus) # "0, 1" for multiple
+	log_dir = args.log_path
+	eval_int = int(args.eval_int)
+	run_seed = int(args.seed)
+	freq = int(args.freq)
+	np.random.seed(run_seed)
+	tf.set_random_seed(run_seed)
+	os.mkdir(log_dir)
+	sys.stdout = Logger(log_dir)
+	sys.stderr = sys.stdout
+
+	'''
+	TENSORFLOW SETUP
+	'''
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
+	config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+	config.gpu_options.allow_growth = True
+	### create a ganist instance
+	toygan = ToyGAN()
+
+	'''
+	Run GAN
+	'''
+	losses = list()
+	deltas = list()
+	freqs = np.arange(17)
+	for i, freq in enumerate(freqs):
+		print(f'>>> At {i}th frequency: {freq}')
+		with tf.Session(config=config) as sess:
+			loss, delta = run_toy(toygan, sess, os.path.join(log_dir, f'_{freq:03d}'), eval_int, freq, g_itrs=int(5e4), verbose=True)
+			losses.append(loss)
+			deltas.append(delta)
+			print(f'>>> loss = {loss} delta = {delta}\n')
+
+	with open(os.path.join(log_dir, 'losses.cpk'), 'wb+') as fs:
+		pk.dump([losses, deltas, freqs], fs)
+
+	plot_simple('power diff', losses, os.path.join(log_dir, 'losses.png'), steps=freqs)
+	plot_simple('last loss drop', losses, os.path.join(log_dir, 'deltas.png'), steps=freqs)
+	
 
 
 

@@ -29,7 +29,25 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 ### global colormap set
 global_cmap = matcm.get_cmap('tab10')
 global_color_locs = np.arange(10) / 10.
+global_color_set_alt = global_cmap(global_color_locs)
+
+global_cmap = matcm.get_cmap('gnuplot2')
+global_color_locs = np.arange(20) / 20.
 global_color_set = global_cmap(global_color_locs)
+global_color_set[0] = global_color_set_alt[0]
+
+def adjust_hls(color, amount):
+	import matplotlib.colors as mc
+	import colorsys
+	try:
+		c = mc.cnames[color]
+	except:
+		c = color
+	c = colorsys.rgb_to_hls(*mc.to_rgb(c))
+	return colorsys.hls_to_rgb(
+		max(0, min(1, amount[0] * c[0])), 
+		max(0, min(1, amount[1] * c[1])), 
+		max(0, min(1, amount[2] * c[2])))
 
 evl_path = '/dresden/users/mk1391/evl/'
 log_dir = 'logs_miss_details_iclr/'
@@ -38,6 +56,9 @@ fid_paths = [
 	#'/media/evl/Public/Mahyar/ganist_lap_logs/4_logs_wganbn_lap3_celeba128cc_fid50_gwrong_realonly/run_%d/fid_levels_r.cpk',
 	#evl_path+'ganist_lap_logs/logs_wganbn_cub128bb/run_%d/fid_levels_r.cpk'
 	evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels_r.cpk',
+	evl_path+'ganist_lap_logs/logs_true_fid_levels_noisy_celeba128cc_f8/fid_levels_snr20_low0.00_high1.00.cpk',
+	evl_path+'ganist_lap_logs/logs_true_fid_levels_noisy_celeba128cc_f8/fid_levels_snr10_low0.00_high1.00.cpk',
+	evl_path+'ganist_lap_logs/logs_true_fid_levels_noisy_celeba128cc_f8/fid_levels_snr5_low0.00_high1.00.cpk'
 	#evl_path+'ganist_lap_logs/45_logs_wganbn_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
 	#evl_path+'ganist_lap_logs/47_logs_wganbn_gshift_sceleba128cc_hpfid_constrad8/run_%d/fid_levels.cpk'
 	#evl_path+'ganist_lap_logs/41_logs_wganbn_celeba128cc_hpfid_constrad8/run_%d/fid_levels.cpk',
@@ -62,10 +83,10 @@ fid_paths = [
 	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_fsg16_celeba128cc_hpfid/run_%d/fid_levels.cpk',
 	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_fsg16_noshift_celeba128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'pggan_logs/logs_celeba128cc/logs_pggan_fsg_out_share_celeba128cc_hpfid/run_%d/fid_levels.cpk'
-	evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_celeba128cc_hpfid_valtrue/run_%d/fid_levels.cpk',
+	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_celeba128cc_hpfid_valtrue/run_%d/fid_levels.cpk',
 	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg16_celeba128cc_hpfid/run_%d/fid_levels.cpk',
-	evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_finalstylemix_celeba128cc_hpfid/run_%d/fid_levels.cpk',
-	evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_noshift_celeba128cc_hpfid/run_%d/fid_levels.cpk' 
+	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_finalstylemix_celeba128cc_hpfid/run_%d/fid_levels.cpk',
+	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_noshift_celeba128cc_hpfid/run_%d/fid_levels.cpk' 
 	#evl_path+'stylegan2_logs/logs_celeba128cc/logs_stylegan2_small_fsg_nostylemix_celeba128cc_hpfid/run_%d/fid_levels.cpk'
 	#evl_path+'stylegan2_logs/logs_sceleba128cc/logs_stylegan2_small_sceleba128cc_hpfid_valtrue/run_%d/fid_levels.cpk'
 	#evl_path+'stylegan2_logs/logs_sceleba128cc/logs_stylegan2_small_outsh_sceleba128cc_hpfid/run_%d/fid_levels.cpk'
@@ -161,14 +182,17 @@ if __name__ == '__main__':
 	ax.set_title('FID HP Levels: CelebA 128')
 
 	### plot
-	pnames = ['True', 'StyleGAN2', 'FSG16', 'FSG-noshift']
-	pcolors = [0, 3, 2, 7] ## add 0 for real, pggan 6 and 4, wgan 1 and 5, stylegan2 3 and 7
-	for i, _ in enumerate(pcolors):
+	pnames = ['True', 'SNR=20', 'SNR=10', 'SNR=5']
+	pcolor_ids = [0, -15, -11, -9] ## add 0 for real, pggan 6 and 4, wgan 1 and 5, stylegan2 3 and 7
+	pcolors_adjust = [[1, 1, 1], [1, 1.6, 0.8], [1, 1.3, 0.8], [1, 1, 0.8]]
+	pcolors = [adjust_hls(global_color_set[i], amount) for i, amount in zip(pcolor_ids, pcolors_adjust)]
+	for i, pcolor in enumerate(pcolors):
 		p = fid_paths[i]
-		plot_fid_levels(ax, p, pnames[i], global_color_set[pcolors[i]])
+		plot_fid_levels(ax, p, pnames[i], pcolor)
 	
 	ax.legend(loc=0)
-	log_path = os.path.join(log_dir, 'fids_font_fix/_fids_hp_stylegan2_vs_fsg16_noshift_celeba128cc.pdf')
+	log_path = os.path.join(log_dir, 'fids_font_fix/fids_hp_true_celeba128cc_noisy_low0.00_high1.00.pdf')
+	#log_path = os.path.join(log_dir, 'fids_font_fix/_fids_hp_stylegan2_vs_fsg16_noshift_celeba128cc.pdf')
 	#fig.savefig('/media/evl/Public/Mahyar/ganist_lap_logs/plots/fids50_wganbn_celeba128cc.pdf')
 	#fig.savefig('/home/mahyar/miss_details_images/temp/fids50_true_cub128bb.pdf')
 	fig.savefig(log_path)

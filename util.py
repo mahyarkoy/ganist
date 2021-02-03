@@ -41,6 +41,10 @@ class Logger(object):
 		#you might want to specify some extra behavior here.
 		pass
 
+	def return_control(self):
+		sys.stdout = self.terminal
+		self.log.close()
+
 class SingleLogger:
 	__instance = None
 	@staticmethod
@@ -1064,9 +1068,9 @@ def ifft_1d(signal):
 	ifft = np.fft.ifft(signal)
 	return ifft
 
-def plot_fft_1d(data, log_path, ylim=True):
+def plot_fft_1d(data, log_path, ylim=True, fft=None, fft_guides=None):
 	data = data.reshape([-1])
-	data_fft = fft_1d(data)
+	data_fft = fft_1d(data) if fft is None else fft
 	dsize = data.shape[0]
 
 	fig = plt.figure(0, (8, 9))
@@ -1091,6 +1095,9 @@ def plot_fft_1d(data, log_path, ylim=True):
 	x_ticks_loc = np.arange(0, dsize+1, dsize//8) - dsize//2
 	ax.set_xticks(x_ticks_loc)
 	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+	if fft_guides is not None:
+		for xc in fft_guides:
+			ax.axvline(x=xc, color='r', linestyle='--')
 
 	ax = fig.add_subplot(3, 1, 3)
 	ax.grid(True, which='both', linestyle='dotted')
@@ -1102,6 +1109,9 @@ def plot_fft_1d(data, log_path, ylim=True):
 	x_ticks_loc = np.arange(0, dsize+1, dsize//8) - dsize//2
 	ax.set_xticks(x_ticks_loc)
 	ax.set_xticklabels(map('{}'.format, x_ticks_loc))
+	if fft_guides is not None:
+		for xc in fft_guides:
+			ax.axvline(x=xc, color='r', linestyle='--')
 
 	fig.tight_layout()
 	fig.savefig(log_path, dpi=300)
@@ -1143,13 +1153,13 @@ def plot_multi(dict_, log_path, steps=None):
 		v_std = np.asarray(v)[:, 1]
 		pcolor = global_color_set[i]
 		if steps is None:
-			ax.plot(v_mean, color=pcolor, label=k)
 			ax.plot(v_mean+v_std, linestyle='--', linewidth=0.5, color=pcolor)
 			ax.plot(v_mean-v_std, linestyle='--', linewidth=0.5, color=pcolor)
+			ax.plot(v_mean, color=pcolor, label=k)
 		else:
-			ax.plot(steps, v_mean, color=pcolor, label=k)
 			ax.plot(steps, v_mean+v_std, linestyle='--', linewidth=0.5, color=pcolor)
 			ax.plot(steps, v_mean-v_std, linestyle='--', linewidth=0.5, color=pcolor)
+			ax.plot(steps, v_mean, color=pcolor, label=k)
 	ax.legend(loc=0)
 	fig.tight_layout()
 	fig.savefig(log_path, dpi=300)
