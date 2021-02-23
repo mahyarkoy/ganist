@@ -417,6 +417,16 @@ def apply_ifft(fft):
 	return im
 
 '''
+Mask frequency bands of an image
+'''
+def mask_frequency_band(im, mask):
+	im_rev = np.zeros(im.shape)
+	for i in range(im.shape[-1]):
+		fft, _ = apply_fft(im[:,:,i:i+1])
+		im_rev[:,:,i] = np.real(apply_ifft(fft * mask))
+	return im_rev
+
+'''
 Apply FFT to greyscaled images (intensity only).
 ims shape: (b, h, w, c)
 return: fft images, greyscale images

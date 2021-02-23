@@ -331,7 +331,7 @@ if __name__ == '__main__':
 	arg_parser.add_argument('-l', '--log-path', dest='log_path', required=True, help='log directory to store logs.')
 	arg_parser.add_argument('-s', '--seed', dest='seed', default=0, help='random seed.')
 	arg_parser.add_argument('-e', '--eval', dest='eval_int', required=True, help='eval intervals.')
-	arg_parser.add_argument('-g', '--gpus', dest='gpus', default='0', help='visible gpu ids.')
+	arg_parser.add_argument('-g', '--gpus', dest='gpus', default='', help='visible gpu ids.')
 	arg_parser.add_argument('-f', '--freq', dest='freq', default='0', help='frequency to use.')
 	args = arg_parser.parse_args()
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" # so the IDs match nvidia-smi
@@ -373,7 +373,7 @@ if __name__ == '__main__':
 		pk.dump([losses, deltas, freqs], fs)
 
 	plot_simple('power diff', losses, os.path.join(log_dir, 'losses.png'), steps=freqs)
-	plot_simple('last loss drop', losses, os.path.join(log_dir, 'deltas.png'), steps=freqs)
+	plot_simple('last loss drop', deltas, os.path.join(log_dir, 'deltas.png'), steps=freqs)
 	
 
 

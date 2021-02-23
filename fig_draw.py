@@ -19,7 +19,7 @@ from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
 from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval, create_cosine
 from util import make_koch_snowflake, fractal_dimension, fractal_eval
 from util import windowing, fft_norm, fft_test_by_samples
-from util import fft_corr_eff, fft_corr_point, add_freq_noise
+from util import fft_corr_eff, fft_corr_point, add_freq_noise, mask_frequency_band
 import glob
 import os
 import pickle as pk
@@ -43,28 +43,26 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 '''
 Drawing Freq Components
 '''
-def freq_shift(im, fc_x, fc_y):
+def freq_shift(im, fc_x, fc_y, phase=None):
+	if phase is None:
+		phase = 0
 	im_size = im.shape[1]
 	kernel_loc = 2.*np.pi*fc_x * np.arange(im_size).reshape((1, im_size, 1)) + \
 		2.*np.pi*fc_y * np.arange(im_size).reshape((im_size, 1, 1))
-	kernel_cos = np.cos(kernel_loc)
+	kernel_cos = np.cos(kernel_loc + phase)
 	return im * kernel_cos
 
-def draw_freq_comps():
-	comp_size = 32
-	freq_list = np.array([(0., 1.), (1., 0), (1., 1.), (1., -1.)]) / 4.
+def draw_freq_comps(log_dir, comp_size, freqs, num=10):
 	im = np.ones((comp_size, comp_size, 3))
-	freq_comps = list()
-	freq_comps_sh = list()
-	for f in freq_list.tolist():
-		im_sh = freq_shift(im, f[0], f[1])
-		freq_comps.append(im_sh)
-		freq_comps_sh.append(freq_shift(im, f[0]/4., f[1]/4.))
-	
-	freq_comps = np.array(freq_comps).reshape((1, -1, comp_size, comp_size, 3))
-	freq_comps_sh = np.array(freq_comps_sh).reshape((1, -1, comp_size, comp_size, 3))
-	block_draw(freq_comps, '/home/mahyar/miss_details_images/temp/freq_comps.png', border=True)
-	block_draw(freq_comps_sh, '/home/mahyar/miss_details_images/temp/freq_comps_sh.png', border=True)
+	for f in freqs:
+		freq_x = np.linspace(-f, f, num)
+		freq_y = np.sqrt(f**2 - freq_x**2)
+		freq_comps = list()
+		for fx, fy in zip(freq_x, freq_y):
+			im_sh = freq_shift(im, fx/comp_size, fy/comp_size)
+			freq_comps.append(im_sh)
+		freq_comps = np.array(freq_comps).reshape((-1, 1, comp_size, comp_size, 3))
+		block_draw(freq_comps, os.path.join(log_dir, f'freq_comps_{f}.png'), border=True)
 
 def single_draw(im, path):
 	imc = im.shape[-1]
@@ -448,6 +446,11 @@ if __name__ == '__main__':
 	sess = None
 
 	'''
+	Draw frequency components
+	'''
+	#draw_freq_comps(log_dir, comp_size=128, freqs=[4, 8, 16], num=10)
+
+	'''
 	TENSORFLOW SETUP
 	'''
 	#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.95)
@@ -822,42 +825,61 @@ if __name__ == '__main__':
 	#print(f'>>> fft_ifft_diff_rint_[0,255]: {np.mean(np.abs(diffs_int))} sd {np.std(np.abs(diffs_int))}')
 
 	'''
-	Add spectral noise test
+	High vs Low frequency of image
 	'''
 	draw_size = 10
-	data_size = 10
-	c = 3
-	celeba_data = read_celeba(128, data_size=data_size)
-	noise_low = np.zeros(celeba_data.shape[:-1]+(c,))
-	noise_high = np.zeros(celeba_data.shape[:-1]+(c,))
-	noise_full = np.zeros(celeba_data.shape[:-1]+(c,))
-	noise_scale = 0.2
-	mask_low = None
-	mask_high = None
-	mask_full = None
-	for i, im in enumerate(celeba_data):
-		print(f'>>> processing image {i}')
-		noise_low[i], mask_low = add_freq_noise(im, low=0, high=1/8, scale=noise_scale, mask=mask_low, channels=c)
-		noise_high[i], mask_high = add_freq_noise(im, low=1/8, high=None, scale=noise_scale, mask=mask_high, channels=c)
-		noise_full[i], mask_full = add_freq_noise(im, low=0, high=None, scale=noise_scale, mask=mask_full, channels=c)
+	freq_low = 1/8
+	freq_high = 1
+	ims = read_celeba(128, data_size=draw_size)
+	b, h, w, c = ims.shape
+	_, mask = add_freq_noise(ims[0], low=freq_low, high=freq_high, channels=1)
+	ims_re = np.zeros(ims.shape)
+	for i, im in enumerate(ims):
+		ims_re[i] = mask_frequency_band(im, mask)
 
-	apply_fft_win(celeba_data, os.path.join(log_dir, 'fft_celeba.png'))
-	apply_fft_win(celeba_data+noise_low, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_low.png'))
-	apply_fft_win(celeba_data+noise_high, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_high.png'))
-	apply_fft_win(celeba_data+noise_full, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_full.png'))
-	apply_fft_win(noise_low, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_low.png'))
-	apply_fft_win(noise_high, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_high.png'))
-	apply_fft_win(noise_full, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_full.png'))
-	pyramid_draw([celeba_data,
-		np.broadcast_to(mask_low[..., np.newaxis], celeba_data.shape), 
-		np.repeat(noise_low, celeba_data.shape[-1]//c, axis=3),
-		celeba_data+noise_low,
-		np.broadcast_to(mask_high[..., np.newaxis], celeba_data.shape),
-		np.repeat(noise_high, celeba_data.shape[-1]//c, axis=3),
-		celeba_data+noise_high,
-		np.broadcast_to(mask_full[..., np.newaxis], celeba_data.shape),
-		np.repeat(noise_full, celeba_data.shape[-1]//c, axis=3),
-		celeba_data+noise_full], os.path.join(log_dir, 'noisy_celeba_samples.png'))
+	ims = np.array(ims).reshape((-1, 1, h, w, 3))
+	block_draw(ims, os.path.join(log_dir, f'freq_masked_images_no_mask.png'), border=True)
+
+	ims_re = np.array(ims_re).reshape((-1, 1, h, w, 3))
+	block_draw(ims_re, os.path.join(log_dir, f'freq_masked_images_low{freq_low:.2f}_high{freq_high:.2f}.png'), border=True)
+
+	'''
+	Add spectral noise test
+	'''
+	#draw_size = 10
+	#data_size = 10
+	#c = 3
+	#celeba_data = read_celeba(128, data_size=data_size)
+	#noise_low = np.zeros(celeba_data.shape[:-1]+(c,))
+	#noise_high = np.zeros(celeba_data.shape[:-1]+(c,))
+	#noise_full = np.zeros(celeba_data.shape[:-1]+(c,))
+	#noise_scale = 0.2
+	#mask_low = None
+	#mask_high = None
+	#mask_full = None
+	#for i, im in enumerate(celeba_data):
+	#	print(f'>>> processing image {i}')
+	#	noise_low[i], mask_low = add_freq_noise(im, low=0, high=1/8, scale=noise_scale, mask=mask_low, channels=c)
+	#	noise_high[i], mask_high = add_freq_noise(im, low=1/8, high=None, scale=noise_scale, mask=mask_high, channels=c)
+	#	noise_full[i], mask_full = add_freq_noise(im, low=0, high=None, scale=noise_scale, mask=mask_full, channels=c)
+	#
+	#apply_fft_win(celeba_data, os.path.join(log_dir, 'fft_celeba.png'))
+	#apply_fft_win(celeba_data+noise_low, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_low.png'))
+	#apply_fft_win(celeba_data+noise_high, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_high.png'))
+	#apply_fft_win(celeba_data+noise_full, os.path.join(log_dir, f'fft_celeba_noise_scale{noise_scale}_full.png'))
+	#apply_fft_win(noise_low, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_low.png'))
+	#apply_fft_win(noise_high, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_high.png'))
+	#apply_fft_win(noise_full, os.path.join(log_dir, f'fft_noise_scale{noise_scale}_full.png'))
+	#pyramid_draw([celeba_data,
+	#	np.broadcast_to(mask_low[..., np.newaxis], celeba_data.shape), 
+	#	np.repeat(noise_low, celeba_data.shape[-1]//c, axis=3),
+	#	celeba_data+noise_low,
+	#	np.broadcast_to(mask_high[..., np.newaxis], celeba_data.shape),
+	#	np.repeat(noise_high, celeba_data.shape[-1]//c, axis=3),
+	#	celeba_data+noise_high,
+	#	np.broadcast_to(mask_full[..., np.newaxis], celeba_data.shape),
+	#	np.repeat(noise_full, celeba_data.shape[-1]//c, axis=3),
+	#	celeba_data+noise_full], os.path.join(log_dir, 'noisy_celeba_samples.png'))
 
 	'''
 	Leakage test
