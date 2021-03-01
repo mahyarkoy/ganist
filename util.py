@@ -456,6 +456,34 @@ def apply_ifft_images(ffts):
 		im_data[i, :, :, 0] = im
 	return im_data
 
+def compute_fft_win(im_data, windowing=True, drop_dc=False):
+	im_data = im_data - np.mean(im_data, axis=(1,2,3)) if drop_dc else im_data
+	
+	### windowing
+	win_size = im_data.shape[1]
+	win = np.hanning(im_data.shape[1])
+	win = np.outer(win, win).reshape((win_size, win_size, 1))
+	#single_draw(win, '/home/mahyar/miss_details_images/temp/hann_win.png')
+	#single_draw(win*im_data[0], '/home/mahyar/miss_details_images/temp/hann_win_im.png')
+	im_data = im_data * win if windowing is True else im_data
+	
+	### apply fft
+	im_fft, _ = apply_fft_images(im_data, reshape=False)
+	### copy nyquist freq component to positive side of x and y axis
+	#im_fft_ext = np.concatenate((im_fft_mean, im_fft_mean[:, :1]/2.), axis=1)
+	#im_fft_ext = np.concatenate((im_fft_ext[-1:, :]/2., im_fft_ext), axis=0)
+	
+	### compute power and normalize fft
+	#fft_max_power = np.amax(im_fft, axis=(1, 2), keepdims=True)
+	#im_fft_norm = im_fft / fft_max_power
+	#im_fft_mean = np.mean(im_fft_norm, axis=0)
+	im_fft_power = np.abs(im_fft)**2
+	im_fft_mean = np.mean(im_fft_power, axis=0)
+	fft_max_power = np.amax(im_fft_mean)
+	im_fft_norm = im_fft_mean / fft_max_power
+
+	return im_fft_norm
+
 '''
 Apply FFT to greyscaled images, then average power, normalize and plot.
 im_data shape: (b, h, w, c)
@@ -1078,6 +1106,14 @@ def ifft_1d(signal):
 	ifft = np.fft.ifft(signal)
 	return ifft
 
+'''
+Plots the flattened input array, its fft magnitude, and its fft phase on three rows.
+data: ndarray (will be falttened)
+log_path: path to save figure.
+ylim: apply the prespecified limits to the y axis of the figures.
+fft: optional precomputed fft, if provided fft wont be calculated.
+fft_guides: list, places dashed guidelines on certain frequencies of interest
+'''
 def plot_fft_1d(data, log_path, ylim=True, fft=None, fft_guides=None):
 	data = data.reshape([-1])
 	data_fft = fft_1d(data) if fft is None else fft

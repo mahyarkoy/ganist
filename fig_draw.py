@@ -19,7 +19,7 @@ from util import eval_toy_exp, mag_phase_wass_dist, mag_phase_total_variation
 from util import Logger, readim_path_from_dir, readim_from_path, cosine_eval, create_cosine
 from util import make_koch_snowflake, fractal_dimension, fractal_eval
 from util import windowing, fft_norm, fft_test_by_samples
-from util import fft_corr_eff, fft_corr_point, add_freq_noise, mask_frequency_band
+from util import fft_corr_eff, fft_corr_point, add_freq_noise, mask_frequency_band, plot_fft_1d, compute_fft_win
 import glob
 import os
 import pickle as pk
@@ -825,23 +825,42 @@ if __name__ == '__main__':
 	#print(f'>>> fft_ifft_diff_rint_[0,255]: {np.mean(np.abs(diffs_int))} sd {np.std(np.abs(diffs_int))}')
 
 	'''
+	1D FFT leakage at fractional frequencies 
+	'''
+	#data_size = 128
+	#freq = 33
+	#data = np.cos(2*np.pi*freq/data_size * np.arange(data_size))
+	#plot_fft_1d(data, os.path.join(log_dir, f'1dfracfreq_fft_cos{freq}_size{data_size}.png'), ylim=False, fft_guides=[freq])
+	
+	'''
+	Compute FFT image drawing test
+	'''
+	data_size = 10
+	im_data = read_celeba(128, data_size=data_size)
+	im_fft = compute_fft_win(im_data, windowing=True, drop_dc=False)
+	im_fft = np.clip(np.log(im_fft), -13, 0) / 13. * 2 + 1.
+	im_fft = np.repeat(im_fft[np.newaxis, ..., np.newaxis], 3, axis=-1)
+	im_data = np.concatenate([im_data, im_fft], axis=0)
+	pyramid_draw([im_data], join(log_dir, 'fft_win_rbg_draw_test.png'))
+
+	'''
 	High vs Low frequency of image
 	'''
-	draw_size = 10
-	freq_low = 1/8
-	freq_high = 1
-	ims = read_celeba(128, data_size=draw_size)
-	b, h, w, c = ims.shape
-	_, mask = add_freq_noise(ims[0], low=freq_low, high=freq_high, channels=1)
-	ims_re = np.zeros(ims.shape)
-	for i, im in enumerate(ims):
-		ims_re[i] = mask_frequency_band(im, mask)
-
-	ims = np.array(ims).reshape((-1, 1, h, w, 3))
-	block_draw(ims, os.path.join(log_dir, f'freq_masked_images_no_mask.png'), border=True)
-
-	ims_re = np.array(ims_re).reshape((-1, 1, h, w, 3))
-	block_draw(ims_re, os.path.join(log_dir, f'freq_masked_images_low{freq_low:.2f}_high{freq_high:.2f}.png'), border=True)
+	#draw_size = 10
+	#freq_low = 1/8
+	#freq_high = 1
+	#ims = read_celeba(128, data_size=draw_size)
+	#b, h, w, c = ims.shape
+	#_, mask = add_freq_noise(ims[0], low=freq_low, high=freq_high, channels=1)
+	#ims_re = np.zeros(ims.shape)
+	#for i, im in enumerate(ims):
+	#	ims_re[i] = mask_frequency_band(im, mask)
+	#	
+	#ims = np.array(ims).reshape((-1, 1, h, w, 3))
+	#block_draw(ims, os.path.join(log_dir, f'freq_masked_images_no_mask.png'), border=True)
+	#
+	#ims_re = np.array(ims_re).reshape((-1, 1, h, w, 3))
+	#block_draw(ims_re, os.path.join(log_dir, f'freq_masked_images_low{freq_low:.2f}_high{freq_high:.2f}.png'), border=True)
 
 	'''
 	Add spectral noise test
