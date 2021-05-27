@@ -578,6 +578,67 @@ def build_gen_v1(data_dim, zi, act, train_phase, im_size, sub_scope='or', reuse=
 			o = tf.tanh(h4)
 		return h0, h1, h2, h3, h4, o
 
+def build_gen_v1_nnup(data_dim, zi, act, train_phase, im_size, sub_scope='or', reuse=None, layer_ins=None):
+	#train_phase = True
+	layer_ins = [None, None, None, None] if layer_ins is None else layer_ins
+	ol = list()
+	with tf.variable_scope('g_net', reuse=reuse):
+		with tf.variable_scope(sub_scope):
+			bn = tf.contrib.layers.batch_norm
+			### setup based on size
+			if im_size == 32:
+				z_fc = act(bn(dense(zi, 4*4*256, scope='fcz'),
+					is_training=train_phase))
+				h0 = tf.reshape(z_fc, [-1, 4, 4, 256])
+				h1 = h0
+			elif im_size == 64:
+				z_fc = act(bn(dense(zi, 4*4*512, scope='fcz'),
+					is_training=train_phase))
+				h0 = tf.reshape(z_fc, [-1, 4, 4, 512])
+				#h1 = h0
+				h0_us = upscale2d(h0)
+				h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
+					is_training=train_phase))
+			elif im_size == 128:
+				z_fc = act(bn(dense(zi, 8*8*512, scope='fcz'),
+					is_training=train_phase))
+				h0 = tf.reshape(z_fc, [-1, 8, 8, 512])
+				h0_us = upscale2d(h0)
+				h0_us = h0_us if layer_ins[0] is None else layer_ins[0]
+				h1 = act(bn(conv2d(h0_us, 256, scope='conv0'), 
+					is_training=train_phase))
+			else:
+				raise ValueError('{} for generator im_size is not defined!'.format(im_size))
+
+			### us version: decoding fc code with upsampling and conv hidden layers
+			h1_us = upscale2d(h1)
+			h1_us = h1_us if layer_ins[1] is None else layer_ins[1]
+			h2 = act(bn(conv2d(h1_us, 128, scope='conv1'),
+				is_training=train_phase))
+
+			h2_us = upscale2d(h2)
+			h2_us = h2_us if layer_ins[2] is None else layer_ins[2]
+			h3 = act(bn(conv2d(h2_us, 64, scope='conv2'),
+				is_training=train_phase))
+		
+			h3_us = upscale2d(h3)
+			h3_us = h3_us if layer_ins[3] is None else layer_ins[3]
+			h4 = conv2d(h3_us, data_dim[-1], scope='conv3')
+
+			### resnext version
+			'''
+			btnk_dim = 64
+			h2 = resnext(h1, 128, btnk_dim, 'res1', train_phase, 
+						op_type='up', bn=False, act=act)
+			h3 = resnext(h2, 64, btnk_dim//2, 'res2', train_phase,
+						op_type='up', bn=False, act=act)
+			h4 = resnext(h3, 32, btnk_dim//4, 'res3', train_phase, 
+						op_type='up', bn=False, act=act)
+			h5 = conv2d(h4, data_dim[-1], scope='convo')
+			'''
+			o = tf.tanh(h4)
+		return h0, h1, h2, h3, h4, o
+
 def build_dis_v1(data_layer, train_phase, im_size, sub_scope='or', reuse=False):
 	act = lrelu
 	with tf.variable_scope('d_net'):
@@ -706,7 +767,7 @@ class Ganist:
 		self.man_dim = 0
 		self.g_num = 1
 		self.z_range = 1.0
-		self.data_dim = [128, 128, 3]
+		self.data_dim = [128, 128, 1]
 		self.hp_loss_weight = 1.
 		self.gp_loss_weight = 10.0
 		self.rg_loss_weight = 0.0
@@ -723,7 +784,7 @@ class Ganist:
 		#self.g_act = tf.tanh
 		self.d_act = lrelu
 		self.g_act = tf.nn.relu
-		self.build_gen = build_gen_v1
+		self.build_gen = build_gen_v1_nnup
 		self.build_dis = build_dis_v1
 
 		### init graph and session
@@ -1053,18 +1114,18 @@ class Ganist:
 			self.train_phase = tf.placeholder(tf.bool, name='phase')
 
 			### apply regular wgan
-			#self.gen_collect, self.im_collect, self.comb_list,\
-			#self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
-			#	self.build_wgan_with_separate_layer_inputs(self.im_input, self.zi_input, 
-			#		im_size=self.data_dim[0])
-			#self.im_input_rec = self.im_collect[-1]
-
-			### apply freq shift gan
 			self.gen_collect, self.im_collect, self.comb_list,\
 			self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
-				self.build_shift_gan(self.im_input, self.zi_input, 
-					im_size=self.data_dim[0], gen_size=64)
+				self.build_wgan(self.im_input, self.zi_input, 
+					im_size=self.data_dim[0])
 			self.im_input_rec = self.im_collect[-1]
+
+			### apply freq shift gan
+			#self.gen_collect, self.im_collect, self.comb_list,\
+			#self.d_loss_list, self.g_loss_list, self.rg_grad_norm_list = \
+			#	self.build_shift_gan(self.im_input, self.zi_input, 
+			#		im_size=self.data_dim[0], gen_size=64)
+			#self.im_input_rec = self.im_collect[-1]
 
 			### apply pyramid for real images
 			#self.im_input_l0, self.im_input_l1, self.im_input_l2 = \

@@ -1639,8 +1639,8 @@ if __name__ == '__main__':
 	INCEPTION SETUP
 	'''
 	fid_im_size = 128
-	inception_dir = '/dresden/users/mk1391/evl/Data/models/research/slim'
-	ckpt_path = '/dresden/users/mk1391/evl/Data/inception_v3_model/kaggle/inception_v3.ckpt'
+	inception_dir = '/common/home/mk1391/evl/Data/models/research/slim'
+	ckpt_path = '/common/home/mk1391/evl/Data/inception_v3_model/kaggle/inception_v3.ckpt'
 	sys.path.insert(0, inception_dir)
 
 	#from inception.slim import slim
@@ -1842,38 +1842,38 @@ if __name__ == '__main__':
 	#train_feats = TFutil.get().extract_feats(im_data[:sample_size], sample_size, blur_levels=blur_levels)
 
 	### cosine sampler
-	#data_size = 50000
-	#freq_centers = [(0/128., 0/128.), (3/128., 3/128.), (41/128., 41/128.)]
-	#im_size = 128
-	#im_data = np.zeros((data_size, im_size, im_size, ganist.data_dim[-1]))
-	#freq_str = ''
-	#for fc in freq_centers:
-	#	sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=ganist.data_dim[-1])
-	#	im_data += sampler.sample_data(data_size)
-	#	freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
-	#im_data /= len(freq_centers)
+	data_size = 50000
+	freq_centers = [(0/128., 0/128.), (3/128., 3/128.), (41/128., 41/128.)]
+	im_size = 128
+	im_data = np.zeros((data_size, im_size, im_size, ganist.data_dim[-1]))
+	freq_str = ''
+	for fc in freq_centers:
+		sampler = COS_Sampler(im_size=im_size, fc_x=fc[0], fc_y=fc[1], channels=ganist.data_dim[-1])
+		im_data += sampler.sample_data(data_size)
+		freq_str += '_fx{}_fy{}'.format(int(fc[0]*im_size), int(fc[1]*im_size))
+	im_data /= len(freq_centers)
 	#im_labels = np.random.uniform(low=-ganist.z_range, high=ganist.z_range, 
 	#		size=[data_size, ganist.z_dim])
-	#test_feats = None
-	#true_fft = apply_fft_win(im_data[:10000], 
-	#		join(log_path, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
-	#true_fft_hann = apply_fft_win(im_data[:10000], 
-	#		join(log_path, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
-	#true_hist = freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size)))
+	test_feats = None
+	true_fft = apply_fft_win(im_data[:10000], 
+			join(log_path, 'fft_true{}_size{}'.format(freq_str, im_size)), windowing=False)
+	true_fft_hann = apply_fft_win(im_data[:10000], 
+			join(log_path, 'fft_true{}_size{}_hann'.format(freq_str, im_size)), windowing=True)
+	true_hist = freq_density(true_fft, freq_centers, im_size, join(log_path, 'freq_density_size{}'.format(im_size)))
 	
 	'''
 	DATASET INITIAL EVALS
 	'''
 	### setup
-	#train_imgs = im_data
-	#train_labs = None ### *L2LOSS im_labels
-	#print('>>> Shape of training images: {}'.format(train_imgs.shape))
-	##print('>>> Shape of test features: {}'.format(test_feats[0].shape))
-	##im_draw = TFutil.get().freq_shift(train_imgs[:draw_size], 0.5, 0.5)
-	#im_block_draw(train_imgs[:25], 5, 
-	#	join(log_path,'true_samples.png'), border=True)
-	#im_block_draw(TFutil.get().freq_shift(train_imgs[:25], 0.5, 0.5), 5, 
-	#	join(log_path,'true_samples_sh.png'), border=True)
+	train_imgs = im_data
+	train_labs = None ### *L2LOSS im_labels
+	print('>>> Shape of training images: {}'.format(train_imgs.shape))
+	#print('>>> Shape of test features: {}'.format(test_feats[0].shape))
+	#im_draw = TFutil.get().freq_shift(train_imgs[:draw_size], 0.5, 0.5)
+	im_block_draw(train_imgs[:25], 5, 
+		join(log_path,'true_samples.png'), border=True)
+	im_block_draw(TFutil.get().freq_shift(train_imgs[:25], 0.5, 0.5), 5, 
+		join(log_path,'true_samples_sh.png'), border=True)
 	#### draw blurred images ## comment for *TOY
 	#blur_draw_size = 10
 	#im_blur = train_imgs[:blur_draw_size]
@@ -1888,15 +1888,15 @@ if __name__ == '__main__':
 	'''
 	GAN SETUP SECTION
 	'''
-	g_name = 'wgan_fsg'
+	g_name = 'wgan'
 	### train ganist
-	#train_ganist(ganist, train_imgs, test_feats, train_labs)
+	train_ganist(ganist, train_imgs, test_feats, train_labs)
 
 	### load ganist
 	#load_path = join(log_path_snap, 'model_best.h5') ## comment for *TOY
 	#load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/5_logs_wganbn_celeba128cc_fid50/run_{}/snapshots/model_best.h5'
-	load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/logs_wganbn_fsg16_noshift_celeba128cc_hpfid/run_0/snapshots/model_best.h5'
-	ganist.load(load_path.format(run_seed)) ##comment for *TOY
+	#load_path = '/dresden/users/mk1391/evl/ganist_lap_logs/logs_wganbn_fsg16_noshift_celeba128cc_hpfid/run_0/snapshots/model_best.h5'
+	#ganist.load(load_path.format(run_seed)) ##comment for *TOY
 
 	'''
 	GAN DATA EVAL
@@ -1912,29 +1912,29 @@ if __name__ == '__main__':
 	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_0.png', sample_size=10)
 	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_1.png', sample_size=10)
 	#sample_pyramid(ganist, log_path+'/gen_samples_pyramid_2.png', sample_size=10) ## comment for *TOY
-	draw_gen_fsg(ganist, 10, log_path+'/gen_sample_pyramid.png', with_fft=True, kernel=None, save_pkl=True)
-	sys.exit(0)
+	#draw_gen_fsg(ganist, 10, log_path+'/gen_sample_pyramid.png', with_fft=True, kernel=None, save_pkl=True)
+	#sys.exit(0)
 
 	### *TOY
-	#gen_fft = apply_fft_win(g_samples[:10000], 
-	#		join(log_path, 'fft_gen{}_size{}'.format(freq_str, g_samples.shape[1])), windowing=False)
-	#gen_fft_hann = apply_fft_win(g_samples[:10000], 
-	#		join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
-	#freq_leakage(true_fft, gen_fft, 
-	#		join(log_path, 'leakage{}_size{}'.format(freq_str, g_samples.shape[1])))
-	#freq_leakage(true_fft_hann, gen_fft_hann, 
-	#		join(log_path, 'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1])))
-	#gen_hist = freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size)))
+	gen_fft = apply_fft_win(g_samples[:10000], 
+			join(log_path, 'fft_gen{}_size{}'.format(freq_str, g_samples.shape[1])), windowing=False)
+	gen_fft_hann = apply_fft_win(g_samples[:10000], 
+			join(log_path, 'fft_gen{}_size{}_hann'.format(freq_str, g_samples.shape[1])), windowing=True)
+	freq_leakage(true_fft, gen_fft, 
+			join(log_path, 'leakage{}_size{}'.format(freq_str, g_samples.shape[1])))
+	freq_leakage(true_fft_hann, gen_fft_hann, 
+			join(log_path, 'leakage{}_size{}_hann'.format(freq_str, g_samples.shape[1])))
+	gen_hist = freq_density(gen_fft, freq_centers, im_size, join(log_path, 'gen_freq_density_size{}'.format(im_size)))
 	### compute the wasserstein distance between the dists for each freq
-	#freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
-	#with open(join(log_path, 'wd_mag_phase.txt'), 'w+') as fs:
-	#	for fx, fy in freqs:
-	#		mag_wd, phase_wd = mag_phase_wass_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
-	#		mag_tv, phase_tv = mag_phase_total_variation(true_hist[(fx, fy)], gen_hist[(fx, fy)])
-	#		print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
-	#		print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
-	#		print('mag_tv_fx{}_fy{}: {}'.format(fx, fy, mag_tv), file=fs)
-	#		print('phase_tv_fx{}_fy{}: {}'.format(fx, fy, phase_tv), file=fs)
+	freqs = np.rint(np.array(freq_centers)*im_size).astype(int)
+	with open(join(log_path, 'wd_mag_phase.txt'), 'w+') as fs:
+		for fx, fy in freqs:
+			mag_wd, phase_wd = mag_phase_wass_dist(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+			mag_tv, phase_tv = mag_phase_total_variation(true_hist[(fx, fy)], gen_hist[(fx, fy)])
+			print('mag_wd_fx{}_fy{}: {}'.format(fx, fy, mag_wd), file=fs)
+			print('phase_wd_fx{}_fy{}: {}'.format(fx, fy, phase_wd), file=fs)
+			print('mag_tv_fx{}_fy{}: {}'.format(fx, fy, mag_tv), file=fs)
+			print('phase_tv_fx{}_fy{}: {}'.format(fx, fy, phase_tv), file=fs)
 	
 	'''
 	Read from PGGAN and construct features
@@ -2053,8 +2053,8 @@ if __name__ == '__main__':
 	'''
 	Multi Level FID
 	'''
-	#im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
-	#im_block_draw(TFutil.get().freq_shift(g_samples, 0.5, 0.5), 5, log_path+'/gen_samples_sh.png', border=True)
+	im_block_draw(g_samples, 5, join(log_path, 'gen_samples.png'), border=True)
+	im_block_draw(TFutil.get().freq_shift(g_samples, 0.5, 0.5), 5, join(log_path, 'gen_samples_sh.png'), border=True)
 	#fft_test_by_samples(log_path, train_imgs[:fft_data_size], g_samples[:fft_data_size], r_name, g_name)
 
 	### compute multi level fid (second line for real data fid levels) ## comment for *TOY
