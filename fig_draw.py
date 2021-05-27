@@ -835,13 +835,26 @@ if __name__ == '__main__':
 	'''
 	Compute FFT image drawing test
 	'''
-	data_size = 10
-	im_data = read_celeba(128, data_size=data_size)
-	im_fft = compute_fft_win(im_data, windowing=True, drop_dc=False)
-	im_fft = np.clip(np.log(im_fft), -13, 0) / 13. * 2 + 1.
-	im_fft = np.repeat(im_fft[np.newaxis, ..., np.newaxis], 3, axis=-1)
-	im_data = np.concatenate([im_data, im_fft], axis=0)
-	pyramid_draw([im_data], join(log_dir, 'fft_win_rbg_draw_test.png'))
+	#data_size = 10
+	#im_data = read_celeba(128, data_size=data_size)
+	#im_fft = compute_fft_win(im_data, windowing=True, drop_dc=False)
+	#im_fft = np.clip(np.log(im_fft), -13, 0) / 13. * 2 + 1.
+	#im_fft = np.repeat(im_fft[np.newaxis, ..., np.newaxis], 3, axis=-1)
+	#im_data = np.concatenate([im_data, im_fft], axis=0)
+	#pyramid_draw([im_data], join(log_dir, 'fft_win_rbg_draw_test.png'))
+
+	'''
+	FSG Combined images
+	'''
+	#pkl_path = '/Users/mahyar/CV_Res/ganist/logs_miss_details_iclr/stylegan2_fsg_noshift_samples_celeba128cc/fakes_init_fsg_pyramid.pkl'
+	#pkl_path = '/Users/mahyar/CV_Res/ganist/logs_miss_details_iclr/pggan_fsg_noshift_samples_celeba128cc/pggan_fsg_draw.pkl'
+	pkl_path = '/Users/mahyar/CV_Res/ganist/logs_miss_details_iclr/wgan_fsg_noshift_samples_celeba128cc/gen_sample_pyramid.pkl'
+	with open(pkl_path, 'rb') as fs:
+		imgs = pk.load(fs)
+	imgs = np.asarray(imgs)
+	fsg_sum = np.sum(imgs[:-2], axis=0)
+	pyramid_draw([img for img in imgs[:-2]]+[fsg_sum, imgs[-2], imgs[-1]], 
+		os.path.join(log_dir, 'wgan_fsg_noshift_samples_celeba128cc.png'))
 
 	'''
 	High vs Low frequency of image
