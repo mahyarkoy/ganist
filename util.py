@@ -17,6 +17,9 @@ import re
 import scipy
 import logging
 import os
+import lmdb # pip install lmdb
+import cv2 # pip install opencv-python
+import io
 
 ### global colormap set
 global_cmap = mat_cm.get_cmap('tab20')
@@ -171,6 +174,39 @@ def read_image(im_path, im_size, sqcrop=True, bbox=None, verbose=False, center_c
 	im_o = (im_re / 255.0) * 2.0 - 1.0 
 	im_o = im_o[:, :, :3]
 	return im_o if not verbose else (im_o, w, h)
+
+def create_lsun(lmdb_dir, resolution=256, max_images=None):
+	print('Loading LSUN dataset from "%s"' % lmdb_dir)
+	with lmdb.open(lmdb_dir, readonly=True).begin(write=False) as txn:
+		total_images = txn.stat()['entries']
+		if max_images is None:
+			max_images = total_images
+		idx_list = list()
+		im_counter = 0
+		im_data = np.zeros((max_images, resolution, resolution, 3), dtype=np.float32)
+		for idx, (key, value) in enumerate(txn.cursor()):
+			try:
+				try:
+					img = cv2.imdecode(np.fromstring(value, dtype=np.uint8), 1)
+					if img is None:
+						raise IOError('cv2.imdecode failed')
+					img = img[:, :, ::-1] # BGR => RGB
+				except IOError:
+					img = np.asarray(Image.open(io.BytesIO(value)))
+				crop = np.min(img.shape[:2])
+				img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
+				img = Image.fromarray(img, 'RGB')
+				img = img.resize((resolution, resolution), Image.ANTIALIAS)
+				img = np.asarray(img)
+				img = (img / 255.) * 2. - 1.
+				im_data[im_counter, ...] = img
+				im_counter += 1
+				idx_list.append(idx)
+			except:
+				print(sys.exc_info()[1])
+			if im_counter == max_images:
+				break
+	return im_data, idx_list
 
 '''
 Draws the given layers of the pyramid.
